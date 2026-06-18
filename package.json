@@ -11,8 +11,8 @@
     "tdd:lint": "cargo clippy --workspace --all-targets -- -D warnings",
     "tdd:check": "bun run tdd:fmt && bun run tdd:lint && cargo test --workspace && bun run tdd:parity",
     "agent:check": "bun run tdd:check",
-    "agent:eval": "bunx @moritzbrantner/moonlight eval run --project moonlight.eval.toml --format markdown",
-    "agent:eval:report": "bunx @moritzbrantner/moonlight eval report --format markdown"
+    "agent:eval": "scripts/moonlight.sh eval run --project moonlight.eval.toml --format markdown",
+    "agent:eval:report": "scripts/moonlight.sh eval report --format markdown"
   },
   "devDependencies": {
     "@moritzbrantner/moonlight": "^0.1.2"
