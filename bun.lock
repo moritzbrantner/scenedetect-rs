@@ -1,0 +1,15 @@
+{
+  "lockfileVersion": 1,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "scenedetect-rs",
+      "devDependencies": {
+        "@moritzbrantner/moonlight": "^0.1.2",
+      },
+    },
+  },
+  "packages": {
+    "@moritzbrantner/moonlight": ["@moritzbrantner/moonlight@0.1.2", "", { "optionalDependencies": { "@moritzbrantner/moonlight-darwin-arm64": "0.1.2", "@moritzbrantner/moonlight-darwin-x64": "0.1.2", "@moritzbrantner/moonlight-linux-arm64-gnu": "0.1.2", "@moritzbrantner/moonlight-linux-x64-gnu": "0.1.2", "@moritzbrantner/moonlight-win32-x64-msvc": "0.1.2" }, "bin": { "moonlight": "bin/moonlight.js", "moonlight-cli": "bin/moonlight.js" } }, "sha512-H6oy5ZaDc0oKMjYYRyILqZSlP1JnbWMo1Cxi65iEsxXisHN11+1UEHYr/oWNeM3oMtweFVzT7K2h62QYbtSgvA=="],
+  }
+}

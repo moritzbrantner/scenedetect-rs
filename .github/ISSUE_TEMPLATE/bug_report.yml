@@ -1,0 +1,28 @@
+name: Bug Report
+description: Report incorrect scene detection or repository behavior.
+title: "[Bug]: "
+labels:
+  - bug
+  - needs-triage
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What happened?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction
+      description: Include command, input fixture, expected behavior, and actual behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: verification
+    attributes:
+      label: Verification
+      description: Commands run and relevant output summary.
+    validations:
+      required: false

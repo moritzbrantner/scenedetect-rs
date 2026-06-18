@@ -1,0 +1,24 @@
+{
+  "name": "scenedetect-rs",
+  "private": true,
+  "scripts": {
+    "prepack": "echo 'This repository root is not publishable.' >&2; exit 1",
+    "tdd:rust": "cargo test --workspace",
+    "tdd:core": "cargo test -p scenedetect-core",
+    "tdd:cli": "cargo test -p scenedetect-cli --test cli",
+    "tdd:parity": "tests/parity/run-all.sh",
+    "tdd:fmt": "cargo fmt --all -- --check",
+    "tdd:lint": "cargo clippy --workspace --all-targets -- -D warnings",
+    "tdd:check": "bun run tdd:fmt && bun run tdd:lint && cargo test --workspace && bun run tdd:parity",
+    "agent:check": "bun run tdd:check",
+    "agent:eval": "bunx @moritzbrantner/moonlight eval run --project moonlight.eval.toml --format markdown",
+    "agent:eval:report": "bunx @moritzbrantner/moonlight eval report --format markdown"
+  },
+  "devDependencies": {
+    "@moritzbrantner/moonlight": "^0.1.2"
+  },
+  "lint-staged": {
+    "*.{json,md,toml,yml,yaml}": "prettier --ignore-unknown --write",
+    "*.rs": "sh -c 'cargo fmt --all'"
+  }
+}

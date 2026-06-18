@@ -1,0 +1,38 @@
+# scenedetect-rs
+
+`scenedetect-rs` is a Rust reimplementation and expansion of PySceneDetect.
+The first milestone focuses on CLI-compatible scene detection for
+`detect-content`, `detect-adaptive`, `detect-threshold`, scene-list CSV output,
+and detector stats CSV output.
+
+The repository is set up for test-driven agent work. Agents should read
+[`AGENTS.md`](AGENTS.md), start from a public-interface behavior test, and finish
+with:
+
+```sh
+bun run agent:check
+```
+
+## Current Scope
+
+- Rust CLI binary: `scenedetect-rs`
+- Frame acquisition: `ffmpeg` subprocess adapter
+- Oracle parity: PySceneDetect v0.7 through a `uv`-managed Python 3.12
+  environment
+- Parity tolerance: same scene order and count, with up to one frame of boundary
+  drift
+
+## Development
+
+```sh
+bun install
+bun run tdd:check
+```
+
+Focused commands:
+
+```sh
+cargo test -p scenedetect-core
+cargo test -p scenedetect-cli --test cli
+tests/parity/run-all.sh
+```

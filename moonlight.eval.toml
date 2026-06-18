@@ -1,0 +1,56 @@
+[project]
+name = "scenedetect-rs"
+repo = "."
+baseline_ref = "main"
+
+[eval]
+work_dir = ".moonlight/evals"
+keep_worktrees = "failed"
+jobs = 1
+target_timeout_ms = 900000
+max_body_capture_bytes = 20000
+
+[[checks]]
+id = "bootstrap"
+name = "Install Bun dependencies"
+command = "bun install --frozen-lockfile"
+cwd = "."
+timeout_ms = 300000
+ignore_stdout = true
+ignore_stderr = true
+
+[[checks]]
+id = "rust-format"
+name = "Rust format"
+argv = ["cargo", "fmt", "--all", "--", "--check"]
+cwd = "."
+timeout_ms = 120000
+ignore_stdout = true
+ignore_stderr = true
+
+[[checks]]
+id = "rust-clippy"
+name = "Rust clippy"
+command = "cargo clippy --workspace --all-targets -- -D warnings"
+cwd = "."
+timeout_ms = 900000
+ignore_stdout = true
+ignore_stderr = true
+
+[[checks]]
+id = "rust-tests"
+name = "Rust workspace tests"
+command = "cargo test --workspace"
+cwd = "."
+timeout_ms = 900000
+ignore_stdout = true
+ignore_stderr = true
+
+[[checks]]
+id = "parity-tests"
+name = "PySceneDetect parity tests"
+command = "tests/parity/run-all.sh"
+cwd = "."
+timeout_ms = 900000
+ignore_stdout = true
+ignore_stderr = true

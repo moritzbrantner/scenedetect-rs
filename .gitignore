@@ -1,0 +1,10 @@
+/target/
+/node_modules/
+/.moonlight/
+/.tools/
+/.venv/
+/.python/
+/tests/fixtures/generated/
+/tests/parity/output/
+*.pyc
+__pycache__/

@@ -1,0 +1,99 @@
+name: Agent Goal
+description: A goal that is ready for a coding agent to implement.
+title: "[Agent Goal]: "
+labels:
+  - agent-ready
+  - needs-triage
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: State the desired outcome in one paragraph.
+      placeholder: Describe the outcome the agent should deliver.
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: Explain the user or repository pain this solves.
+      placeholder: What is currently hard, broken, unclear, or missing?
+    validations:
+      required: true
+
+  - type: textarea
+    id: success_criteria
+    attributes:
+      label: Success Criteria
+      description: Use checkbox acceptance criteria.
+      value: |
+        - [ ] First observable outcome
+        - [ ] Required test or documentation update
+        - [ ] Required verification command passes
+    validations:
+      required: true
+
+  - type: dropdown
+    id: public_interface
+    attributes:
+      label: Public Interface Impact
+      description: Choose the main interface this goal affects.
+      options:
+        - CLI command or flags
+        - Rust public type/function
+        - Frame Source behavior
+        - parity harness behavior
+        - docs/process only
+        - no public interface change
+    validations:
+      required: true
+
+  - type: textarea
+    id: in_scope
+    attributes:
+      label: In Scope
+      description: List what the agent should change.
+      placeholder: Include files, modules, interfaces, or behavior that are part of the goal.
+    validations:
+      required: true
+
+  - type: textarea
+    id: out_of_scope
+    attributes:
+      label: Out Of Scope
+      description: List what the agent should avoid.
+      placeholder: Include related work, refactors, or behavior that should not be changed.
+    validations:
+      required: true
+
+  - type: textarea
+    id: test_expectations
+    attributes:
+      label: Test Expectations
+      description: Name the behavior tests and likely locations.
+      placeholder: "Example: Add a CLI integration test in crates/scenedetect-cli/tests/cli.rs."
+    validations:
+      required: true
+
+  - type: textarea
+    id: verification_commands
+    attributes:
+      label: Verification Commands
+      description: Commands the agent must run before handoff.
+      value: |
+        ```sh
+        bun run tdd:check
+        bun run agent:check
+        ```
+    validations:
+      required: true
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
+      description: Optional extra context, links, or constraints.
+    validations:
+      required: false

@@ -1,0 +1,6 @@
+[[cases]]
+id = "content-hard-cut"
+video = "tests/fixtures/generated/content-hard-cut.mkv"
+detector = "detect-content"
+threshold = 20
+tolerance_frames = 1
