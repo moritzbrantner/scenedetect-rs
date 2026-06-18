@@ -1,0 +1,55 @@
+[oracle]
+python = "3.12"
+package = "scenedetect-headless==0.7"
+
+[settings]
+warmup = 1
+runs = 3
+
+[[cases]]
+id = "generated-content-hard-cuts"
+corpus = "generated"
+video = "tests/benchmarks/generated/generated-hard-cuts.mkv"
+detector = "detect-content"
+args = ["--threshold", "20"]
+min_scene_len = "1"
+
+[[cases]]
+id = "generated-adaptive-hard-cuts"
+corpus = "generated"
+video = "tests/benchmarks/generated/generated-hard-cuts.mkv"
+detector = "detect-adaptive"
+args = ["--threshold", "3", "--min-content-val", "15", "--frame-window", "2"]
+min_scene_len = "1"
+
+[[cases]]
+id = "generated-threshold-fade"
+corpus = "generated"
+video = "tests/benchmarks/generated/generated-fade.mkv"
+detector = "detect-threshold"
+args = ["--threshold", "12"]
+min_scene_len = "1"
+
+[[cases]]
+id = "shrek-retold-early-content"
+corpus = "real"
+video = "tests/benchmarks/generated/shrek-retold-early-30s.mkv"
+detector = "detect-content"
+args = ["--threshold", "27"]
+min_scene_len = "15"
+
+[[cases]]
+id = "shrek-retold-middle-content"
+corpus = "real"
+video = "tests/benchmarks/generated/shrek-retold-middle-30s.mkv"
+detector = "detect-content"
+args = ["--threshold", "27"]
+min_scene_len = "15"
+
+[[cases]]
+id = "shrek-retold-late-content"
+corpus = "real"
+video = "tests/benchmarks/generated/shrek-retold-late-30s.mkv"
+detector = "detect-content"
+args = ["--threshold", "27"]
+min_scene_len = "15"

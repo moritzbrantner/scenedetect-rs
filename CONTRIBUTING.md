@@ -40,6 +40,15 @@ tests/parity/run-all.sh
 bun run tdd:check
 ```
 
+Optional performance reporting:
+
+```sh
+tests/benchmarks/run-hyperfine.sh --generated-only
+```
+
+Benchmark reports are useful when changing Frame Source, Detector, or CLI
+throughput, but they are report-only and are not part of `agent:check`.
+
 Coding agents should follow `AGENTS.md`. An `agent-ready` issue must include
 acceptance criteria and verification commands before an agent starts.
 

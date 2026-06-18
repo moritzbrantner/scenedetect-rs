@@ -6,5 +6,7 @@
 /.python/
 /tests/fixtures/generated/
 /tests/parity/output/
+/tests/benchmarks/generated/
+/tests/benchmarks/results/
 *.pyc
 __pycache__/
