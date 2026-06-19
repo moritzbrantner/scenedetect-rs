@@ -59,6 +59,34 @@ fn write_three_color_video(video: &std::path::Path) {
         .success());
 }
 
+fn write_review_candidate_video(video: &std::path::Path) {
+    assert!(Command::new("ffmpeg")
+        .args([
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=black:s=16x16:d=0.3:r=10",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=white:s=16x16:d=0.3:r=10",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=gray:s=16x16:d=0.3:r=10",
+            "-filter_complex",
+            "[0:v][1:v][2:v]concat=n=3:v=1:a=0",
+            "-pix_fmt",
+            "yuv420p",
+        ])
+        .arg(video)
+        .status()
+        .unwrap()
+        .success());
+}
+
 fn write_threshold_final_fade_video(video: &std::path::Path) {
     assert!(Command::new("ffmpeg")
         .args([
@@ -105,6 +133,224 @@ fn write_hash_pattern_video(video: &std::path::Path) {
         .status()
         .unwrap()
         .success());
+}
+
+#[test]
+fn content_detector_writes_score_ranked_boundary_candidates_to_csv() {
+    if !ffmpeg_available() {
+        eprintln!("skipping CLI integration test because ffmpeg is unavailable");
+        return;
+    }
+
+    let temp = tempfile::tempdir().unwrap();
+    let video = temp.path().join("boundary-review.mp4");
+    let output_dir = temp.path().join("out");
+    write_review_candidate_video(&video);
+
+    let mut cmd = Command::cargo_bin("scenedetect-rs").unwrap();
+    cmd.arg("-i")
+        .arg(&video)
+        .arg("--output")
+        .arg(&output_dir)
+        .args(["-m", "1"])
+        .args([
+            "detect-content",
+            "--threshold",
+            "200",
+            "list-boundaries",
+            "--review-threshold",
+            "100",
+        ])
+        .assert()
+        .success();
+
+    let boundaries = std::fs::read_to_string(output_dir.join("boundaries.csv")).unwrap();
+    assert!(boundaries.contains("Rank,Status,Boundary Candidate Number"));
+    assert!(boundaries.contains("accepted"));
+    assert!(boundaries.contains("near_miss"));
+    assert!(!output_dir.join("scenes.csv").exists());
+}
+
+#[test]
+fn content_detector_writes_boundary_candidates_as_json_to_stdout() {
+    if !ffmpeg_available() {
+        eprintln!("skipping CLI integration test because ffmpeg is unavailable");
+        return;
+    }
+
+    let temp = tempfile::tempdir().unwrap();
+    let video = temp.path().join("boundary-review.mp4");
+    write_review_candidate_video(&video);
+
+    let mut cmd = Command::cargo_bin("scenedetect-rs").unwrap();
+    let output = cmd
+        .current_dir(temp.path())
+        .arg("-i")
+        .arg(&video)
+        .args(["-m", "1"])
+        .args([
+            "detect-content",
+            "--threshold",
+            "200",
+            "list-boundaries",
+            "--review-threshold",
+            "100",
+            "--format",
+            "json",
+            "--no-output-file",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let review: serde_json::Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(review["detector"], "content");
+    assert_eq!(review["sort"], "threshold_distance");
+    assert_eq!(review["score_metric"], "content_val");
+    assert!(review["candidate_count"].as_u64().unwrap() >= 2);
+    assert_eq!(
+        review["boundary_candidates"][0]["boundary_frame_index"]
+            .as_u64()
+            .unwrap()
+            + 1,
+        review["boundary_candidates"][0]["boundary_frame"]
+            .as_u64()
+            .unwrap()
+    );
+    assert!(!temp.path().join("boundaries.json").exists());
+}
+
+#[test]
+fn content_boundary_review_threshold_controls_near_miss_inclusion() {
+    if !ffmpeg_available() {
+        eprintln!("skipping CLI integration test because ffmpeg is unavailable");
+        return;
+    }
+
+    let temp = tempfile::tempdir().unwrap();
+    let video = temp.path().join("boundary-review.mp4");
+    write_review_candidate_video(&video);
+
+    let mut default_cutoff = Command::cargo_bin("scenedetect-rs").unwrap();
+    let default_output = default_cutoff
+        .arg("-i")
+        .arg(&video)
+        .args(["-m", "1"])
+        .args([
+            "detect-content",
+            "--threshold",
+            "200",
+            "list-boundaries",
+            "--format",
+            "json",
+            "--no-output-file",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let mut relaxed_cutoff = Command::cargo_bin("scenedetect-rs").unwrap();
+    let relaxed_output = relaxed_cutoff
+        .arg("-i")
+        .arg(&video)
+        .args(["-m", "1"])
+        .args([
+            "detect-content",
+            "--threshold",
+            "200",
+            "list-boundaries",
+            "--review-threshold",
+            "100",
+            "--format",
+            "json",
+            "--no-output-file",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let default_review: serde_json::Value = serde_json::from_slice(&default_output).unwrap();
+    let relaxed_review: serde_json::Value = serde_json::from_slice(&relaxed_output).unwrap();
+    assert!(
+        relaxed_review["candidate_count"].as_u64().unwrap()
+            > default_review["candidate_count"].as_u64().unwrap(),
+        "lower review threshold should include additional near misses"
+    );
+}
+
+#[test]
+fn adaptive_detector_writes_boundary_candidates_as_json_to_stdout() {
+    if !ffmpeg_available() {
+        eprintln!("skipping CLI integration test because ffmpeg is unavailable");
+        return;
+    }
+
+    let temp = tempfile::tempdir().unwrap();
+    let video = temp.path().join("boundary-review.mp4");
+    write_review_candidate_video(&video);
+
+    let mut cmd = Command::cargo_bin("scenedetect-rs").unwrap();
+    let output = cmd
+        .arg("-i")
+        .arg(&video)
+        .args(["-m", "1"])
+        .args([
+            "detect-adaptive",
+            "--threshold",
+            "3",
+            "--min-content-val",
+            "20",
+            "--frame-window",
+            "1",
+            "list-boundaries",
+            "--format",
+            "json",
+            "--no-output-file",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let review: serde_json::Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(review["detector"], "adaptive");
+    assert_eq!(review["score_metric"], "adaptive_ratio");
+    assert!(review["candidate_count"].as_u64().unwrap() >= 1);
+}
+
+#[test]
+fn threshold_detector_rejects_boundary_review_output() {
+    if !ffmpeg_available() {
+        eprintln!("skipping CLI integration test because ffmpeg is unavailable");
+        return;
+    }
+
+    let temp = tempfile::tempdir().unwrap();
+    let video = temp.path().join("threshold-final-fade.mp4");
+    write_threshold_final_fade_video(&video);
+
+    let mut cmd = Command::cargo_bin("scenedetect-rs").unwrap();
+    cmd.arg("-i")
+        .arg(&video)
+        .args([
+            "detect-threshold",
+            "--threshold",
+            "12",
+            "list-boundaries",
+            "--no-output-file",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "boundary review is not supported for detect-threshold",
+        ));
 }
 
 #[test]

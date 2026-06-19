@@ -4,10 +4,12 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use scenedetect_core::{
-    detect_scenes_streaming, write_scene_events_ndjson, write_scene_list_csv,
-    write_scene_list_json, AdaptiveDetectorConfig, ContentDetectorConfig, ContentWeights,
-    CsvStatsSink, DetectionOptions, DetectorConfig, FrameRate, FrameSource, HashDetectorConfig,
-    HistogramDetectorConfig, MinSceneLenPolicy, NoopStatsSink, ThresholdDetectorConfig, Timecode,
+    detect_boundary_review_streaming, detect_scenes_streaming, write_boundary_review_csv,
+    write_boundary_review_json, write_scene_events_ndjson, write_scene_list_csv,
+    write_scene_list_json, AdaptiveDetectorConfig, BoundaryReviewOptions, ContentDetectorConfig,
+    ContentWeights, CsvStatsSink, DetectionOptions, DetectorConfig, FrameRate, FrameSource,
+    HashDetectorConfig, HistogramDetectorConfig, MinSceneLenPolicy, NoopStatsSink,
+    ThresholdDetectorConfig, Timecode,
 };
 use scenedetect_ffmpeg::FfmpegFrameSource;
 
@@ -137,6 +139,7 @@ struct HashArgs {
 #[derive(Debug, Subcommand)]
 enum OutputCommand {
     ListScenes(ListScenesArgs),
+    ListBoundaries(ListBoundariesArgs),
 }
 
 #[derive(Debug, Args)]
@@ -155,11 +158,33 @@ struct ListScenesArgs {
     skip_cuts: bool,
 }
 
+#[derive(Debug, Args)]
+struct ListBoundariesArgs {
+    #[arg(short = 'o', long = "output")]
+    output: Option<PathBuf>,
+    #[arg(short = 'f', long = "filename")]
+    filename: Option<String>,
+    #[arg(long = "format", default_value = "csv")]
+    format: BoundaryReviewFormat,
+    #[arg(long = "review-threshold")]
+    review_threshold: Option<f64>,
+    #[arg(short = 'n', long = "no-output-file")]
+    no_output_file: bool,
+    #[arg(short = 'q', long = "quiet")]
+    quiet: bool,
+}
+
 #[derive(Debug, Clone, ValueEnum)]
 enum SceneListFormat {
     Csv,
     Json,
     Ndjson,
+}
+
+#[derive(Debug, Clone, ValueEnum)]
+enum BoundaryReviewFormat {
+    Csv,
+    Json,
 }
 
 fn main() -> Result<()> {
@@ -186,37 +211,92 @@ fn main() -> Result<()> {
     };
 
     let detector = detector_config(&cli.detector);
-    let list_scenes = list_scenes_args(&cli.detector);
-    let scene_list = if let Some(stats_path) = cli.stats.as_ref() {
-        if let Some(parent) = stats_path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        let file = File::create(stats_path)
-            .with_context(|| format!("failed to create stats file {}", stats_path.display()))?;
-        let mut stats_sink = CsvStatsSink::new(file);
-        detect_scenes_streaming(detector, source, options, &mut stats_sink)?
-    } else {
-        let mut stats_sink = NoopStatsSink;
-        detect_scenes_streaming(detector, source, options, &mut stats_sink)?
-    };
+    match output_command(&cli.detector) {
+        OutputCommand::ListScenes(args) => {
+            let scene_list = if let Some(stats_path) = cli.stats.as_ref() {
+                if let Some(parent) = stats_path.parent() {
+                    fs::create_dir_all(parent)?;
+                }
+                let file = File::create(stats_path).with_context(|| {
+                    format!("failed to create stats file {}", stats_path.display())
+                })?;
+                let mut stats_sink = CsvStatsSink::new(file);
+                detect_scenes_streaming(detector, source, options, &mut stats_sink)?
+            } else {
+                let mut stats_sink = NoopStatsSink;
+                detect_scenes_streaming(detector, source, options, &mut stats_sink)?
+            };
 
-    if !list_scenes.no_output_file {
-        let output_dir = list_scenes
-            .output
-            .as_ref()
-            .or(cli.output.as_ref())
-            .cloned()
-            .unwrap_or_else(|| PathBuf::from("."));
-        fs::create_dir_all(&output_dir)?;
-        let output_path = output_dir.join(scene_list_filename(list_scenes));
-        let file = File::create(&output_path)
-            .with_context(|| format!("failed to create scene list {}", output_path.display()))?;
-        write_scene_list(&scene_list, file, &list_scenes.format)?;
-        if !cli.quiet && !list_scenes.quiet {
-            println!("{}", output_path.display());
+            if !args.no_output_file {
+                let output_dir = args
+                    .output
+                    .as_ref()
+                    .or(cli.output.as_ref())
+                    .cloned()
+                    .unwrap_or_else(|| PathBuf::from("."));
+                fs::create_dir_all(&output_dir)?;
+                let output_path = output_dir.join(scene_list_filename(args));
+                let file = File::create(&output_path).with_context(|| {
+                    format!("failed to create scene list {}", output_path.display())
+                })?;
+                write_scene_list(&scene_list, file, &args.format)?;
+                if !cli.quiet && !args.quiet {
+                    println!("{}", output_path.display());
+                }
+            } else if !cli.quiet && !args.quiet {
+                write_scene_list(&scene_list, std::io::stdout(), &args.format)?;
+            }
         }
-    } else if !cli.quiet && !list_scenes.quiet {
-        write_scene_list(&scene_list, std::io::stdout(), &list_scenes.format)?;
+        OutputCommand::ListBoundaries(args) => {
+            let review_options = BoundaryReviewOptions {
+                review_threshold: args.review_threshold,
+            };
+            let review = if let Some(stats_path) = cli.stats.as_ref() {
+                if let Some(parent) = stats_path.parent() {
+                    fs::create_dir_all(parent)?;
+                }
+                let file = File::create(stats_path).with_context(|| {
+                    format!("failed to create stats file {}", stats_path.display())
+                })?;
+                let mut stats_sink = CsvStatsSink::new(file);
+                detect_boundary_review_streaming(
+                    detector,
+                    source,
+                    options,
+                    review_options,
+                    &mut stats_sink,
+                )?
+            } else {
+                let mut stats_sink = NoopStatsSink;
+                detect_boundary_review_streaming(
+                    detector,
+                    source,
+                    options,
+                    review_options,
+                    &mut stats_sink,
+                )?
+            };
+
+            if !args.no_output_file {
+                let output_dir = args
+                    .output
+                    .as_ref()
+                    .or(cli.output.as_ref())
+                    .cloned()
+                    .unwrap_or_else(|| PathBuf::from("."));
+                fs::create_dir_all(&output_dir)?;
+                let output_path = output_dir.join(boundary_review_filename(args));
+                let file = File::create(&output_path).with_context(|| {
+                    format!("failed to create boundary review {}", output_path.display())
+                })?;
+                write_boundary_review(&review, file, &args.format)?;
+                if !cli.quiet && !args.quiet {
+                    println!("{}", output_path.display());
+                }
+            } else if !cli.quiet && !args.quiet {
+                write_boundary_review(&review, std::io::stdout(), &args.format)?;
+            }
+        }
     }
 
     Ok(())
@@ -230,6 +310,13 @@ fn scene_list_filename(args: &ListScenesArgs) -> &str {
     })
 }
 
+fn boundary_review_filename(args: &ListBoundariesArgs) -> &str {
+    args.filename.as_deref().unwrap_or(match &args.format {
+        BoundaryReviewFormat::Csv => "boundaries.csv",
+        BoundaryReviewFormat::Json => "boundaries.json",
+    })
+}
+
 fn write_scene_list<W: std::io::Write>(
     scene_list: &scenedetect_core::SceneList,
     writer: W,
@@ -239,6 +326,18 @@ fn write_scene_list<W: std::io::Write>(
         SceneListFormat::Csv => write_scene_list_csv(scene_list, writer),
         SceneListFormat::Json => write_scene_list_json(scene_list, writer),
         SceneListFormat::Ndjson => write_scene_events_ndjson(scene_list, writer),
+    }?;
+    Ok(())
+}
+
+fn write_boundary_review<W: std::io::Write>(
+    review: &scenedetect_core::BoundaryReview,
+    writer: W,
+    format: &BoundaryReviewFormat,
+) -> Result<()> {
+    match format {
+        BoundaryReviewFormat::Csv => write_boundary_review_csv(review, writer),
+        BoundaryReviewFormat::Json => write_boundary_review_json(review, writer),
     }?;
     Ok(())
 }
@@ -301,23 +400,13 @@ fn detector_min_scene_len(command: &DetectorCommand) -> Option<String> {
     }
 }
 
-fn list_scenes_args(command: &DetectorCommand) -> &ListScenesArgs {
+fn output_command(command: &DetectorCommand) -> &OutputCommand {
     match command {
-        DetectorCommand::Content(args) => match &args.output {
-            OutputCommand::ListScenes(args) => args,
-        },
-        DetectorCommand::Adaptive(args) => match &args.output {
-            OutputCommand::ListScenes(args) => args,
-        },
-        DetectorCommand::Threshold(args) => match &args.output {
-            OutputCommand::ListScenes(args) => args,
-        },
-        DetectorCommand::Histogram(args) => match &args.output {
-            OutputCommand::ListScenes(args) => args,
-        },
-        DetectorCommand::Hash(args) => match &args.output {
-            OutputCommand::ListScenes(args) => args,
-        },
+        DetectorCommand::Content(args) => &args.output,
+        DetectorCommand::Adaptive(args) => &args.output,
+        DetectorCommand::Threshold(args) => &args.output,
+        DetectorCommand::Histogram(args) => &args.output,
+        DetectorCommand::Hash(args) => &args.output,
     }
 }
 

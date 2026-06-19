@@ -12,6 +12,8 @@ pub type Result<T> = std::result::Result<T, SceneDetectError>;
 pub enum SceneDetectError {
     #[error("invalid timecode: {0}")]
     InvalidTimecode(String),
+    #[error("boundary review is not supported for {0}")]
+    UnsupportedBoundaryReview(String),
     #[error("frame source error: {0}")]
     FrameSource(String),
     #[error("csv error: {0}")]
@@ -177,6 +179,61 @@ pub struct StatsRow {
 pub struct DetectionResult {
     pub scene_list: SceneList,
     pub stats: DetectionStats,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct BoundaryReviewOptions {
+    pub review_threshold: Option<f64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BoundaryReview {
+    pub frame_rate: FrameRate,
+    pub detector: String,
+    pub score_metric: String,
+    pub detector_threshold: f64,
+    pub review_threshold: f64,
+    pub scene_list: SceneList,
+    pub candidates: Vec<BoundaryCandidateReview>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BoundaryCandidateReview {
+    pub candidate_number: usize,
+    pub status: BoundaryCandidateStatus,
+    pub frame: FrameIndex,
+    pub score_metric: String,
+    pub score: f64,
+    pub detector_threshold: f64,
+    pub review_threshold: f64,
+    pub threshold_distance: f64,
+    pub metrics: BTreeMap<String, f64>,
+    pub before: ReviewSceneContext,
+    pub after: ReviewSceneContext,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BoundaryCandidateStatus {
+    Accepted,
+    SuppressedMinSceneLen,
+    NearMiss,
+}
+
+impl BoundaryCandidateStatus {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Accepted => "accepted",
+            Self::SuppressedMinSceneLen => "suppressed_min_scene_len",
+            Self::NearMiss => "near_miss",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ReviewSceneContext {
+    pub start: FrameIndex,
+    pub end: FrameIndex,
 }
 
 pub trait DetectionStatsSink {
@@ -459,6 +516,48 @@ where
     ))
 }
 
+pub fn detect_boundary_review_streaming<D, S, T>(
+    detector: D,
+    mut source: S,
+    options: DetectionOptions,
+    review_options: BoundaryReviewOptions,
+    stats_sink: &mut T,
+) -> Result<BoundaryReview>
+where
+    D: Detector,
+    S: FrameSource,
+    T: DetectionStatsSink,
+{
+    let frame_rate = source.frame_rate();
+    match detector.config() {
+        DetectorConfig::Content(config) => detect_content_boundary_review_streaming(
+            &mut source,
+            frame_rate,
+            config,
+            options,
+            review_options,
+            stats_sink,
+        ),
+        DetectorConfig::Adaptive(config) => detect_adaptive_boundary_review_streaming(
+            &mut source,
+            frame_rate,
+            config,
+            options,
+            review_options,
+            stats_sink,
+        ),
+        DetectorConfig::Threshold(_) => Err(SceneDetectError::UnsupportedBoundaryReview(
+            "detect-threshold".to_owned(),
+        )),
+        DetectorConfig::Histogram(_) => Err(SceneDetectError::UnsupportedBoundaryReview(
+            "detect-hist".to_owned(),
+        )),
+        DetectorConfig::Hash(_) => Err(SceneDetectError::UnsupportedBoundaryReview(
+            "detect-hash".to_owned(),
+        )),
+    }
+}
+
 #[derive(Debug)]
 struct CollectingStatsSink {
     stats: DetectionStats,
@@ -511,6 +610,123 @@ impl FrameSource for SliceFrameSource<'_> {
     fn next_frame(&mut self) -> Result<Option<Frame>> {
         Ok(self.frames.next().cloned())
     }
+}
+
+#[derive(Debug, Clone)]
+struct BoundaryCandidateSeed {
+    status: BoundaryCandidateStatus,
+    frame: FrameIndex,
+    score_metric: String,
+    score: f64,
+    detector_threshold: f64,
+    review_threshold: f64,
+    metrics: BTreeMap<String, f64>,
+}
+
+impl BoundaryCandidateSeed {
+    fn into_review(
+        self,
+        candidate_number: usize,
+        scene_list: &SceneList,
+    ) -> BoundaryCandidateReview {
+        let (before, after) = review_context(scene_list, self.frame);
+        BoundaryCandidateReview {
+            candidate_number,
+            status: self.status,
+            frame: self.frame,
+            score_metric: self.score_metric,
+            score: self.score,
+            detector_threshold: self.detector_threshold,
+            review_threshold: self.review_threshold,
+            threshold_distance: (self.score - self.detector_threshold).abs(),
+            metrics: self.metrics,
+            before,
+            after,
+        }
+    }
+}
+
+fn detect_content_boundary_review_streaming<S, T>(
+    source: &mut S,
+    frame_rate: FrameRate,
+    config: ContentDetectorConfig,
+    options: DetectionOptions,
+    review_options: BoundaryReviewOptions,
+    stats_sink: &mut T,
+) -> Result<BoundaryReview>
+where
+    S: FrameSource,
+    T: DetectionStatsSink,
+{
+    let metric_names = vec!["content_val".to_owned()];
+    stats_sink.start(&metric_names)?;
+
+    let review_threshold = review_options
+        .review_threshold
+        .unwrap_or(config.threshold * 0.8);
+    let mut boundaries = Vec::new();
+    let mut candidate_seeds = Vec::new();
+    let mut last_candidate_boundary = 0;
+    let mut previous = None;
+    let mut total_frames = 0_u64;
+
+    while let Some(frame) = source.next_frame()? {
+        let content_val = match previous.as_ref() {
+            Some(previous) => content_score(previous, &frame, &config.weights, config.luma_only),
+            None => 0.0,
+        };
+
+        let mut metrics = BTreeMap::new();
+        metrics.insert("content_val".to_owned(), content_val);
+        stats_sink.row(StatsRow {
+            frame: frame.index,
+            metrics: metrics.clone(),
+        })?;
+
+        let frame_number = frame.index.0;
+        if content_val >= review_threshold {
+            let status = if content_val >= config.threshold {
+                let status = if frame_number.saturating_sub(last_candidate_boundary)
+                    >= options.min_scene_len
+                {
+                    boundaries.push(SceneBoundary { frame: frame.index });
+                    BoundaryCandidateStatus::Accepted
+                } else {
+                    BoundaryCandidateStatus::SuppressedMinSceneLen
+                };
+                last_candidate_boundary = frame_number;
+                status
+            } else {
+                BoundaryCandidateStatus::NearMiss
+            };
+
+            candidate_seeds.push(BoundaryCandidateSeed {
+                status,
+                frame: frame.index,
+                score_metric: "content_val".to_owned(),
+                score: content_val,
+                detector_threshold: config.threshold,
+                review_threshold,
+                metrics,
+            });
+        }
+
+        previous = Some(frame);
+        total_frames += 1;
+    }
+
+    stats_sink.finish()?;
+    Ok(build_boundary_review(
+        frame_rate,
+        "content",
+        "content_val",
+        config.threshold,
+        review_threshold,
+        total_frames,
+        boundaries,
+        options,
+        candidate_seeds,
+    ))
 }
 
 fn detect_content_streaming<S, T>(
@@ -622,6 +838,88 @@ where
     Ok((boundaries, total_frames as u64))
 }
 
+fn detect_adaptive_boundary_review_streaming<S, T>(
+    source: &mut S,
+    frame_rate: FrameRate,
+    config: AdaptiveDetectorConfig,
+    options: DetectionOptions,
+    review_options: BoundaryReviewOptions,
+    stats_sink: &mut T,
+) -> Result<BoundaryReview>
+where
+    S: FrameSource,
+    T: DetectionStatsSink,
+{
+    let metric_names = vec!["adaptive_ratio".to_owned(), "content_val".to_owned()];
+    stats_sink.start(&metric_names)?;
+
+    let review_threshold = review_options
+        .review_threshold
+        .unwrap_or(config.threshold * 0.8);
+    let mut boundaries = Vec::new();
+    let mut candidate_seeds = Vec::new();
+    let mut last_boundary = 0;
+    let mut previous = None;
+    let mut samples = VecDeque::new();
+    let mut total_frames = 0_usize;
+    let mut next_emit = 0_usize;
+
+    while let Some(frame) = source.next_frame()? {
+        let content_val = match previous.as_ref() {
+            Some(previous) => content_score(previous, &frame, &config.weights, config.luma_only),
+            None => 0.0,
+        };
+        samples.push_back(AdaptiveSample {
+            position: total_frames,
+            frame: frame.index,
+            content_val,
+        });
+        previous = Some(frame);
+        total_frames += 1;
+
+        emit_ready_adaptive_review_rows(
+            &mut samples,
+            &mut next_emit,
+            total_frames,
+            None,
+            &config,
+            options.min_scene_len,
+            review_threshold,
+            &mut last_boundary,
+            &mut boundaries,
+            &mut candidate_seeds,
+            stats_sink,
+        )?;
+    }
+
+    emit_ready_adaptive_review_rows(
+        &mut samples,
+        &mut next_emit,
+        total_frames,
+        Some(total_frames),
+        &config,
+        options.min_scene_len,
+        review_threshold,
+        &mut last_boundary,
+        &mut boundaries,
+        &mut candidate_seeds,
+        stats_sink,
+    )?;
+
+    stats_sink.finish()?;
+    Ok(build_boundary_review(
+        frame_rate,
+        "adaptive",
+        "adaptive_ratio",
+        config.threshold,
+        review_threshold,
+        total_frames as u64,
+        boundaries,
+        options,
+        candidate_seeds,
+    ))
+}
+
 #[derive(Debug, Clone)]
 struct AdaptiveSample {
     position: usize,
@@ -685,6 +983,89 @@ where
                 frame: sample.frame,
             });
             *last_boundary = frame_number;
+        }
+
+        *next_emit += 1;
+        discard_unneeded_adaptive_samples(samples, *next_emit, window);
+    }
+
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn emit_ready_adaptive_review_rows<T>(
+    samples: &mut VecDeque<AdaptiveSample>,
+    next_emit: &mut usize,
+    total_seen: usize,
+    total_frames: Option<usize>,
+    config: &AdaptiveDetectorConfig,
+    min_scene_len: u64,
+    review_threshold: f64,
+    last_boundary: &mut u64,
+    boundaries: &mut Vec<SceneBoundary>,
+    candidate_seeds: &mut Vec<BoundaryCandidateSeed>,
+    stats_sink: &mut T,
+) -> Result<()>
+where
+    T: DetectionStatsSink,
+{
+    loop {
+        if *next_emit >= total_seen {
+            break;
+        }
+
+        let window = config.frame_window;
+        let ratio_is_ready = match total_frames {
+            Some(total_frames) => *next_emit >= window && *next_emit + window < total_frames,
+            None => *next_emit >= window && *next_emit + window < total_seen,
+        };
+        let edge_ratio_is_known = *next_emit < window
+            || total_frames.is_some_and(|total_frames| *next_emit + window >= total_frames);
+
+        if !ratio_is_ready && !edge_ratio_is_known {
+            break;
+        }
+
+        let sample = sample_at(samples, *next_emit).clone();
+        let adaptive_ratio = if ratio_is_ready {
+            adaptive_ratio(samples, *next_emit, window)
+        } else {
+            0.0
+        };
+
+        let mut metrics = BTreeMap::new();
+        metrics.insert("content_val".to_owned(), sample.content_val);
+        metrics.insert("adaptive_ratio".to_owned(), adaptive_ratio);
+        stats_sink.row(StatsRow {
+            frame: sample.frame,
+            metrics: metrics.clone(),
+        })?;
+
+        let frame_number = sample.frame.0;
+        if sample.content_val >= config.min_content_val && adaptive_ratio >= review_threshold {
+            let status = if adaptive_ratio >= config.threshold {
+                if frame_number.saturating_sub(*last_boundary) >= min_scene_len {
+                    boundaries.push(SceneBoundary {
+                        frame: sample.frame,
+                    });
+                    *last_boundary = frame_number;
+                    BoundaryCandidateStatus::Accepted
+                } else {
+                    BoundaryCandidateStatus::SuppressedMinSceneLen
+                }
+            } else {
+                BoundaryCandidateStatus::NearMiss
+            };
+
+            candidate_seeds.push(BoundaryCandidateSeed {
+                status,
+                frame: sample.frame,
+                score_metric: "adaptive_ratio".to_owned(),
+                score: adaptive_ratio,
+                detector_threshold: config.threshold,
+                review_threshold,
+                metrics,
+            });
         }
 
         *next_emit += 1;
@@ -1174,6 +1555,97 @@ fn build_scene_list(
     SceneList { frame_rate, scenes }
 }
 
+#[allow(clippy::too_many_arguments)]
+fn build_boundary_review(
+    frame_rate: FrameRate,
+    detector: &str,
+    score_metric: &str,
+    detector_threshold: f64,
+    review_threshold: f64,
+    total_frames: u64,
+    boundaries: Vec<SceneBoundary>,
+    options: DetectionOptions,
+    candidate_seeds: Vec<BoundaryCandidateSeed>,
+) -> BoundaryReview {
+    let scene_list = build_scene_list(frame_rate, total_frames, boundaries, options);
+    let mut candidates: Vec<_> = candidate_seeds
+        .into_iter()
+        .enumerate()
+        .map(|(idx, candidate)| candidate.into_review(idx + 1, &scene_list))
+        .collect();
+    candidates.sort_by(|left, right| {
+        left.threshold_distance
+            .partial_cmp(&right.threshold_distance)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| left.frame.cmp(&right.frame))
+    });
+
+    BoundaryReview {
+        frame_rate,
+        detector: detector.to_owned(),
+        score_metric: score_metric.to_owned(),
+        detector_threshold,
+        review_threshold,
+        scene_list,
+        candidates,
+    }
+}
+
+fn review_context(
+    scene_list: &SceneList,
+    frame: FrameIndex,
+) -> (ReviewSceneContext, ReviewSceneContext) {
+    if scene_list.scenes.is_empty() {
+        return (
+            ReviewSceneContext {
+                start: FrameIndex(0),
+                end: FrameIndex(0),
+            },
+            ReviewSceneContext {
+                start: FrameIndex(0),
+                end: FrameIndex(0),
+            },
+        );
+    }
+
+    if let Some(index) = scene_list
+        .scenes
+        .iter()
+        .position(|scene| scene.start == frame && frame.0 > 0)
+    {
+        let before = scene_list.scenes[index - 1].clone();
+        let after = scene_list.scenes[index].clone();
+        return (
+            ReviewSceneContext {
+                start: before.start,
+                end: before.end,
+            },
+            ReviewSceneContext {
+                start: after.start,
+                end: after.end,
+            },
+        );
+    }
+
+    let containing = scene_list
+        .scenes
+        .iter()
+        .find(|scene| frame.0 >= scene.start.0 && frame.0 < scene.end.0)
+        .or_else(|| scene_list.scenes.last())
+        .expect("non-empty scene list has a last scene");
+
+    (
+        ReviewSceneContext {
+            start: containing.start,
+            end: frame,
+        },
+        ReviewSceneContext {
+            start: frame,
+            end: containing.end,
+        },
+    )
+}
+
 pub fn write_scene_list_csv<W: Write>(scene_list: &SceneList, writer: W) -> Result<()> {
     let mut csv = csv::WriterBuilder::new().flexible(true).from_writer(writer);
     let mut timecode_list = vec!["Timecode List:".to_owned()];
@@ -1267,6 +1739,93 @@ pub fn write_scene_events_ndjson<W: Write>(scene_list: &SceneList, mut writer: W
     Ok(())
 }
 
+pub fn write_boundary_review_csv<W: Write>(review: &BoundaryReview, writer: W) -> Result<()> {
+    let mut csv = csv::Writer::from_writer(writer);
+    let mut header = vec![
+        "Rank".to_owned(),
+        "Status".to_owned(),
+        "Boundary Candidate Number".to_owned(),
+        "Boundary Frame".to_owned(),
+        "Boundary Frame Index".to_owned(),
+        "Boundary Timecode".to_owned(),
+        "Boundary Seconds".to_owned(),
+        "Score Metric".to_owned(),
+        "Boundary Score".to_owned(),
+        "Detector Threshold".to_owned(),
+        "Review Threshold".to_owned(),
+        "Threshold Distance".to_owned(),
+        "Before Start Frame".to_owned(),
+        "Before End Frame".to_owned(),
+        "After Start Frame".to_owned(),
+        "After End Frame".to_owned(),
+    ];
+    header.extend(review_metric_names(review));
+    csv.write_record(header)?;
+
+    for (rank, candidate) in review.candidates.iter().enumerate() {
+        let mut record = vec![
+            (rank + 1).to_string(),
+            candidate.status.as_str().to_owned(),
+            candidate.candidate_number.to_string(),
+            (candidate.frame.0 + 1).to_string(),
+            candidate.frame.0.to_string(),
+            Timecode::from_frames(candidate.frame.0).display_at_rate(review.frame_rate),
+            seconds_at_rate(candidate.frame.0, review.frame_rate),
+            candidate.score_metric.clone(),
+            format!("{:.6}", candidate.score),
+            format!("{:.6}", candidate.detector_threshold),
+            format!("{:.6}", candidate.review_threshold),
+            format!("{:.6}", candidate.threshold_distance),
+            review_start_frame(candidate.before.start),
+            candidate.before.end.0.to_string(),
+            review_start_frame(candidate.after.start),
+            candidate.after.end.0.to_string(),
+        ];
+        for metric in review_metric_names(review) {
+            record.push(format!(
+                "{:.6}",
+                candidate.metrics.get(&metric).copied().unwrap_or(0.0)
+            ));
+        }
+        csv.write_record(record)?;
+    }
+
+    csv.flush()?;
+    Ok(())
+}
+
+pub fn write_boundary_review_json<W: Write>(review: &BoundaryReview, writer: W) -> Result<()> {
+    let output = BoundaryReviewExport {
+        frame_rate: review.frame_rate.0,
+        detector: review.detector.clone(),
+        sort: "threshold_distance",
+        score_metric: review.score_metric.clone(),
+        detector_threshold: review.detector_threshold,
+        review_threshold: review.review_threshold,
+        candidate_count: review.candidates.len(),
+        boundary_candidates: boundary_candidate_exports(review),
+    };
+    serde_json::to_writer_pretty(writer, &output)?;
+    Ok(())
+}
+
+fn review_metric_names(review: &BoundaryReview) -> Vec<String> {
+    review
+        .candidates
+        .iter()
+        .flat_map(|candidate| candidate.metrics.keys().cloned())
+        .fold(Vec::new(), |mut names, name| {
+            if !names.contains(&name) {
+                names.push(name);
+            }
+            names
+        })
+}
+
+fn review_start_frame(frame: FrameIndex) -> String {
+    (frame.0 + 1).to_string()
+}
+
 #[derive(Debug, Serialize)]
 struct SceneListExport {
     frame_rate: f64,
@@ -1295,6 +1854,43 @@ struct SceneExport {
     length_seconds: f64,
 }
 
+#[derive(Debug, Serialize)]
+struct BoundaryReviewExport {
+    frame_rate: f64,
+    detector: String,
+    sort: &'static str,
+    score_metric: String,
+    detector_threshold: f64,
+    review_threshold: f64,
+    candidate_count: usize,
+    boundary_candidates: Vec<BoundaryCandidateExport>,
+}
+
+#[derive(Debug, Serialize)]
+struct BoundaryCandidateExport {
+    rank: usize,
+    status: BoundaryCandidateStatus,
+    boundary_candidate_number: usize,
+    boundary_frame: u64,
+    boundary_frame_index: u64,
+    boundary_timecode: String,
+    boundary_seconds: f64,
+    score_metric: String,
+    boundary_score: f64,
+    detector_threshold: f64,
+    review_threshold: f64,
+    threshold_distance: f64,
+    before: ReviewSceneContextExport,
+    after: ReviewSceneContextExport,
+    metrics: BTreeMap<String, f64>,
+}
+
+#[derive(Debug, Serialize)]
+struct ReviewSceneContextExport {
+    start_frame: u64,
+    end_frame: u64,
+}
+
 fn scene_exports(scene_list: &SceneList) -> Vec<SceneExport> {
     scene_list
         .scenes
@@ -1317,6 +1913,38 @@ fn scene_exports(scene_list: &SceneList) -> Vec<SceneExport> {
                     .display_at_rate(scene_list.frame_rate),
                 length_seconds: seconds_value_at_rate(length, scene_list.frame_rate),
             }
+        })
+        .collect()
+}
+
+fn boundary_candidate_exports(review: &BoundaryReview) -> Vec<BoundaryCandidateExport> {
+    review
+        .candidates
+        .iter()
+        .enumerate()
+        .map(|(idx, candidate)| BoundaryCandidateExport {
+            rank: idx + 1,
+            status: candidate.status,
+            boundary_candidate_number: candidate.candidate_number,
+            boundary_frame: candidate.frame.0 + 1,
+            boundary_frame_index: candidate.frame.0,
+            boundary_timecode: Timecode::from_frames(candidate.frame.0)
+                .display_at_rate(review.frame_rate),
+            boundary_seconds: seconds_value_at_rate(candidate.frame.0, review.frame_rate),
+            score_metric: candidate.score_metric.clone(),
+            boundary_score: candidate.score,
+            detector_threshold: candidate.detector_threshold,
+            review_threshold: candidate.review_threshold,
+            threshold_distance: candidate.threshold_distance,
+            before: ReviewSceneContextExport {
+                start_frame: candidate.before.start.0 + 1,
+                end_frame: candidate.before.end.0,
+            },
+            after: ReviewSceneContextExport {
+                start_frame: candidate.after.start.0 + 1,
+                end_frame: candidate.after.end.0,
+            },
+            metrics: candidate.metrics.clone(),
         })
         .collect()
 }
@@ -1767,6 +2395,167 @@ mod tests {
                 start: FrameIndex(0),
                 end: FrameIndex(4)
             }]
+        );
+    }
+
+    #[test]
+    fn content_boundary_review_classifies_candidates_without_changing_scene_list() {
+        let frames = frames(&[[0, 0, 0], [50, 50, 50], [200, 200, 200], [50, 50, 50]]);
+        let mut stats_sink = NoopStatsSink;
+        let review = detect_boundary_review_streaming(
+            DetectorConfig::Content(ContentDetectorConfig {
+                threshold: 100.0,
+                ..Default::default()
+            }),
+            VecFrameSource::new(frames),
+            DetectionOptions {
+                min_scene_len: 2,
+                ..Default::default()
+            },
+            BoundaryReviewOptions {
+                review_threshold: Some(50.0),
+            },
+            &mut stats_sink,
+        )
+        .unwrap();
+
+        assert_eq!(
+            review
+                .candidates
+                .iter()
+                .map(|candidate| candidate.status)
+                .collect::<Vec<_>>(),
+            vec![
+                BoundaryCandidateStatus::NearMiss,
+                BoundaryCandidateStatus::Accepted,
+                BoundaryCandidateStatus::SuppressedMinSceneLen,
+            ]
+        );
+        assert_eq!(
+            review.scene_list.scenes,
+            vec![
+                SceneSpan {
+                    start: FrameIndex(0),
+                    end: FrameIndex(2)
+                },
+                SceneSpan {
+                    start: FrameIndex(2),
+                    end: FrameIndex(4)
+                }
+            ]
+        );
+    }
+
+    #[test]
+    fn content_boundary_review_defaults_to_eighty_percent_of_detector_threshold() {
+        let frames = frames(&[[0, 0, 0], [70, 70, 70], [200, 200, 200]]);
+        let mut stats_sink = NoopStatsSink;
+        let review = detect_boundary_review_streaming(
+            DetectorConfig::Content(ContentDetectorConfig {
+                threshold: 100.0,
+                ..Default::default()
+            }),
+            VecFrameSource::new(frames),
+            DetectionOptions {
+                min_scene_len: 1,
+                ..Default::default()
+            },
+            BoundaryReviewOptions::default(),
+            &mut stats_sink,
+        )
+        .unwrap();
+
+        assert_eq!(review.review_threshold, 80.0);
+        assert_eq!(review.candidates.len(), 1);
+        assert_eq!(review.candidates[0].frame, FrameIndex(2));
+    }
+
+    #[test]
+    fn boundary_review_sorts_candidates_by_distance_to_detector_threshold() {
+        let frames = frames(&[[0, 0, 0], [80, 80, 80], [190, 190, 190], [90, 90, 90]]);
+        let mut stats_sink = NoopStatsSink;
+        let review = detect_boundary_review_streaming(
+            DetectorConfig::Content(ContentDetectorConfig {
+                threshold: 100.0,
+                ..Default::default()
+            }),
+            VecFrameSource::new(frames),
+            DetectionOptions {
+                min_scene_len: 1,
+                ..Default::default()
+            },
+            BoundaryReviewOptions {
+                review_threshold: Some(0.0),
+            },
+            &mut stats_sink,
+        )
+        .unwrap();
+
+        assert_eq!(
+            review
+                .candidates
+                .iter()
+                .map(|candidate| candidate.frame)
+                .collect::<Vec<_>>(),
+            vec![FrameIndex(3), FrameIndex(2), FrameIndex(1), FrameIndex(0)]
+        );
+    }
+
+    #[test]
+    fn adaptive_boundary_review_keeps_min_content_value_as_noise_floor() {
+        let frames = frames(&[
+            [0, 0, 0],
+            [1, 1, 1],
+            [100, 100, 100],
+            [101, 101, 101],
+            [102, 102, 102],
+        ]);
+
+        let mut strict_stats_sink = NoopStatsSink;
+        let strict_review = detect_boundary_review_streaming(
+            DetectorConfig::Adaptive(AdaptiveDetectorConfig {
+                threshold: 100.0,
+                min_content_val: 100.0,
+                frame_window: 1,
+                ..Default::default()
+            }),
+            VecFrameSource::new(frames.clone()),
+            DetectionOptions {
+                min_scene_len: 1,
+                ..Default::default()
+            },
+            BoundaryReviewOptions {
+                review_threshold: Some(50.0),
+            },
+            &mut strict_stats_sink,
+        )
+        .unwrap();
+
+        let mut relaxed_stats_sink = NoopStatsSink;
+        let relaxed_review = detect_boundary_review_streaming(
+            DetectorConfig::Adaptive(AdaptiveDetectorConfig {
+                threshold: 100.0,
+                min_content_val: 90.0,
+                frame_window: 1,
+                ..Default::default()
+            }),
+            VecFrameSource::new(frames),
+            DetectionOptions {
+                min_scene_len: 1,
+                ..Default::default()
+            },
+            BoundaryReviewOptions {
+                review_threshold: Some(50.0),
+            },
+            &mut relaxed_stats_sink,
+        )
+        .unwrap();
+
+        assert!(strict_review.candidates.is_empty());
+        assert_eq!(relaxed_review.candidates.len(), 1);
+        assert_eq!(
+            relaxed_review.candidates[0].status,
+            BoundaryCandidateStatus::NearMiss
         );
     }
 

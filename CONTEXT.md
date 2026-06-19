@@ -43,6 +43,15 @@ _Avoid_: Raw hamming distance
 A frame position where one scene ends and another begins.
 _Avoid_: Cut
 
+**Boundary Candidate**:
+A frame position considered during review as a possible Scene Boundary,
+including accepted, suppressed, and near-threshold positions.
+_Avoid_: Candidate, split
+
+**Boundary Score**:
+A Detector-specific numeric value used to rank Boundary Candidates for review.
+_Avoid_: Score
+
 **Scene Span**:
 A contiguous range of frames belonging to one scene.
 _Avoid_: Segment
