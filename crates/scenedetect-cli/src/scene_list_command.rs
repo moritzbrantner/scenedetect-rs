@@ -10,7 +10,7 @@ use scenedetect_ffmpeg::FfmpegFrameSource;
 
 use crate::artifacts;
 
-pub(crate) const SCENE_LIST_HTML_RENDER_KIND: &str = "scene_list_html";
+const SCENE_LIST_HTML_RENDER_KIND: &str = "scene_list_html";
 
 pub(crate) struct ExportHtmlStdoutRequest {
     pub(crate) input: PathBuf,
@@ -38,9 +38,9 @@ pub(crate) struct ExportHtmlFileRequest {
     pub(crate) frame_rate_override: Option<FrameRate>,
 }
 
-pub(crate) struct ExportHtmlFileOutput {
-    pub(crate) output_dir: PathBuf,
-    pub(crate) output_path: PathBuf,
+struct ExportHtmlFileOutput {
+    output_dir: PathBuf,
+    output_path: PathBuf,
 }
 
 pub(crate) fn run_export_html_stdout(request: ExportHtmlStdoutRequest) -> Result<()> {
@@ -61,7 +61,7 @@ pub(crate) fn run_export_html_stdout(request: ExportHtmlStdoutRequest) -> Result
     Ok(())
 }
 
-pub(crate) fn prepare_export_html_file_output(
+fn prepare_export_html_file_output(
     request: &ExportHtmlFileRequest,
 ) -> Result<ExportHtmlFileOutput> {
     let output_dir = request.output.clone().unwrap_or_else(|| PathBuf::from("."));
@@ -73,7 +73,24 @@ pub(crate) fn prepare_export_html_file_output(
     })
 }
 
-pub(crate) fn run_export_html_file_first_write(
+pub(crate) fn run_export_html_file(request: ExportHtmlFileRequest) -> Result<()> {
+    let request_key = artifacts::request_key(&request.scene_list_request)?;
+    let output = prepare_export_html_file_output(&request)?;
+    if reusable_export_html_output_exists(&request, &output, &request_key)? {
+        if !request.quiet {
+            eprintln!(
+                "reusing Scene List output: {}",
+                output.output_path.display()
+            );
+            println!("{}", output.output_path.display());
+        }
+        return Ok(());
+    }
+
+    run_export_html_file_first_write(request, output, &request_key)
+}
+
+fn run_export_html_file_first_write(
     request: ExportHtmlFileRequest,
     output: ExportHtmlFileOutput,
     request_key: &str,
@@ -114,6 +131,40 @@ pub(crate) fn run_export_html_file_first_write(
         println!("{}", output.output_path.display());
     }
     Ok(())
+}
+
+fn reusable_export_html_output_exists(
+    request: &ExportHtmlFileRequest,
+    output: &ExportHtmlFileOutput,
+    request_key: &str,
+) -> Result<bool> {
+    if !can_reuse_export_html_output(request) || !explicit_artifact_matches(request)? {
+        return Ok(false);
+    }
+
+    let manifest_path = artifacts::render_manifest_path(
+        &output.output_dir,
+        &output.output_path,
+        SCENE_LIST_HTML_RENDER_KIND,
+    )?;
+    artifacts::reusable_output_exists(
+        &manifest_path,
+        &output.output_path,
+        SCENE_LIST_HTML_RENDER_KIND,
+        request_key,
+        &request.scene_list_request,
+    )
+}
+
+fn can_reuse_export_html_output(request: &ExportHtmlFileRequest) -> bool {
+    !request.force && request.stats.is_none()
+}
+
+fn explicit_artifact_matches(request: &ExportHtmlFileRequest) -> Result<bool> {
+    let Some(path) = request.scene_list_artifact.as_deref() else {
+        return Ok(true);
+    };
+    Ok(artifacts::read_scene_list_artifact(path, &request.scene_list_request)?.is_some())
 }
 
 struct SceneListAcquisitionRequest<'a> {

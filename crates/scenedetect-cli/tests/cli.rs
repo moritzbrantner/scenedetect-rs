@@ -1,4 +1,5 @@
-use std::process::Command;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Output};
 
 use assert_cmd::prelude::*;
 use predicates::prelude::*;
@@ -133,6 +134,22 @@ fn write_hash_pattern_video(video: &std::path::Path) {
         .status()
         .unwrap()
         .success());
+}
+
+fn export_html_render_manifest(output_dir: &Path) -> PathBuf {
+    let render_dir = output_dir.join(".scenedetect-rs").join("renders");
+    let manifests = std::fs::read_dir(render_dir)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .collect::<Vec<_>>();
+    assert_eq!(manifests.len(), 1);
+    manifests[0].clone()
+}
+
+fn assert_success_without_reusable_output(output: Output) {
+    assert!(output.status.success());
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(!stderr.contains("reusing Scene List output"));
 }
 
 #[test]
@@ -537,6 +554,246 @@ fn export_html_reuses_scene_list_artifact_from_prior_list_scenes() {
     assert!(html.contains("<td>1</td>"));
     assert!(html.contains("<td>00:00:00.000</td>"));
     assert!(html.contains("<td>00:00:00.300</td>"));
+}
+
+#[test]
+fn export_html_reuses_valid_scene_list_output() {
+    if !ffmpeg_available() {
+        eprintln!("skipping CLI integration test because ffmpeg is unavailable");
+        return;
+    }
+
+    let temp = tempfile::tempdir().unwrap();
+    let video = temp.path().join("scene-change.mp4");
+    let output_dir = temp.path().join("out");
+    write_two_color_video(&video);
+
+    let mut first = Command::cargo_bin("scenedetect-rs").unwrap();
+    first
+        .arg("-i")
+        .arg(&video)
+        .arg("--output")
+        .arg(&output_dir)
+        .args([
+            "-m",
+            "1",
+            "detect-content",
+            "--threshold",
+            "20",
+            "export-html",
+        ])
+        .assert()
+        .success();
+
+    let mut second = Command::cargo_bin("scenedetect-rs").unwrap();
+    second
+        .arg("-i")
+        .arg(&video)
+        .arg("--output")
+        .arg(&output_dir)
+        .args([
+            "-m",
+            "1",
+            "detect-content",
+            "--threshold",
+            "20",
+            "export-html",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("scenes.html"))
+        .stderr(predicate::str::contains("reusing Scene List output"));
+}
+
+#[test]
+fn export_html_force_bypasses_reusable_output() {
+    if !ffmpeg_available() {
+        eprintln!("skipping CLI integration test because ffmpeg is unavailable");
+        return;
+    }
+
+    let temp = tempfile::tempdir().unwrap();
+    let video = temp.path().join("scene-change.mp4");
+    let output_dir = temp.path().join("out");
+    write_two_color_video(&video);
+
+    let mut first = Command::cargo_bin("scenedetect-rs").unwrap();
+    first
+        .arg("-i")
+        .arg(&video)
+        .arg("--output")
+        .arg(&output_dir)
+        .args([
+            "-m",
+            "1",
+            "detect-content",
+            "--threshold",
+            "20",
+            "export-html",
+        ])
+        .assert()
+        .success();
+
+    let mut second = Command::cargo_bin("scenedetect-rs").unwrap();
+    let output = second
+        .arg("-i")
+        .arg(&video)
+        .arg("--output")
+        .arg(&output_dir)
+        .arg("--force")
+        .args([
+            "-m",
+            "1",
+            "detect-content",
+            "--threshold",
+            "20",
+            "export-html",
+        ])
+        .output()
+        .unwrap();
+    assert_success_without_reusable_output(output);
+}
+
+#[test]
+fn export_html_stats_bypasses_reusable_output_and_regenerates_detection_stats() {
+    if !ffmpeg_available() {
+        eprintln!("skipping CLI integration test because ffmpeg is unavailable");
+        return;
+    }
+
+    let temp = tempfile::tempdir().unwrap();
+    let video = temp.path().join("scene-change.mp4");
+    let output_dir = temp.path().join("out");
+    let stats = temp.path().join("stats.csv");
+    write_two_color_video(&video);
+
+    let mut first = Command::cargo_bin("scenedetect-rs").unwrap();
+    first
+        .arg("-i")
+        .arg(&video)
+        .arg("--output")
+        .arg(&output_dir)
+        .args([
+            "-m",
+            "1",
+            "detect-content",
+            "--threshold",
+            "20",
+            "export-html",
+        ])
+        .assert()
+        .success();
+
+    let mut second = Command::cargo_bin("scenedetect-rs").unwrap();
+    let output = second
+        .arg("-i")
+        .arg(&video)
+        .arg("--output")
+        .arg(&output_dir)
+        .arg("--stats")
+        .arg(&stats)
+        .args([
+            "-m",
+            "1",
+            "detect-content",
+            "--threshold",
+            "20",
+            "export-html",
+        ])
+        .output()
+        .unwrap();
+    assert_success_without_reusable_output(output);
+
+    let stats = std::fs::read_to_string(stats).unwrap();
+    assert!(stats.contains("Frame Number,content_val"));
+}
+
+#[test]
+fn export_html_invalid_render_manifests_do_not_reuse_output() {
+    if !ffmpeg_available() {
+        eprintln!("skipping CLI integration test because ffmpeg is unavailable");
+        return;
+    }
+
+    let cases = [
+        "missing manifest",
+        "malformed manifest",
+        "stale output fingerprint",
+        "mismatched request key",
+    ];
+
+    for case in cases {
+        let temp = tempfile::tempdir().unwrap();
+        let video = temp.path().join("scene-change.mp4");
+        let output_dir = temp.path().join("out");
+        let output_path = output_dir.join("scenes.html");
+        write_two_color_video(&video);
+
+        let mut first = Command::cargo_bin("scenedetect-rs").unwrap();
+        first
+            .arg("-i")
+            .arg(&video)
+            .arg("--output")
+            .arg(&output_dir)
+            .args([
+                "-m",
+                "1",
+                "detect-content",
+                "--threshold",
+                "20",
+                "export-html",
+            ])
+            .assert()
+            .success();
+
+        let manifest = export_html_render_manifest(&output_dir);
+        match case {
+            "missing manifest" => {
+                std::fs::remove_file(&manifest).unwrap();
+                std::fs::write(&output_path, "stale html").unwrap();
+            }
+            "malformed manifest" => {
+                std::fs::write(&manifest, "{not-json").unwrap();
+            }
+            "stale output fingerprint" => {
+                std::fs::write(&output_path, "stale html").unwrap();
+            }
+            "mismatched request key" => {
+                let mut manifest_json: serde_json::Value =
+                    serde_json::from_str(&std::fs::read_to_string(&manifest).unwrap()).unwrap();
+                manifest_json["scene_list_request_key"] =
+                    serde_json::Value::String("mismatched-scene-list-request".to_owned());
+                std::fs::write(
+                    &manifest,
+                    serde_json::to_string_pretty(&manifest_json).unwrap(),
+                )
+                .unwrap();
+            }
+            _ => unreachable!(),
+        }
+
+        let mut second = Command::cargo_bin("scenedetect-rs").unwrap();
+        let output = second
+            .arg("-i")
+            .arg(&video)
+            .arg("--output")
+            .arg(&output_dir)
+            .args([
+                "-m",
+                "1",
+                "detect-content",
+                "--threshold",
+                "20",
+                "export-html",
+            ])
+            .output()
+            .unwrap();
+        assert_success_without_reusable_output(output);
+
+        let html = std::fs::read_to_string(output_path).unwrap();
+        assert!(html.contains("<title>Scene List</title>"), "{case}");
+        assert!(!html.contains("stale html"), "{case}");
+    }
 }
 
 #[test]

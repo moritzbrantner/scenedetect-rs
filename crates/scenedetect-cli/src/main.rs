@@ -396,7 +396,6 @@ fn handle_export_html(
     frame_rate_override: Option<FrameRate>,
 ) -> Result<()> {
     let quiet = cli.quiet || args.quiet;
-    let report_reuse = !quiet;
 
     if args.no_output_file {
         return scene_list_command::run_export_html_stdout(
@@ -414,7 +413,6 @@ fn handle_export_html(
         );
     }
 
-    let request_key = artifacts::request_key(request)?;
     let file_request = scene_list_command::ExportHtmlFileRequest {
         input: cli.input.clone(),
         detector,
@@ -428,33 +426,7 @@ fn handle_export_html(
         quiet,
         frame_rate_override,
     };
-    let output = scene_list_command::prepare_export_html_file_output(&file_request)?;
-    let manifest_path = artifacts::render_manifest_path(
-        &output.output_dir,
-        &output.output_path,
-        scene_list_command::SCENE_LIST_HTML_RENDER_KIND,
-    )?;
-    if can_reuse_scene_list(cli)
-        && explicit_artifact_matches(cli, request)?
-        && artifacts::reusable_output_exists(
-            &manifest_path,
-            &output.output_path,
-            scene_list_command::SCENE_LIST_HTML_RENDER_KIND,
-            &request_key,
-            request,
-        )?
-    {
-        if report_reuse {
-            eprintln!(
-                "reusing Scene List output: {}",
-                output.output_path.display()
-            );
-            println!("{}", output.output_path.display());
-        }
-        return Ok(());
-    }
-
-    scene_list_command::run_export_html_file_first_write(file_request, output, &request_key)
+    scene_list_command::run_export_html_file(file_request)
 }
 
 fn get_or_create_scene_list(
