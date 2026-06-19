@@ -663,6 +663,67 @@ fn explicit_scene_list_artifact_is_used_with_no_output_file() {
 }
 
 #[test]
+fn export_html_no_output_file_reuses_explicit_scene_list_artifact() {
+    if !ffmpeg_available() {
+        eprintln!("skipping CLI integration test because ffmpeg is unavailable");
+        return;
+    }
+
+    let temp = tempfile::tempdir().unwrap();
+    let video = temp.path().join("scene-change.mp4");
+    let artifact = temp.path().join("scene-list-artifact.json");
+    write_two_color_video(&video);
+
+    let mut create_artifact = Command::cargo_bin("scenedetect-rs").unwrap();
+    create_artifact
+        .current_dir(temp.path())
+        .arg("-i")
+        .arg(&video)
+        .arg("--scene-list-artifact")
+        .arg(&artifact)
+        .args([
+            "-m",
+            "1",
+            "detect-content",
+            "--threshold",
+            "20",
+            "list-scenes",
+            "--no-output-file",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "Scene Number,Start Frame,Start Timecode",
+        ));
+
+    assert!(artifact.exists());
+
+    let mut export_html = Command::cargo_bin("scenedetect-rs").unwrap();
+    export_html
+        .current_dir(temp.path())
+        .arg("-i")
+        .arg(&video)
+        .arg("--scene-list-artifact")
+        .arg(&artifact)
+        .args([
+            "-m",
+            "1",
+            "detect-content",
+            "--threshold",
+            "20",
+            "export-html",
+            "--no-output-file",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("<title>Scene List</title>"))
+        .stdout(predicate::str::contains("<td>00:00:00.000</td>"))
+        .stderr(predicate::str::contains("reusing Scene List Artifact"));
+
+    assert!(!temp.path().join(".scenedetect-rs").exists());
+}
+
+#[test]
 fn detector_min_scene_len_overrides_global_min_scene_len() {
     if !ffmpeg_available() {
         eprintln!("skipping CLI integration test because ffmpeg is unavailable");
