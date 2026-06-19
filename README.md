@@ -42,13 +42,23 @@ scenedetect-rs -i input.mp4 --output out detect-content list-scenes --format jso
 scenedetect-rs -i input.mp4 detect-content list-scenes --format json --no-output-file
 scenedetect-rs -i input.mp4 --output out detect-content list-scenes --format ndjson
 scenedetect-rs -i input.mp4 detect-content list-scenes --format ndjson --no-output-file
+scenedetect-rs -i input.mp4 --output out detect-content export-html
+scenedetect-rs -i input.mp4 --scene-list-artifact scenes.artifact.json detect-content list-scenes --no-output-file
+scenedetect-rs -i input.mp4 --output out --force detect-content list-scenes
 ```
 
 CSV remains the default `list-scenes` format and is the format used for
 PySceneDetect parity. JSON writes a complete Scene List document to
 `scenes.json` by default. NDJSON writes one Scene Span event per line to
 `scenes.ndjson` by default, or to stdout with `--no-output-file`, for downstream
-pipeline and agent workflows.
+pipeline and agent workflows. `export-html` writes a self-contained
+`scenes.html` Scene List report by default.
+
+File-writing Scene List commands create a hidden validated Scene List Artifact
+under the effective output directory and reuse matching rendered outputs by
+default. `--force` bypasses reuse and recomputes. `--scene-list-artifact` writes
+or reads the canonical Scene List Artifact at a visible path, including for
+`--no-output-file` commands.
 
 Flexible PySceneDetect command ordering, such as placing global options after
 `detect-content`, is out of initial scope and fails with clap's command-order

@@ -1739,6 +1739,52 @@ pub fn write_scene_events_ndjson<W: Write>(scene_list: &SceneList, mut writer: W
     Ok(())
 }
 
+pub fn write_scene_list_html<W: Write>(scene_list: &SceneList, mut writer: W) -> Result<()> {
+    writeln!(writer, "<!doctype html>")?;
+    writeln!(writer, "<html lang=\"en\">")?;
+    writeln!(writer, "<head>")?;
+    writeln!(writer, "<meta charset=\"utf-8\">")?;
+    writeln!(writer, "<title>Scene List</title>")?;
+    writeln!(
+        writer,
+        "<style>body{{font-family:system-ui,sans-serif;margin:2rem;line-height:1.4}}table{{border-collapse:collapse;width:100%}}th,td{{border:1px solid #d0d7de;padding:0.35rem 0.5rem;text-align:right}}th{{background:#f6f8fa}}th:first-child,td:first-child{{text-align:left}}</style>"
+    )?;
+    writeln!(writer, "</head>")?;
+    writeln!(writer, "<body>")?;
+    writeln!(writer, "<h1>Scene List</h1>")?;
+    writeln!(writer, "<p>Frame rate: {:.6}</p>", scene_list.frame_rate.0)?;
+    writeln!(writer, "<p>Scene count: {}</p>", scene_list.scenes.len())?;
+    writeln!(writer, "<table>")?;
+    writeln!(writer, "<thead>")?;
+    writeln!(
+        writer,
+        "<tr><th>Scene Number</th><th>Start Frame</th><th>Start Timecode</th><th>Start Seconds</th><th>End Frame</th><th>End Timecode</th><th>End Seconds</th><th>Length Frames</th><th>Length Timecode</th><th>Length Seconds</th></tr>"
+    )?;
+    writeln!(writer, "</thead>")?;
+    writeln!(writer, "<tbody>")?;
+    for scene in scene_exports(scene_list) {
+        writeln!(
+            writer,
+            "<tr><td>{}</td><td>{}</td><td>{}</td><td>{:.6}</td><td>{}</td><td>{}</td><td>{:.6}</td><td>{}</td><td>{}</td><td>{:.6}</td></tr>",
+            scene.scene_number,
+            scene.start_frame,
+            scene.start_timecode,
+            scene.start_seconds,
+            scene.end_frame,
+            scene.end_timecode,
+            scene.end_seconds,
+            scene.length_frames,
+            scene.length_timecode,
+            scene.length_seconds,
+        )?;
+    }
+    writeln!(writer, "</tbody>")?;
+    writeln!(writer, "</table>")?;
+    writeln!(writer, "</body>")?;
+    writeln!(writer, "</html>")?;
+    Ok(())
+}
+
 pub fn write_boundary_review_csv<W: Write>(review: &BoundaryReview, writer: W) -> Result<()> {
     let mut csv = csv::Writer::from_writer(writer);
     let mut header = vec![
@@ -3085,5 +3131,36 @@ mod tests {
         assert_eq!(events[0]["scene_number"], 1);
         assert_eq!(events[1]["start_frame"], 4);
         assert_eq!(events[1]["length_seconds"], 0.2);
+    }
+
+    #[test]
+    fn html_scene_list_output_contains_scene_spans_and_timecodes() {
+        let scene_list = SceneList {
+            frame_rate: FrameRate(10.0),
+            scenes: vec![
+                SceneSpan {
+                    start: FrameIndex(0),
+                    end: FrameIndex(3),
+                },
+                SceneSpan {
+                    start: FrameIndex(3),
+                    end: FrameIndex(5),
+                },
+            ],
+        };
+        let mut html = Vec::new();
+
+        write_scene_list_html(&scene_list, &mut html).unwrap();
+        let html = String::from_utf8(html).unwrap();
+
+        assert!(html.contains("<title>Scene List</title>"));
+        assert!(html.contains("<h1>Scene List</h1>"));
+        assert!(html.contains("<p>Frame rate: 10.000000</p>"));
+        assert!(html.contains("<p>Scene count: 2</p>"));
+        assert!(html.contains("<th>Start Timecode</th>"));
+        assert!(html.contains("<td>1</td>"));
+        assert!(html.contains("<td>00:00:00.000</td>"));
+        assert!(html.contains("<td>00:00:00.300</td>"));
+        assert!(html.contains("<td>00:00:00.500</td>"));
     }
 }

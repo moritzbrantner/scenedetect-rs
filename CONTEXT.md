@@ -59,6 +59,15 @@ _Avoid_: Segment
 **Scene List**:
 Ordered scene spans emitted by detection.
 
+**Scene List Artifact**:
+Canonical reusable representation of a Scene List plus detection provenance.
+_Avoid_: Cache file
+
+**Reusable Output**:
+A rendered output file whose manifest proves it was produced from a matching
+Scene List Artifact.
+_Avoid_: Existing file
+
 **Detection Stats**:
 Per-frame metrics used to explain or tune detection.
 _Avoid_: Metrics file

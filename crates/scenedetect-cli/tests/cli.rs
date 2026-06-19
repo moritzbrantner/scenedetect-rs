@@ -398,6 +398,271 @@ fn content_detector_writes_scene_list_to_global_output_directory() {
 }
 
 #[test]
+fn list_scenes_reuses_valid_scene_list_output() {
+    if !ffmpeg_available() {
+        eprintln!("skipping CLI integration test because ffmpeg is unavailable");
+        return;
+    }
+
+    let temp = tempfile::tempdir().unwrap();
+    let video = temp.path().join("scene-change.mp4");
+    let output_dir = temp.path().join("out");
+    write_two_color_video(&video);
+
+    let mut first = Command::cargo_bin("scenedetect-rs").unwrap();
+    first
+        .arg("-i")
+        .arg(&video)
+        .arg("--output")
+        .arg(&output_dir)
+        .args([
+            "-m",
+            "1",
+            "detect-content",
+            "--threshold",
+            "20",
+            "list-scenes",
+        ])
+        .assert()
+        .success();
+
+    let mut second = Command::cargo_bin("scenedetect-rs").unwrap();
+    second
+        .arg("-i")
+        .arg(&video)
+        .arg("--output")
+        .arg(&output_dir)
+        .args([
+            "-m",
+            "1",
+            "detect-content",
+            "--threshold",
+            "20",
+            "list-scenes",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("scenes.csv"))
+        .stderr(predicate::str::contains("reusing Scene List output"));
+}
+
+#[test]
+fn export_html_reuses_scene_list_artifact_from_prior_list_scenes() {
+    if !ffmpeg_available() {
+        eprintln!("skipping CLI integration test because ffmpeg is unavailable");
+        return;
+    }
+
+    let temp = tempfile::tempdir().unwrap();
+    let video = temp.path().join("scene-change.mp4");
+    let output_dir = temp.path().join("out");
+    write_two_color_video(&video);
+
+    let mut list_scenes = Command::cargo_bin("scenedetect-rs").unwrap();
+    list_scenes
+        .arg("-i")
+        .arg(&video)
+        .arg("--output")
+        .arg(&output_dir)
+        .args([
+            "-m",
+            "1",
+            "detect-content",
+            "--threshold",
+            "20",
+            "list-scenes",
+        ])
+        .assert()
+        .success();
+
+    let mut export_html = Command::cargo_bin("scenedetect-rs").unwrap();
+    export_html
+        .arg("-i")
+        .arg(&video)
+        .arg("--output")
+        .arg(&output_dir)
+        .args([
+            "-m",
+            "1",
+            "detect-content",
+            "--threshold",
+            "20",
+            "export-html",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("scenes.html"))
+        .stderr(predicate::str::contains("reusing Scene List Artifact"));
+
+    let html = std::fs::read_to_string(output_dir.join("scenes.html")).unwrap();
+    assert!(html.contains("<title>Scene List</title>"));
+    assert!(html.contains("<td>1</td>"));
+    assert!(html.contains("<td>00:00:00.000</td>"));
+    assert!(html.contains("<td>00:00:00.300</td>"));
+}
+
+#[test]
+fn force_recomputes_even_when_reusable_output_exists() {
+    if !ffmpeg_available() {
+        eprintln!("skipping CLI integration test because ffmpeg is unavailable");
+        return;
+    }
+
+    let temp = tempfile::tempdir().unwrap();
+    let video = temp.path().join("scene-change.mp4");
+    let output_dir = temp.path().join("out");
+    write_two_color_video(&video);
+
+    let mut first = Command::cargo_bin("scenedetect-rs").unwrap();
+    first
+        .arg("-i")
+        .arg(&video)
+        .arg("--output")
+        .arg(&output_dir)
+        .args([
+            "-m",
+            "1",
+            "detect-content",
+            "--threshold",
+            "20",
+            "list-scenes",
+        ])
+        .assert()
+        .success();
+
+    let mut second = Command::cargo_bin("scenedetect-rs").unwrap();
+    second
+        .arg("-i")
+        .arg(&video)
+        .arg("--output")
+        .arg(&output_dir)
+        .arg("--force")
+        .args([
+            "-m",
+            "1",
+            "detect-content",
+            "--threshold",
+            "20",
+            "list-scenes",
+        ])
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty());
+}
+
+#[test]
+fn stale_output_without_manifest_is_overwritten() {
+    if !ffmpeg_available() {
+        eprintln!("skipping CLI integration test because ffmpeg is unavailable");
+        return;
+    }
+
+    let temp = tempfile::tempdir().unwrap();
+    let video = temp.path().join("scene-change.mp4");
+    let output_dir = temp.path().join("out");
+    std::fs::create_dir_all(&output_dir).unwrap();
+    std::fs::write(output_dir.join("scenes.csv"), "stale scene list").unwrap();
+    write_two_color_video(&video);
+
+    let mut cmd = Command::cargo_bin("scenedetect-rs").unwrap();
+    cmd.arg("-i")
+        .arg(&video)
+        .arg("--output")
+        .arg(&output_dir)
+        .args(["detect-content", "--threshold", "20", "list-scenes"])
+        .assert()
+        .success();
+
+    let scenes = std::fs::read_to_string(output_dir.join("scenes.csv")).unwrap();
+    assert!(scenes.contains("Scene Number,Start Frame,Start Timecode"));
+    assert!(!scenes.contains("stale scene list"));
+}
+
+#[test]
+fn no_output_file_does_not_create_hidden_artifact_by_default() {
+    if !ffmpeg_available() {
+        eprintln!("skipping CLI integration test because ffmpeg is unavailable");
+        return;
+    }
+
+    let temp = tempfile::tempdir().unwrap();
+    let video = temp.path().join("scene-change.mp4");
+    write_two_color_video(&video);
+
+    let mut cmd = Command::cargo_bin("scenedetect-rs").unwrap();
+    cmd.current_dir(temp.path())
+        .arg("-i")
+        .arg(&video)
+        .args([
+            "detect-content",
+            "--threshold",
+            "20",
+            "list-scenes",
+            "--no-output-file",
+        ])
+        .assert()
+        .success();
+
+    assert!(!temp.path().join(".scenedetect-rs").exists());
+}
+
+#[test]
+fn explicit_scene_list_artifact_is_used_with_no_output_file() {
+    if !ffmpeg_available() {
+        eprintln!("skipping CLI integration test because ffmpeg is unavailable");
+        return;
+    }
+
+    let temp = tempfile::tempdir().unwrap();
+    let video = temp.path().join("scene-change.mp4");
+    let artifact = temp.path().join("scene-list-artifact.json");
+    write_two_color_video(&video);
+
+    let mut first = Command::cargo_bin("scenedetect-rs").unwrap();
+    first
+        .current_dir(temp.path())
+        .arg("-i")
+        .arg(&video)
+        .arg("--scene-list-artifact")
+        .arg(&artifact)
+        .args([
+            "detect-content",
+            "--threshold",
+            "20",
+            "list-scenes",
+            "--no-output-file",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "Scene Number,Start Frame,Start Timecode",
+        ));
+
+    assert!(artifact.exists());
+
+    let mut second = Command::cargo_bin("scenedetect-rs").unwrap();
+    second
+        .current_dir(temp.path())
+        .arg("-i")
+        .arg(&video)
+        .arg("--scene-list-artifact")
+        .arg(&artifact)
+        .args([
+            "detect-content",
+            "--threshold",
+            "20",
+            "list-scenes",
+            "--no-output-file",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "Scene Number,Start Frame,Start Timecode",
+        ))
+        .stderr(predicate::str::contains("reusing Scene List Artifact"));
+}
+
+#[test]
 fn detector_min_scene_len_overrides_global_min_scene_len() {
     if !ffmpeg_available() {
         eprintln!("skipping CLI integration test because ffmpeg is unavailable");
