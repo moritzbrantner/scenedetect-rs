@@ -12,6 +12,33 @@ min_scene_len = "1"
 tolerance_frames = 1
 
 [[cases]]
+id = "content-threshold-gray-cut-low"
+status = "required"
+video = "tests/fixtures/generated/content-threshold-gray-cut.mkv"
+detector = "detect-content"
+args = ["--threshold", "20"]
+min_scene_len = "1"
+tolerance_frames = 1
+
+[[cases]]
+id = "content-threshold-gray-cut-high"
+status = "required"
+video = "tests/fixtures/generated/content-threshold-gray-cut.mkv"
+detector = "detect-content"
+args = ["--threshold", "180"]
+min_scene_len = "1"
+tolerance_frames = 1
+
+[[cases]]
+id = "content-luma-only-hard-cut"
+status = "required"
+video = "tests/fixtures/generated/content-hard-cut.mkv"
+detector = "detect-content"
+args = ["--threshold", "100", "--luma-only"]
+min_scene_len = "1"
+tolerance_frames = 1
+
+[[cases]]
 id = "adaptive-fast-motion"
 status = "required"
 video = "tests/fixtures/generated/adaptive-fast-motion.mkv"
@@ -36,6 +63,15 @@ video = "tests/fixtures/generated/content-hard-cut.mkv"
 detector = "detect-content"
 args = ["--threshold", "20"]
 min_scene_len = "00:00:00.800"
+tolerance_frames = 1
+
+[[cases]]
+id = "content-min-scene-len-close-cuts"
+status = "required"
+video = "tests/fixtures/generated/min-scene-len-close-cuts.mkv"
+detector = "detect-content"
+args = ["--threshold", "20"]
+min_scene_len = "5"
 tolerance_frames = 1
 
 [[cases]]

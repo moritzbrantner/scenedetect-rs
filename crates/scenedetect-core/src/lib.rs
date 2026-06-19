@@ -332,7 +332,7 @@ fn detect_content(
 ) -> (Vec<SceneBoundary>, DetectionStats) {
     let mut rows = Vec::new();
     let mut boundaries = Vec::new();
-    let mut last_boundary = 0;
+    let mut last_candidate_boundary = 0;
 
     for (idx, frame) in frames.iter().enumerate() {
         let content_val = if idx == 0 {
@@ -348,11 +348,11 @@ fn detect_content(
         });
 
         let frame_number = frame.index.0;
-        if content_val >= config.threshold
-            && frame_number.saturating_sub(last_boundary) >= min_scene_len
-        {
-            boundaries.push(SceneBoundary { frame: frame.index });
-            last_boundary = frame_number;
+        if content_val >= config.threshold {
+            if frame_number.saturating_sub(last_candidate_boundary) >= min_scene_len {
+                boundaries.push(SceneBoundary { frame: frame.index });
+            }
+            last_candidate_boundary = frame_number;
         }
     }
 
@@ -840,6 +840,114 @@ mod tests {
             ]
         );
         assert_eq!(result.stats.metric_names, vec!["content_val"]);
+    }
+
+    #[test]
+    fn content_detector_min_scene_len_suppresses_close_scene_boundaries() {
+        let frames = frames(&[
+            [0, 0, 0],
+            [0, 0, 0],
+            [255, 255, 255],
+            [255, 255, 255],
+            [255, 255, 255],
+            [255, 255, 255],
+            [0, 0, 0],
+            [0, 0, 0],
+            [0, 0, 0],
+            [0, 0, 0],
+            [0, 0, 0],
+            [0, 0, 0],
+        ]);
+        let result = detect_frames(
+            DetectorConfig::Content(ContentDetectorConfig {
+                threshold: 20.0,
+                ..Default::default()
+            }),
+            FrameRate(10.0),
+            &frames,
+            DetectionOptions {
+                min_scene_len: 5,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            result.scene_list.scenes,
+            vec![SceneSpan {
+                start: FrameIndex(0),
+                end: FrameIndex(12)
+            }]
+        );
+    }
+
+    #[test]
+    fn content_detector_threshold_controls_scene_boundary_sensitivity() {
+        let frames = frames(&[[0, 0, 0], [0, 0, 0], [50, 50, 50], [50, 50, 50]]);
+
+        let lower_threshold = detect_frames(
+            DetectorConfig::Content(ContentDetectorConfig {
+                threshold: 20.0,
+                ..Default::default()
+            }),
+            FrameRate(10.0),
+            &frames,
+            DetectionOptions {
+                min_scene_len: 1,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let higher_threshold = detect_frames(
+            DetectorConfig::Content(ContentDetectorConfig {
+                threshold: 80.0,
+                ..Default::default()
+            }),
+            FrameRate(10.0),
+            &frames,
+            DetectionOptions {
+                min_scene_len: 1,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        assert_eq!(lower_threshold.scene_list.scenes[0].end, FrameIndex(2));
+        assert_eq!(
+            higher_threshold.scene_list.scenes,
+            vec![SceneSpan {
+                start: FrameIndex(0),
+                end: FrameIndex(4)
+            }]
+        );
+    }
+
+    #[test]
+    fn content_detector_luma_only_ignores_chroma_only_scene_boundary() {
+        let frames = frames(&[[255, 0, 0], [255, 0, 0], [0, 130, 0], [0, 130, 0]]);
+        let result = detect_frames(
+            DetectorConfig::Content(ContentDetectorConfig {
+                threshold: 20.0,
+                luma_only: true,
+                ..Default::default()
+            }),
+            FrameRate(10.0),
+            &frames,
+            DetectionOptions {
+                min_scene_len: 1,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            result.scene_list.scenes,
+            vec![SceneSpan {
+                start: FrameIndex(0),
+                end: FrameIndex(4)
+            }]
+        );
+        assert!(result.stats.rows[2].metrics["content_val"] < 1.0);
     }
 
     #[test]
