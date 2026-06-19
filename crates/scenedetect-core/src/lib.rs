@@ -425,7 +425,7 @@ fn detect_adaptive(
     (
         boundaries,
         DetectionStats {
-            metric_names: vec!["content_val".to_owned(), "adaptive_ratio".to_owned()],
+            metric_names: vec!["adaptive_ratio".to_owned(), "content_val".to_owned()],
             rows,
         },
     )
@@ -979,7 +979,106 @@ mod tests {
         assert_eq!(result.scene_list.scenes[0].end, FrameIndex(3));
         assert_eq!(
             result.stats.metric_names,
-            vec!["content_val", "adaptive_ratio"]
+            vec!["adaptive_ratio", "content_val"]
+        );
+    }
+
+    #[test]
+    fn adaptive_detector_options_control_scene_boundary_sensitivity() {
+        let frames = frames(&[
+            [0, 0, 0],
+            [80, 80, 80],
+            [100, 100, 100],
+            [200, 200, 200],
+            [220, 220, 220],
+            [140, 140, 140],
+            [140, 140, 140],
+        ]);
+
+        let sensitive = detect_scenes(
+            DetectorConfig::Adaptive(AdaptiveDetectorConfig {
+                threshold: 3.0,
+                min_content_val: 90.0,
+                frame_window: 1,
+                ..Default::default()
+            }),
+            VecFrameSource::new(frames.clone()),
+            DetectionOptions {
+                min_scene_len: 1,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let higher_ratio_threshold = detect_scenes(
+            DetectorConfig::Adaptive(AdaptiveDetectorConfig {
+                threshold: 6.0,
+                min_content_val: 90.0,
+                frame_window: 1,
+                ..Default::default()
+            }),
+            VecFrameSource::new(frames.clone()),
+            DetectionOptions {
+                min_scene_len: 1,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let higher_min_content_val = detect_scenes(
+            DetectorConfig::Adaptive(AdaptiveDetectorConfig {
+                threshold: 3.0,
+                min_content_val: 101.0,
+                frame_window: 1,
+                ..Default::default()
+            }),
+            VecFrameSource::new(frames.clone()),
+            DetectionOptions {
+                min_scene_len: 1,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let wider_frame_window = detect_scenes(
+            DetectorConfig::Adaptive(AdaptiveDetectorConfig {
+                threshold: 3.0,
+                min_content_val: 90.0,
+                frame_window: 2,
+                ..Default::default()
+            }),
+            VecFrameSource::new(frames),
+            DetectionOptions {
+                min_scene_len: 1,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            sensitive.scene_list.scenes,
+            vec![
+                SceneSpan {
+                    start: FrameIndex(0),
+                    end: FrameIndex(3)
+                },
+                SceneSpan {
+                    start: FrameIndex(3),
+                    end: FrameIndex(7)
+                }
+            ]
+        );
+        assert_eq!(
+            higher_ratio_threshold.scene_list.scenes,
+            vec![SceneSpan {
+                start: FrameIndex(0),
+                end: FrameIndex(7)
+            }]
+        );
+        assert_eq!(
+            higher_min_content_val.scene_list.scenes,
+            higher_ratio_threshold.scene_list.scenes
+        );
+        assert_eq!(
+            wider_frame_window.scene_list.scenes,
+            higher_ratio_threshold.scene_list.scenes
         );
     }
 
@@ -1064,7 +1163,7 @@ mod tests {
         let output = String::from_utf8(output).unwrap();
         let lines: Vec<_> = output.lines().collect();
 
-        assert_eq!(lines[0], "Frame Number,content_val,adaptive_ratio");
+        assert_eq!(lines[0], "Frame Number,adaptive_ratio,content_val");
         assert_eq!(lines.len(), frames.len() + 1);
         assert!(lines[1].starts_with("0,0.000000,0.000000"));
     }
