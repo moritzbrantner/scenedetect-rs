@@ -9,10 +9,10 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 use scenedetect_core::{
     detect_boundary_review_streaming, detect_scenes_streaming, write_boundary_review_csv,
     write_boundary_review_json, write_scene_events_ndjson, write_scene_list_csv,
-    write_scene_list_html, write_scene_list_json, AdaptiveDetectorConfig, BoundaryReviewOptions,
-    ContentDetectorConfig, ContentWeights, CsvStatsSink, DetectionOptions, DetectorConfig,
-    FrameRate, HashDetectorConfig, HistogramDetectorConfig, MinSceneLenPolicy, NoopStatsSink,
-    SceneList, ThresholdDetectorConfig, Timecode,
+    write_scene_list_json, AdaptiveDetectorConfig, BoundaryReviewOptions, ContentDetectorConfig,
+    ContentWeights, CsvStatsSink, DetectionOptions, DetectorConfig, FrameRate, HashDetectorConfig,
+    HistogramDetectorConfig, MinSceneLenPolicy, NoopStatsSink, SceneList, ThresholdDetectorConfig,
+    Timecode,
 };
 use scenedetect_ffmpeg::{probe_video, FfmpegFrameSource};
 
@@ -395,7 +395,8 @@ fn handle_export_html(
     request: &artifacts::SceneListRequest,
     frame_rate_override: Option<FrameRate>,
 ) -> Result<()> {
-    let report_reuse = !cli.quiet && !args.quiet;
+    let quiet = cli.quiet || args.quiet;
+    let report_reuse = !quiet;
 
     if args.no_output_file {
         return scene_list_command::run_export_html_stdout(
@@ -407,61 +408,53 @@ fn handle_export_html(
                 scene_list_artifact: cli.scene_list_artifact.clone(),
                 stats: cli.stats.clone(),
                 force: cli.force,
-                quiet: cli.quiet || args.quiet,
+                quiet,
                 frame_rate_override,
             },
         );
     }
 
     let request_key = artifacts::request_key(request)?;
-
-    let output_dir = export_html_output_dir(cli, args);
-    fs::create_dir_all(&output_dir)?;
-    let output_path = output_dir.join(export_html_filename(args));
-    let render_kind = "scene_list_html";
-    let manifest_path = artifacts::render_manifest_path(&output_dir, &output_path, render_kind)?;
+    let file_request = scene_list_command::ExportHtmlFileRequest {
+        input: cli.input.clone(),
+        detector,
+        options,
+        scene_list_request: request.clone(),
+        scene_list_artifact: cli.scene_list_artifact.clone(),
+        output: args.output.as_ref().or(cli.output.as_ref()).cloned(),
+        filename: args.filename.clone(),
+        stats: cli.stats.clone(),
+        force: cli.force,
+        quiet,
+        frame_rate_override,
+    };
+    let output = scene_list_command::prepare_export_html_file_output(&file_request)?;
+    let manifest_path = artifacts::render_manifest_path(
+        &output.output_dir,
+        &output.output_path,
+        scene_list_command::SCENE_LIST_HTML_RENDER_KIND,
+    )?;
     if can_reuse_scene_list(cli)
         && explicit_artifact_matches(cli, request)?
         && artifacts::reusable_output_exists(
             &manifest_path,
-            &output_path,
-            render_kind,
+            &output.output_path,
+            scene_list_command::SCENE_LIST_HTML_RENDER_KIND,
             &request_key,
             request,
         )?
     {
         if report_reuse {
-            eprintln!("reusing Scene List output: {}", output_path.display());
-            println!("{}", output_path.display());
+            eprintln!(
+                "reusing Scene List output: {}",
+                output.output_path.display()
+            );
+            println!("{}", output.output_path.display());
         }
         return Ok(());
     }
 
-    let artifact_path = scene_list_artifact_path(cli, Some(&output_dir), &request_key);
-    let (scene_list, _) = get_or_create_scene_list(
-        cli,
-        detector,
-        options,
-        request,
-        artifact_path.as_deref(),
-        report_reuse,
-        frame_rate_override,
-    )?;
-    let file = File::create(&output_path)
-        .with_context(|| format!("failed to create HTML scene list {}", output_path.display()))?;
-    write_scene_list_html(&scene_list, file)?;
-    artifacts::write_render_manifest(
-        &manifest_path,
-        &output_path,
-        render_kind,
-        &request_key,
-        request,
-    )?;
-    if !cli.quiet && !args.quiet {
-        println!("{}", output_path.display());
-    }
-
-    Ok(())
+    scene_list_command::run_export_html_file_first_write(file_request, output, &request_key)
 }
 
 fn get_or_create_scene_list(
@@ -537,24 +530,12 @@ fn scene_list_output_dir(cli: &Cli, args: &ListScenesArgs) -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("."))
 }
 
-fn export_html_output_dir(cli: &Cli, args: &ExportHtmlArgs) -> PathBuf {
-    args.output
-        .as_ref()
-        .or(cli.output.as_ref())
-        .cloned()
-        .unwrap_or_else(|| PathBuf::from("."))
-}
-
 fn scene_list_filename(args: &ListScenesArgs) -> &str {
     args.filename.as_deref().unwrap_or(match &args.format {
         SceneListFormat::Csv => "scenes.csv",
         SceneListFormat::Json => "scenes.json",
         SceneListFormat::Ndjson => "scenes.ndjson",
     })
-}
-
-fn export_html_filename(args: &ExportHtmlArgs) -> &str {
-    args.filename.as_deref().unwrap_or("scenes.html")
 }
 
 fn scene_list_render_kind(format: &SceneListFormat) -> &'static str {

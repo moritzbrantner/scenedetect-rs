@@ -398,6 +398,44 @@ fn content_detector_writes_scene_list_to_global_output_directory() {
 }
 
 #[test]
+fn export_html_first_write_uses_default_filename_and_writes_hidden_artifact() {
+    if !ffmpeg_available() {
+        eprintln!("skipping CLI integration test because ffmpeg is unavailable");
+        return;
+    }
+
+    let temp = tempfile::tempdir().unwrap();
+    let video = temp.path().join("scene-change.mp4");
+    let output_dir = temp.path().join("nested").join("out");
+    write_two_color_video(&video);
+
+    let mut cmd = Command::cargo_bin("scenedetect-rs").unwrap();
+    cmd.arg("-i")
+        .arg(&video)
+        .arg("--output")
+        .arg(&output_dir)
+        .args([
+            "-m",
+            "1",
+            "detect-content",
+            "--threshold",
+            "20",
+            "export-html",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("scenes.html"));
+
+    let html = std::fs::read_to_string(output_dir.join("scenes.html")).unwrap();
+    assert!(html.contains("<title>Scene List</title>"));
+    assert!(html.contains("<td>00:00:00.000</td>"));
+
+    let artifact_dir = output_dir.join(".scenedetect-rs").join("scene-list");
+    let artifacts = std::fs::read_dir(artifact_dir).unwrap().count();
+    assert_eq!(artifacts, 1);
+}
+
+#[test]
 fn list_scenes_reuses_valid_scene_list_output() {
     if !ffmpeg_available() {
         eprintln!("skipping CLI integration test because ffmpeg is unavailable");
