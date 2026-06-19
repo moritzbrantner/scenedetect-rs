@@ -55,16 +55,20 @@ def load_config(path: Path) -> dict[str, Any]:
 
 def validate_case(case: dict[str, Any], index: int) -> None:
     label = f"case {index}"
-    for key in ("id", "status", "video", "detector", "min_scene_len"):
+    for key in ("id", "status", "video", "detector", "threshold", "min_scene_len"):
         require_string(case, key, label)
 
     status = case["status"]
     if status not in {"required", "expected-gap"}:
         raise ConfigError(f"{label} has invalid status {status!r}")
 
-    args = case.get("args")
+    args = case.get("args", [])
     if not isinstance(args, list) or not all(isinstance(value, str) for value in args):
         raise ConfigError(f"{label} must define args as a string array")
+    if "--threshold" in args:
+        raise ConfigError(
+            f"{label} must define threshold with the threshold field, not args"
+        )
 
     for override_key in ("oracle_args", "candidate_args"):
         if override_key in case:
@@ -73,6 +77,11 @@ def validate_case(case: dict[str, Any], index: int) -> None:
                 isinstance(value, str) for value in override
             ):
                 raise ConfigError(f"{label} {override_key} must be a string array")
+            if "--threshold" in override:
+                raise ConfigError(
+                    f"{label} must define threshold with the threshold field, "
+                    f"not {override_key}"
+                )
 
     tolerance = case.get("tolerance_frames")
     if not isinstance(tolerance, int) or tolerance < 0:
@@ -110,16 +119,65 @@ def resolve_path(path: str) -> Path:
     return ROOT_DIR / value
 
 
-def normalize(csv_path: Path, json_path: Path) -> list[dict[str, int]]:
+def detector_args(case: dict[str, Any], override_key: str) -> list[str]:
+    extra_args = case.get(override_key, case.get("args", []))
+    return ["--threshold", case["threshold"], *extra_args]
+
+
+def load_scene_json(path: Path, case_id: str, source: str) -> list[dict[str, int]]:
+    try:
+        with path.open() as file:
+            scenes = json.load(file)
+    except json.JSONDecodeError as error:
+        raise AssertionError(f"{case_id}: {source} JSON is invalid: {error}") from error
+
+    if not isinstance(scenes, list):
+        raise AssertionError(f"{case_id}: {source} field scenes must be an array")
+
+    normalized: list[dict[str, int]] = []
+    for index, scene in enumerate(scenes, start=1):
+        if not isinstance(scene, dict):
+            raise AssertionError(
+                f"{case_id}: {source} scene {index} field scene must be an object"
+            )
+        normalized_scene = {}
+        for field in ("start", "end"):
+            if field not in scene:
+                raise AssertionError(
+                    f"{case_id}: {source} scene {index} field {field} is missing"
+                )
+            value = scene[field]
+            if not isinstance(value, int):
+                raise AssertionError(
+                    f"{case_id}: {source} scene {index} field {field} "
+                    f"must be an integer"
+                )
+            normalized_scene[field] = value
+        normalized.append(normalized_scene)
+    return normalized
+
+
+def normalize(
+    csv_path: Path,
+    json_path: Path,
+    *,
+    case_id: str,
+    source: str,
+) -> list[dict[str, int]]:
     with json_path.open("w") as file:
         subprocess.run(
-            [sys.executable, str(PARITY_DIR / "normalize-scenes.py"), str(csv_path)],
+            [
+                sys.executable,
+                str(PARITY_DIR / "normalize-scenes.py"),
+                "--source",
+                source,
+                str(csv_path),
+            ],
             cwd=ROOT_DIR,
             check=True,
             stdout=file,
         )
-    with json_path.open() as file:
-        return json.load(file)
+    return load_scene_json(json_path, case_id, source)
 
 
 def compare_scenes(
@@ -181,8 +239,8 @@ def run_required_case(
 
     package = config["oracle"]["package"]
     python = config["oracle"]["python"]
-    oracle_args = case.get("oracle_args", case["args"])
-    candidate_args = case.get("candidate_args", case["args"])
+    oracle_args = detector_args(case, "oracle_args")
+    candidate_args = detector_args(case, "candidate_args")
 
     run(
         [
@@ -227,10 +285,16 @@ def run_required_case(
     )
 
     reference = normalize(
-        reference_dir / SCENES_FILENAME, case_dir / "reference.json"
+        reference_dir / SCENES_FILENAME,
+        case_dir / "reference.json",
+        case_id=case_id,
+        source="oracle",
     )
     candidate = normalize(
-        candidate_dir / SCENES_FILENAME, case_dir / "candidate.json"
+        candidate_dir / SCENES_FILENAME,
+        case_dir / "candidate.json",
+        case_id=case_id,
+        source="candidate",
     )
     compare_scenes(case, reference, candidate)
     print(f"parity ok: {case_id}: {len(reference)} scenes")
@@ -253,6 +317,12 @@ def main() -> int:
         action="store_true",
         help="validate cases.toml without running parity",
     )
+    parser.add_argument(
+        "--compare-json",
+        nargs=3,
+        metavar=("CASE_ID", "REFERENCE_JSON", "CANDIDATE_JSON"),
+        help="compare normalized scene JSON files using a configured case",
+    )
     args = parser.parse_args()
 
     try:
@@ -264,6 +334,23 @@ def main() -> int:
 
     if args.validate_only:
         print(f"parity config ok: {len(config['cases'])} cases")
+        return 0
+
+    if args.compare_json:
+        case_id, reference_json, candidate_json = args.compare_json
+        try:
+            case = selected_cases(config["cases"], case_id)[0]
+            reference = load_scene_json(
+                resolve_path(reference_json), case_id, "reference"
+            )
+            candidate = load_scene_json(
+                resolve_path(candidate_json), case_id, "candidate"
+            )
+            compare_scenes(case, reference, candidate)
+        except (AssertionError, FileNotFoundError, ConfigError) as error:
+            print(f"comparison failed: {error}", file=sys.stderr)
+            return 1
+        print(f"comparison ok: {case_id}")
         return 0
 
     required = [case for case in cases if case["status"] == "required"]

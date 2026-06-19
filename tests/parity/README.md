@@ -10,6 +10,14 @@ with `status = "required"` run in CI through `run-all.sh`. Rows with
 `status = "expected-gap"` are reported and skipped until the Candidate exposes
 the matching Detector and CLI command.
 
+Each Parity Case defines its video path, Detector, `threshold`,
+`min_scene_len`, `tolerance_frames`, and any extra detector-specific `args`.
+The runner passes `threshold` explicitly to both Reference Oracle and Candidate
+commands.
+
+Scene-list CSV normalization requires a source because PySceneDetect reports
+one-based frame columns while `scenedetect-rs` reports zero-based frame columns.
+
 Run:
 
 ```sh

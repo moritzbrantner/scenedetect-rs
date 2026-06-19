@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import argparse
 import csv
 import json
 import sys
@@ -26,8 +27,29 @@ def pick(row: dict[str, str], *candidates: str) -> str:
     raise KeyError(candidates)
 
 
+def normalize_scene(scene: dict[str, int], source: str) -> dict[str, int]:
+    if source == "oracle":
+        return {
+            "start": scene["start"] - 1,
+            "end": scene["end"],
+        }
+    if source == "candidate":
+        return {
+            "start": scene["start"],
+            "end": scene["end"],
+        }
+    raise ValueError(f"unsupported source: {source}")
+
+
 def main() -> None:
-    path = Path(sys.argv[1])
+    parser = argparse.ArgumentParser(
+        description="Normalize scene-list CSV frame columns."
+    )
+    parser.add_argument("--source", choices=("oracle", "candidate"), required=True)
+    parser.add_argument("csv_path")
+    args = parser.parse_args()
+
+    path = Path(args.csv_path)
     lines = path.read_text().splitlines()
     header = find_header(lines)
     reader = csv.DictReader(lines[header:])
@@ -44,14 +66,7 @@ def main() -> None:
             )
         except (KeyError, ValueError):
             continue
-    one_based_starts = bool(raw_scenes) and min(scene["start"] for scene in raw_scenes) == 1
-    scenes = [
-        {
-            "start": scene["start"] - 1 if one_based_starts else scene["start"],
-            "end": scene["end"],
-        }
-        for scene in raw_scenes
-    ]
+    scenes = [normalize_scene(scene, args.source) for scene in raw_scenes]
     print(json.dumps(scenes, indent=2, sort_keys=True))
 
 
