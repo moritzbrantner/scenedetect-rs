@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::fmt;
 use std::io::Write;
 use std::str::FromStr;
@@ -161,7 +161,7 @@ pub struct SceneList {
     pub scenes: Vec<SceneSpan>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct DetectionStats {
     pub metric_names: Vec<String>,
     pub rows: Vec<StatsRow>,
@@ -177,6 +177,70 @@ pub struct StatsRow {
 pub struct DetectionResult {
     pub scene_list: SceneList,
     pub stats: DetectionStats,
+}
+
+pub trait DetectionStatsSink {
+    fn start(&mut self, metric_names: &[String]) -> Result<()>;
+    fn row(&mut self, row: StatsRow) -> Result<()>;
+    fn finish(&mut self) -> Result<()>;
+}
+
+#[derive(Debug, Default)]
+pub struct NoopStatsSink;
+
+impl DetectionStatsSink for NoopStatsSink {
+    fn start(&mut self, _metric_names: &[String]) -> Result<()> {
+        Ok(())
+    }
+
+    fn row(&mut self, _row: StatsRow) -> Result<()> {
+        Ok(())
+    }
+
+    fn finish(&mut self) -> Result<()> {
+        Ok(())
+    }
+}
+
+pub struct CsvStatsSink<W: Write> {
+    csv: csv::Writer<W>,
+    metric_names: Vec<String>,
+}
+
+impl<W: Write> CsvStatsSink<W> {
+    pub fn new(writer: W) -> Self {
+        Self {
+            csv: csv::Writer::from_writer(writer),
+            metric_names: Vec::new(),
+        }
+    }
+}
+
+impl<W: Write> DetectionStatsSink for CsvStatsSink<W> {
+    fn start(&mut self, metric_names: &[String]) -> Result<()> {
+        self.metric_names = metric_names.to_vec();
+        let mut header = vec!["Frame Number".to_owned()];
+        header.extend(self.metric_names.iter().cloned());
+        self.csv.write_record(header)?;
+        Ok(())
+    }
+
+    fn row(&mut self, row: StatsRow) -> Result<()> {
+        let mut record = vec![row.frame.0.to_string()];
+        for metric in &self.metric_names {
+            record.push(format!(
+                "{:.6}",
+                row.metrics.get(metric).copied().unwrap_or(0.0)
+            ));
+        }
+        self.csv.write_record(record)?;
+        Ok(())
+    }
+
+    fn finish(&mut self) -> Result<()> {
+        self.csv.flush()?;
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -293,19 +357,19 @@ impl Detector for DetectorConfig {
 
 pub fn detect_scenes<D, S>(
     detector: D,
-    mut source: S,
+    source: S,
     options: DetectionOptions,
 ) -> Result<DetectionResult>
 where
     D: Detector,
     S: FrameSource,
 {
-    let frame_rate = source.frame_rate();
-    let mut frames = Vec::new();
-    while let Some(frame) = source.next_frame()? {
-        frames.push(frame);
-    }
-    detect_frames(detector.config(), frame_rate, &frames, options)
+    let mut stats_sink = CollectingStatsSink::default();
+    let scene_list = detect_scenes_streaming(detector, source, options, &mut stats_sink)?;
+    Ok(DetectionResult {
+        scene_list,
+        stats: stats_sink.into_stats(),
+    })
 }
 
 pub fn detect_frames(
@@ -314,38 +378,131 @@ pub fn detect_frames(
     frames: &[Frame],
     options: DetectionOptions,
 ) -> Result<DetectionResult> {
-    let (boundaries, stats) = match detector {
-        DetectorConfig::Content(config) => detect_content(frames, config, options.min_scene_len),
-        DetectorConfig::Adaptive(config) => detect_adaptive(frames, config, options.min_scene_len),
-        DetectorConfig::Threshold(config) => {
-            detect_threshold(frames, config, options.min_scene_len)
-        }
-    };
-    let scene_list = build_scene_list(frame_rate, frames.len() as u64, boundaries, options);
-    Ok(DetectionResult { scene_list, stats })
+    detect_scenes(
+        detector,
+        SliceFrameSource {
+            frame_rate,
+            frames: frames.iter(),
+        },
+        options,
+    )
 }
 
-fn detect_content(
-    frames: &[Frame],
+pub fn detect_scenes_streaming<D, S, T>(
+    detector: D,
+    mut source: S,
+    options: DetectionOptions,
+    stats_sink: &mut T,
+) -> Result<SceneList>
+where
+    D: Detector,
+    S: FrameSource,
+    T: DetectionStatsSink,
+{
+    let frame_rate = source.frame_rate();
+    let (boundaries, total_frames) = match detector.config() {
+        DetectorConfig::Content(config) => {
+            detect_content_streaming(&mut source, config, options.min_scene_len, stats_sink)?
+        }
+        DetectorConfig::Adaptive(config) => {
+            detect_adaptive_streaming(&mut source, config, options.min_scene_len, stats_sink)?
+        }
+        DetectorConfig::Threshold(config) => {
+            detect_threshold_streaming(&mut source, config, options.min_scene_len, stats_sink)?
+        }
+    };
+    Ok(build_scene_list(
+        frame_rate,
+        total_frames,
+        boundaries,
+        options,
+    ))
+}
+
+#[derive(Debug)]
+struct CollectingStatsSink {
+    stats: DetectionStats,
+}
+
+impl CollectingStatsSink {
+    fn into_stats(self) -> DetectionStats {
+        self.stats
+    }
+}
+
+impl Default for CollectingStatsSink {
+    fn default() -> Self {
+        Self {
+            stats: DetectionStats {
+                metric_names: Vec::new(),
+                rows: Vec::new(),
+            },
+        }
+    }
+}
+
+impl DetectionStatsSink for CollectingStatsSink {
+    fn start(&mut self, metric_names: &[String]) -> Result<()> {
+        self.stats.metric_names = metric_names.to_vec();
+        self.stats.rows.clear();
+        Ok(())
+    }
+
+    fn row(&mut self, row: StatsRow) -> Result<()> {
+        self.stats.rows.push(row);
+        Ok(())
+    }
+
+    fn finish(&mut self) -> Result<()> {
+        Ok(())
+    }
+}
+
+struct SliceFrameSource<'a> {
+    frame_rate: FrameRate,
+    frames: std::slice::Iter<'a, Frame>,
+}
+
+impl FrameSource for SliceFrameSource<'_> {
+    fn frame_rate(&self) -> FrameRate {
+        self.frame_rate
+    }
+
+    fn next_frame(&mut self) -> Result<Option<Frame>> {
+        Ok(self.frames.next().cloned())
+    }
+}
+
+fn detect_content_streaming<S, T>(
+    source: &mut S,
     config: ContentDetectorConfig,
     min_scene_len: u64,
-) -> (Vec<SceneBoundary>, DetectionStats) {
-    let mut rows = Vec::new();
+    stats_sink: &mut T,
+) -> Result<(Vec<SceneBoundary>, u64)>
+where
+    S: FrameSource,
+    T: DetectionStatsSink,
+{
+    let metric_names = vec!["content_val".to_owned()];
+    stats_sink.start(&metric_names)?;
+
     let mut boundaries = Vec::new();
     let mut last_candidate_boundary = 0;
+    let mut previous = None;
+    let mut total_frames = 0_u64;
 
-    for (idx, frame) in frames.iter().enumerate() {
-        let content_val = if idx == 0 {
-            0.0
-        } else {
-            content_score(&frames[idx - 1], frame, &config.weights, config.luma_only)
+    while let Some(frame) = source.next_frame()? {
+        let content_val = match previous.as_ref() {
+            Some(previous) => content_score(previous, &frame, &config.weights, config.luma_only),
+            None => 0.0,
         };
+
         let mut metrics = BTreeMap::new();
         metrics.insert("content_val".to_owned(), content_val);
-        rows.push(StatsRow {
+        stats_sink.row(StatsRow {
             frame: frame.index,
             metrics,
-        });
+        })?;
 
         let frame_number = frame.index.0;
         if content_val >= config.threshold {
@@ -354,103 +511,217 @@ fn detect_content(
             }
             last_candidate_boundary = frame_number;
         }
+
+        previous = Some(frame);
+        total_frames += 1;
     }
 
-    (
-        boundaries,
-        DetectionStats {
-            metric_names: vec!["content_val".to_owned()],
-            rows,
-        },
-    )
+    stats_sink.finish()?;
+    Ok((boundaries, total_frames))
 }
 
-fn detect_adaptive(
-    frames: &[Frame],
+fn detect_adaptive_streaming<S, T>(
+    source: &mut S,
     config: AdaptiveDetectorConfig,
     min_scene_len: u64,
-) -> (Vec<SceneBoundary>, DetectionStats) {
-    let mut content_values = vec![0.0; frames.len()];
-    for idx in 1..frames.len() {
-        content_values[idx] = content_score(
-            &frames[idx - 1],
-            &frames[idx],
-            &config.weights,
-            config.luma_only,
-        );
-    }
+    stats_sink: &mut T,
+) -> Result<(Vec<SceneBoundary>, u64)>
+where
+    S: FrameSource,
+    T: DetectionStatsSink,
+{
+    let metric_names = vec!["adaptive_ratio".to_owned(), "content_val".to_owned()];
+    stats_sink.start(&metric_names)?;
 
-    let mut rows = Vec::new();
     let mut boundaries = Vec::new();
     let mut last_boundary = 0;
+    let mut previous = None;
+    let mut samples = VecDeque::new();
+    let mut total_frames = 0_usize;
+    let mut next_emit = 0_usize;
 
-    for (idx, frame) in frames.iter().enumerate() {
+    while let Some(frame) = source.next_frame()? {
+        let content_val = match previous.as_ref() {
+            Some(previous) => content_score(previous, &frame, &config.weights, config.luma_only),
+            None => 0.0,
+        };
+        samples.push_back(AdaptiveSample {
+            position: total_frames,
+            frame: frame.index,
+            content_val,
+        });
+        previous = Some(frame);
+        total_frames += 1;
+
+        emit_ready_adaptive_rows(
+            &mut samples,
+            &mut next_emit,
+            total_frames,
+            None,
+            &config,
+            min_scene_len,
+            &mut last_boundary,
+            &mut boundaries,
+            stats_sink,
+        )?;
+    }
+
+    emit_ready_adaptive_rows(
+        &mut samples,
+        &mut next_emit,
+        total_frames,
+        Some(total_frames),
+        &config,
+        min_scene_len,
+        &mut last_boundary,
+        &mut boundaries,
+        stats_sink,
+    )?;
+
+    stats_sink.finish()?;
+    Ok((boundaries, total_frames as u64))
+}
+
+#[derive(Debug, Clone)]
+struct AdaptiveSample {
+    position: usize,
+    frame: FrameIndex,
+    content_val: f64,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn emit_ready_adaptive_rows<T>(
+    samples: &mut VecDeque<AdaptiveSample>,
+    next_emit: &mut usize,
+    total_seen: usize,
+    total_frames: Option<usize>,
+    config: &AdaptiveDetectorConfig,
+    min_scene_len: u64,
+    last_boundary: &mut u64,
+    boundaries: &mut Vec<SceneBoundary>,
+    stats_sink: &mut T,
+) -> Result<()>
+where
+    T: DetectionStatsSink,
+{
+    loop {
+        if *next_emit >= total_seen {
+            break;
+        }
+
         let window = config.frame_window;
-        let adaptive_ratio = if idx >= window && idx + window < frames.len() {
-            let start = idx - window;
-            let end = idx + window;
-            let mut neighbour_sum = 0.0;
-            let mut neighbour_count = 0.0;
-            for (neighbour_idx, value) in
-                content_values.iter().enumerate().take(end + 1).skip(start)
-            {
-                if neighbour_idx != idx {
-                    neighbour_sum += value;
-                    neighbour_count += 1.0;
-                }
-            }
-            content_values[idx] / (neighbour_sum / neighbour_count + 0.000_001)
+        let ratio_is_ready = match total_frames {
+            Some(total_frames) => *next_emit >= window && *next_emit + window < total_frames,
+            None => *next_emit >= window && *next_emit + window < total_seen,
+        };
+        let edge_ratio_is_known = *next_emit < window
+            || total_frames.is_some_and(|total_frames| *next_emit + window >= total_frames);
+
+        if !ratio_is_ready && !edge_ratio_is_known {
+            break;
+        }
+
+        let sample = sample_at(samples, *next_emit).clone();
+        let adaptive_ratio = if ratio_is_ready {
+            adaptive_ratio(samples, *next_emit, window)
         } else {
             0.0
         };
 
         let mut metrics = BTreeMap::new();
-        metrics.insert("content_val".to_owned(), content_values[idx]);
+        metrics.insert("content_val".to_owned(), sample.content_val);
         metrics.insert("adaptive_ratio".to_owned(), adaptive_ratio);
-        rows.push(StatsRow {
-            frame: frame.index,
+        stats_sink.row(StatsRow {
+            frame: sample.frame,
             metrics,
-        });
+        })?;
 
-        let frame_number = frame.index.0;
-        if content_values[idx] >= config.min_content_val
+        let frame_number = sample.frame.0;
+        if sample.content_val >= config.min_content_val
             && adaptive_ratio >= config.threshold
-            && frame_number.saturating_sub(last_boundary) >= min_scene_len
+            && frame_number.saturating_sub(*last_boundary) >= min_scene_len
         {
-            boundaries.push(SceneBoundary { frame: frame.index });
-            last_boundary = frame_number;
+            boundaries.push(SceneBoundary {
+                frame: sample.frame,
+            });
+            *last_boundary = frame_number;
+        }
+
+        *next_emit += 1;
+        discard_unneeded_adaptive_samples(samples, *next_emit, window);
+    }
+
+    Ok(())
+}
+
+fn sample_at(samples: &VecDeque<AdaptiveSample>, position: usize) -> &AdaptiveSample {
+    samples
+        .iter()
+        .find(|sample| sample.position == position)
+        .expect("adaptive sample window contains requested position")
+}
+
+fn adaptive_ratio(samples: &VecDeque<AdaptiveSample>, position: usize, window: usize) -> f64 {
+    let center = sample_at(samples, position);
+    let start = position - window;
+    let end = position + window;
+    let mut neighbour_sum = 0.0;
+    let mut neighbour_count = 0.0;
+
+    for neighbour_position in start..=end {
+        if neighbour_position != position {
+            neighbour_sum += sample_at(samples, neighbour_position).content_val;
+            neighbour_count += 1.0;
         }
     }
 
-    (
-        boundaries,
-        DetectionStats {
-            metric_names: vec!["adaptive_ratio".to_owned(), "content_val".to_owned()],
-            rows,
-        },
-    )
+    center.content_val / (neighbour_sum / neighbour_count + 0.000_001)
 }
 
-fn detect_threshold(
-    frames: &[Frame],
+fn discard_unneeded_adaptive_samples(
+    samples: &mut VecDeque<AdaptiveSample>,
+    next_emit: usize,
+    window: usize,
+) {
+    while samples
+        .front()
+        .is_some_and(|sample| sample.position < next_emit.saturating_sub(window))
+    {
+        samples.pop_front();
+    }
+}
+
+fn detect_threshold_streaming<S, T>(
+    source: &mut S,
     config: ThresholdDetectorConfig,
     min_scene_len: u64,
-) -> (Vec<SceneBoundary>, DetectionStats) {
-    let mut rows = Vec::new();
+    stats_sink: &mut T,
+) -> Result<(Vec<SceneBoundary>, u64)>
+where
+    S: FrameSource,
+    T: DetectionStatsSink,
+{
+    let metric_names = vec!["average_rgb".to_owned()];
+    stats_sink.start(&metric_names)?;
+
     let mut boundaries = Vec::new();
-    let mut last_scene_cut = frames.first().map(|frame| frame.index.0).unwrap_or(0);
+    let mut last_scene_cut = 0;
     let mut last_fade_frame = None;
     let mut last_fade_type = None;
+    let mut total_frames = 0_u64;
 
-    for frame in frames {
+    while let Some(frame) = source.next_frame()? {
+        if total_frames == 0 {
+            last_scene_cut = frame.index.0;
+        }
         let luma = frame.mean_luma();
 
         let mut metrics = BTreeMap::new();
         metrics.insert("average_rgb".to_owned(), luma);
-        rows.push(StatsRow {
+        stats_sink.row(StatsRow {
             frame: frame.index,
             metrics,
-        });
+        })?;
 
         let frame_number = frame.index.0;
         match last_fade_type {
@@ -482,26 +753,23 @@ fn detect_threshold(
             }
             _ => {}
         }
+
+        total_frames += 1;
     }
 
-    if matches!(last_fade_type, Some(FadeType::Out)) && config.add_last_scene {
-        let total_frames = frames.len() as u64;
-        if total_frames.saturating_sub(last_scene_cut) >= min_scene_len {
-            if let Some(frame) = last_fade_frame {
-                boundaries.push(SceneBoundary {
-                    frame: FrameIndex(frame),
-                });
-            }
+    if matches!(last_fade_type, Some(FadeType::Out))
+        && config.add_last_scene
+        && total_frames.saturating_sub(last_scene_cut) >= min_scene_len
+    {
+        if let Some(frame) = last_fade_frame {
+            boundaries.push(SceneBoundary {
+                frame: FrameIndex(frame),
+            });
         }
     }
 
-    (
-        boundaries,
-        DetectionStats {
-            metric_names: vec!["average_rgb".to_owned()],
-            rows,
-        },
-    )
+    stats_sink.finish()?;
+    Ok((boundaries, total_frames))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -768,6 +1036,8 @@ impl fmt::Display for FrameIndex {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::Cell;
+    use std::rc::Rc;
 
     struct VecFrameSource {
         frame_rate: FrameRate,
@@ -799,6 +1069,199 @@ mod tests {
             .enumerate()
             .map(|(index, color)| Frame::solid(index as u64, 2, 2, *color))
             .collect()
+    }
+
+    struct CountingFrameSource {
+        frame_rate: FrameRate,
+        frames: std::vec::IntoIter<Frame>,
+        reads: Rc<Cell<usize>>,
+    }
+
+    impl CountingFrameSource {
+        fn new(frames: Vec<Frame>, reads: Rc<Cell<usize>>) -> Self {
+            Self {
+                frame_rate: FrameRate(10.0),
+                frames: frames.into_iter(),
+                reads,
+            }
+        }
+    }
+
+    impl FrameSource for CountingFrameSource {
+        fn frame_rate(&self) -> FrameRate {
+            self.frame_rate
+        }
+
+        fn next_frame(&mut self) -> Result<Option<Frame>> {
+            self.reads.set(self.reads.get() + 1);
+            Ok(self.frames.next())
+        }
+    }
+
+    struct StreamingProbeStatsSink {
+        reads: Rc<Cell<usize>>,
+        eof_read_count: usize,
+        saw_row_before_eof: bool,
+    }
+
+    impl DetectionStatsSink for StreamingProbeStatsSink {
+        fn start(&mut self, _metric_names: &[String]) -> Result<()> {
+            Ok(())
+        }
+
+        fn row(&mut self, _row: StatsRow) -> Result<()> {
+            if self.reads.get() < self.eof_read_count {
+                self.saw_row_before_eof = true;
+            }
+            Ok(())
+        }
+
+        fn finish(&mut self) -> Result<()> {
+            Ok(())
+        }
+    }
+
+    struct MemoryStatsSink {
+        stats: DetectionStats,
+    }
+
+    impl Default for MemoryStatsSink {
+        fn default() -> Self {
+            Self {
+                stats: DetectionStats {
+                    metric_names: Vec::new(),
+                    rows: Vec::new(),
+                },
+            }
+        }
+    }
+
+    impl DetectionStatsSink for MemoryStatsSink {
+        fn start(&mut self, metric_names: &[String]) -> Result<()> {
+            self.stats.metric_names = metric_names.to_vec();
+            self.stats.rows.clear();
+            Ok(())
+        }
+
+        fn row(&mut self, row: StatsRow) -> Result<()> {
+            self.stats.rows.push(row);
+            Ok(())
+        }
+
+        fn finish(&mut self) -> Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn streaming_detection_emits_stats_before_frame_source_is_exhausted() {
+        let frames = frames(&[[0, 0, 0], [255, 255, 255], [255, 255, 255]]);
+        let eof_read_count = frames.len() + 1;
+        let reads = Rc::new(Cell::new(0));
+        let source = CountingFrameSource::new(frames, Rc::clone(&reads));
+        let mut stats_sink = StreamingProbeStatsSink {
+            reads,
+            eof_read_count,
+            saw_row_before_eof: false,
+        };
+
+        let scene_list = detect_scenes_streaming(
+            DetectorConfig::Content(ContentDetectorConfig {
+                threshold: 20.0,
+                ..Default::default()
+            }),
+            source,
+            DetectionOptions {
+                min_scene_len: 1,
+                ..Default::default()
+            },
+            &mut stats_sink,
+        )
+        .unwrap();
+
+        assert_eq!(
+            scene_list.scenes,
+            vec![
+                SceneSpan {
+                    start: FrameIndex(0),
+                    end: FrameIndex(1)
+                },
+                SceneSpan {
+                    start: FrameIndex(1),
+                    end: FrameIndex(3)
+                }
+            ]
+        );
+        assert!(
+            stats_sink.saw_row_before_eof,
+            "stats rows should be emitted while the Frame Source is still streaming"
+        );
+    }
+
+    #[test]
+    fn streaming_detection_matches_collecting_api_for_supported_detectors() {
+        let detector_cases = [
+            (
+                DetectorConfig::Content(ContentDetectorConfig {
+                    threshold: 20.0,
+                    ..Default::default()
+                }),
+                frames(&[[0, 0, 0], [0, 0, 0], [255, 255, 255], [255, 255, 255]]),
+            ),
+            (
+                DetectorConfig::Adaptive(AdaptiveDetectorConfig {
+                    threshold: 3.0,
+                    min_content_val: 20.0,
+                    frame_window: 1,
+                    ..Default::default()
+                }),
+                frames(&[
+                    [0, 0, 0],
+                    [3, 3, 3],
+                    [6, 6, 6],
+                    [255, 255, 255],
+                    [252, 252, 252],
+                    [249, 249, 249],
+                ]),
+            ),
+            (
+                DetectorConfig::Threshold(ThresholdDetectorConfig {
+                    threshold: 12.0,
+                    ..Default::default()
+                }),
+                frames(&[
+                    [0, 0, 0],
+                    [0, 0, 0],
+                    [128, 128, 128],
+                    [255, 255, 255],
+                    [255, 255, 255],
+                ]),
+            ),
+        ];
+
+        for (detector, frames) in detector_cases {
+            let options = DetectionOptions {
+                min_scene_len: 1,
+                ..Default::default()
+            };
+            let collected = detect_scenes(
+                detector.clone(),
+                VecFrameSource::new(frames.clone()),
+                options.clone(),
+            )
+            .unwrap();
+            let mut stats_sink = MemoryStatsSink::default();
+            let scene_list = detect_scenes_streaming(
+                detector,
+                VecFrameSource::new(frames),
+                options,
+                &mut stats_sink,
+            )
+            .unwrap();
+
+            assert_eq!(scene_list, collected.scene_list);
+            assert_eq!(stats_sink.stats, collected.stats);
+        }
     }
 
     #[test]

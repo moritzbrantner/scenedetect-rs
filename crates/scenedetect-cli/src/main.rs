@@ -4,10 +4,10 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use scenedetect_core::{
-    detect_scenes, write_scene_events_ndjson, write_scene_list_csv, write_scene_list_json,
-    write_stats_csv, AdaptiveDetectorConfig, ContentDetectorConfig, ContentWeights,
-    DetectionOptions, DetectorConfig, FrameRate, FrameSource, MinSceneLenPolicy,
-    ThresholdDetectorConfig, Timecode,
+    detect_scenes_streaming, write_scene_events_ndjson, write_scene_list_csv,
+    write_scene_list_json, AdaptiveDetectorConfig, ContentDetectorConfig, ContentWeights,
+    CsvStatsSink, DetectionOptions, DetectorConfig, FrameRate, FrameSource, MinSceneLenPolicy,
+    NoopStatsSink, ThresholdDetectorConfig, Timecode,
 };
 use scenedetect_ffmpeg::FfmpegFrameSource;
 
@@ -157,16 +157,18 @@ fn main() -> Result<()> {
 
     let detector = detector_config(&cli.detector);
     let list_scenes = list_scenes_args(&cli.detector);
-    let result = detect_scenes(detector, source, options)?;
-
-    if let Some(stats_path) = cli.stats.as_ref() {
+    let scene_list = if let Some(stats_path) = cli.stats.as_ref() {
         if let Some(parent) = stats_path.parent() {
             fs::create_dir_all(parent)?;
         }
         let file = File::create(stats_path)
             .with_context(|| format!("failed to create stats file {}", stats_path.display()))?;
-        write_stats_csv(&result.stats, file)?;
-    }
+        let mut stats_sink = CsvStatsSink::new(file);
+        detect_scenes_streaming(detector, source, options, &mut stats_sink)?
+    } else {
+        let mut stats_sink = NoopStatsSink;
+        detect_scenes_streaming(detector, source, options, &mut stats_sink)?
+    };
 
     if !list_scenes.no_output_file {
         let output_dir = list_scenes
@@ -179,12 +181,12 @@ fn main() -> Result<()> {
         let output_path = output_dir.join(scene_list_filename(list_scenes));
         let file = File::create(&output_path)
             .with_context(|| format!("failed to create scene list {}", output_path.display()))?;
-        write_scene_list(&result.scene_list, file, &list_scenes.format)?;
+        write_scene_list(&scene_list, file, &list_scenes.format)?;
         if !cli.quiet && !list_scenes.quiet {
             println!("{}", output_path.display());
         }
     } else if !cli.quiet && !list_scenes.quiet {
-        write_scene_list(&result.scene_list, std::io::stdout(), &list_scenes.format)?;
+        write_scene_list(&scene_list, std::io::stdout(), &list_scenes.format)?;
     }
 
     Ok(())
