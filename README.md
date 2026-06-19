@@ -24,6 +24,21 @@ bun run agent:check
 - Report-only benchmarks: optional `hyperfine` comparisons for end-to-end
   Reference Oracle and Candidate CLI commands
 
+## CLI Examples
+
+Global options must appear before the Detector command, and `list-scenes`
+options must appear after `list-scenes`:
+
+```sh
+scenedetect-rs -i input.mp4 --output out detect-content list-scenes
+scenedetect-rs -i input.mp4 --stats stats.csv detect-content list-scenes --no-output-file
+scenedetect-rs -i input.mp4 --min-scene-len 100 detect-content --min-scene-len 1 list-scenes
+```
+
+Flexible PySceneDetect command ordering, such as placing global options after
+`detect-content`, is out of initial scope and fails with clap's command-order
+error.
+
 ## Development
 
 ```sh
