@@ -8,10 +8,14 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum FfmpegError {
-    #[error("ffmpeg executable was not found")]
-    MissingFfmpeg,
-    #[error("ffprobe executable was not found")]
-    MissingFfprobe,
+    #[error(
+        "ffmpeg executable was not found (tried {0}). Install FFmpeg and ensure ffmpeg is on PATH, or configure an explicit binary path"
+    )]
+    MissingFfmpeg(PathBuf),
+    #[error(
+        "ffprobe executable was not found (tried {0}). Install FFmpeg and ensure ffprobe is on PATH, or configure an explicit binary path"
+    )]
+    MissingFfprobe(PathBuf),
     #[error("ffprobe did not report a video stream for {0}")]
     MissingVideoStream(PathBuf),
     #[error("invalid ffprobe frame rate: {0}")]
@@ -32,15 +36,38 @@ pub struct FfmpegFrameSource {
     next_index: u64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FfmpegBinaries {
+    pub ffmpeg: PathBuf,
+    pub ffprobe: PathBuf,
+}
+
+impl Default for FfmpegBinaries {
+    fn default() -> Self {
+        Self {
+            ffmpeg: PathBuf::from("ffmpeg"),
+            ffprobe: PathBuf::from("ffprobe"),
+        }
+    }
+}
+
 impl FfmpegFrameSource {
     pub fn open(path: impl AsRef<Path>, frame_rate_override: Option<FrameRate>) -> Result<Self> {
+        Self::open_with_binaries(path, frame_rate_override, FfmpegBinaries::default())
+    }
+
+    pub fn open_with_binaries(
+        path: impl AsRef<Path>,
+        frame_rate_override: Option<FrameRate>,
+        binaries: FfmpegBinaries,
+    ) -> Result<Self> {
         let path = path.as_ref();
-        let mut metadata = probe_video(path)?;
+        let mut metadata = probe_video_with_binaries(path, &binaries)?;
         if let Some(frame_rate) = frame_rate_override {
             metadata.frame_rate = frame_rate;
         }
 
-        let mut child = Command::new("ffmpeg")
+        let mut child = Command::new(&binaries.ffmpeg)
             .args(["-v", "error", "-i"])
             .arg(path)
             .args(["-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1"])
@@ -48,9 +75,9 @@ impl FfmpegFrameSource {
             .stderr(Stdio::piped())
             .spawn()
             .map_err(|err| match err.kind() {
-                ErrorKind::NotFound => {
-                    SceneDetectError::FrameSource(FfmpegError::MissingFfmpeg.to_string())
-                }
+                ErrorKind::NotFound => SceneDetectError::FrameSource(
+                    FfmpegError::MissingFfmpeg(binaries.ffmpeg.clone()).to_string(),
+                ),
                 _ => SceneDetectError::FrameSource(err.to_string()),
             })?;
 
@@ -121,8 +148,15 @@ struct ProbeStream {
 }
 
 pub fn probe_video(path: impl AsRef<Path>) -> Result<VideoMetadata> {
+    probe_video_with_binaries(path, &FfmpegBinaries::default())
+}
+
+fn probe_video_with_binaries(
+    path: impl AsRef<Path>,
+    binaries: &FfmpegBinaries,
+) -> Result<VideoMetadata> {
     let path = path.as_ref();
-    let output = Command::new("ffprobe")
+    let output = Command::new(&binaries.ffprobe)
         .args([
             "-v",
             "error",
@@ -136,9 +170,9 @@ pub fn probe_video(path: impl AsRef<Path>) -> Result<VideoMetadata> {
         .arg(path)
         .output()
         .map_err(|err| match err.kind() {
-            ErrorKind::NotFound => {
-                SceneDetectError::FrameSource(FfmpegError::MissingFfprobe.to_string())
-            }
+            ErrorKind::NotFound => SceneDetectError::FrameSource(
+                FfmpegError::MissingFfprobe(binaries.ffprobe.clone()).to_string(),
+            ),
             _ => SceneDetectError::FrameSource(err.to_string()),
         })?;
 
