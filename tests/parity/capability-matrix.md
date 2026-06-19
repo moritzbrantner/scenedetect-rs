@@ -8,12 +8,6 @@ implements the matching Detector and CLI surface.
 | --- | --- | --- | --- |
 | `detect-content` | Supported | Required | Covers hard Scene Boundary detection, threshold sensitivity, luma-only mode, and min-scene-len suppression. |
 | `detect-adaptive` | Supported | Required | Covers adaptive detection on deterministic generated motion-like cuts. |
-| `detect-threshold` | Supported | Required | Covers fade-return Scene List parity with a two-frame tolerance for current placement drift. |
+| `detect-threshold` | Supported | Required | Covers fade-return Scene List parity. |
 | `detect-hist` | Expected Gap | Skipped | Candidate has no histogram Detector or `detect-hist` CLI command yet. |
 | `detect-hash` | Expected Gap | Skipped | Candidate has no perceptual hash Detector or `detect-hash` CLI command yet. |
-
-Known follow-up gaps:
-
-- Threshold placement currently needs a wider tolerance than content/adaptive
-  cases because the Candidate places the Scene Boundary later on the generated
-  fade-return fixture.

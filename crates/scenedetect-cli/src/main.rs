@@ -95,7 +95,7 @@ struct ThresholdArgs {
     threshold: f64,
     #[arg(short = 'f', long = "fade-bias", default_value_t = 0.0)]
     fade_bias: f64,
-    #[arg(short = 'l', long = "add-last-scene")]
+    #[arg(short = 'l', long = "add-last-scene", default_value_t = true)]
     add_last_scene: bool,
     #[arg(short = 'm', long = "min-scene-len")]
     min_scene_len: Option<String>,

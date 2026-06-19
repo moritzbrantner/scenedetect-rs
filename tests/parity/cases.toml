@@ -54,7 +54,7 @@ video = "tests/fixtures/generated/threshold-fade-return.mkv"
 detector = "detect-threshold"
 args = ["--threshold", "12"]
 min_scene_len = "1"
-tolerance_frames = 2
+tolerance_frames = 1
 
 [[cases]]
 id = "content-min-scene-len-timecode"
