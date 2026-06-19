@@ -1,4 +1,8 @@
-# scenedetect-rs
+# scenedetect-rs Hello Patty
+
+<h1>This is a Heading</h1>
+<marquee>This is a paragraph.</marquee>
+
 
 `scenedetect-rs` is a Rust reimplementation and expansion of PySceneDetect.
 The first milestone focuses on CLI-compatible scene detection for
@@ -12,6 +16,8 @@ with:
 ```sh
 bun run agent:check
 ```
+
+
 
 Project site:
 [`https://moritzbrantner.github.io/scenedetect-rs/`](https://moritzbrantner.github.io/scenedetect-rs/)
