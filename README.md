@@ -13,6 +13,9 @@ with:
 bun run agent:check
 ```
 
+Project site:
+[`https://moritzbrantner.github.io/scenedetect-rs/`](https://moritzbrantner.github.io/scenedetect-rs/)
+
 ## Current Scope
 
 - Rust CLI binary: `scenedetect-rs`
@@ -69,3 +72,16 @@ Optional CLI benchmark report:
 ```sh
 tests/benchmarks/run-hyperfine.sh --generated-only
 ```
+
+To update the Published Benchmark Snapshot used by the project site, run the
+benchmark suite locally and convert the ignored `hyperfine` output into the
+committed site data:
+
+```sh
+tests/benchmarks/run-hyperfine.sh --include-real
+python3 scripts/update-site-benchmarks.py
+python3 scripts/check-site.py
+```
+
+Benchmark execution is local and report-only. It does not run in CI, the GitHub
+Pages workflow, `tdd:check`, or `agent:check`.

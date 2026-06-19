@@ -7,9 +7,10 @@
     "tdd:core": "cargo test -p scenedetect-core",
     "tdd:cli": "cargo test -p scenedetect-cli --test cli",
     "tdd:parity": "tests/parity/run-all.sh",
+    "tdd:site": "python3 scripts/update-site-benchmarks.py --check-fixture && python3 scripts/check-site.py",
     "tdd:fmt": "cargo fmt --all -- --check",
     "tdd:lint": "cargo clippy --workspace --all-targets -- -D warnings",
-    "tdd:check": "bun run tdd:fmt && bun run tdd:lint && cargo test --workspace && bun run tdd:parity",
+    "tdd:check": "bun run tdd:fmt && bun run tdd:lint && cargo test --workspace && bun run tdd:parity && bun run tdd:site",
     "agent:check": "bun run tdd:check",
     "agent:eval": "scripts/moonlight.sh eval run --project moonlight.eval.toml --storage-path .moonlight/agent-runs.jsonl --format markdown",
     "agent:eval:report": "scripts/moonlight.sh eval report --storage-path .moonlight/agent-runs.jsonl --format markdown"

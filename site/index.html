@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>scenedetect-rs</title>
+    <meta
+      name="description"
+      content="Rust scene detection CLI with PySceneDetect parity goals and published benchmark snapshots."
+    />
+    <link rel="stylesheet" href="styles.css" />
+    <link rel="preload" as="image" href="assets/hero-scene-detection.png" />
+    <link rel="preload" as="fetch" href="data/benchmarks.json" crossorigin />
+  </head>
+  <body>
+    <header class="site-header" aria-label="Project navigation">
+      <a class="brand" href="https://github.com/moritzbrantner/scenedetect-rs">scenedetect-rs</a>
+      <nav aria-label="Primary navigation">
+        <a href="#capabilities">Capabilities</a>
+        <a href="#benchmarks">Benchmarks</a>
+        <a href="#contribute">Contribute</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="hero" aria-label="Project overview">
+        <div class="hero-media" aria-hidden="true">
+          <img
+            src="assets/hero-scene-detection.png"
+            alt=""
+            width="1280"
+            height="720"
+          />
+        </div>
+        <div class="hero-copy">
+          <p class="eyebrow">Rust scene detection CLI</p>
+          <h1>scenedetect-rs</h1>
+          <p class="lede">
+            A Rust reimplementation and expansion of PySceneDetect, focused on
+            CLI-compatible scene detection, FFmpeg frame acquisition, and
+            parity against the PySceneDetect v0.7 Reference Oracle.
+          </p>
+          <div class="hero-actions">
+            <a class="button primary" href="https://github.com/moritzbrantner/scenedetect-rs">
+              View source
+            </a>
+            <a class="button secondary" href="#benchmarks">See benchmarks</a>
+          </div>
+        </div>
+      </section>
+
+      <section class="quickstart" aria-labelledby="quickstart-heading">
+        <div class="section-inner split">
+          <div>
+            <p class="eyebrow">CLI shape</p>
+            <h2 id="quickstart-heading">PySceneDetect-compatible command direction</h2>
+            <p>
+              The first milestone targets <code>detect-content</code>,
+              <code>detect-adaptive</code>, and
+              <code>detect-threshold</code>, scene-list CSV output, and detector
+              stats CSV output.
+            </p>
+          </div>
+          <div class="code-stack" aria-label="CLI examples">
+            <pre><code>scenedetect-rs -i input.mp4 --output out detect-content list-scenes</code></pre>
+            <pre><code>scenedetect-rs -i input.mp4 --stats stats.csv detect-content list-scenes --no-output-file</code></pre>
+          </div>
+        </div>
+      </section>
+
+      <section id="capabilities" class="capabilities" aria-labelledby="capabilities-heading">
+        <div class="section-inner">
+          <div class="section-heading">
+            <p class="eyebrow">Parity status</p>
+            <h2 id="capabilities-heading">Current Detector coverage</h2>
+          </div>
+          <div class="capability-grid" role="list">
+            <article class="status-card supported" role="listitem">
+              <span class="status-mark" aria-hidden="true"></span>
+              <h3>Supported Detectors</h3>
+              <p>
+                <code>detect-content</code>, <code>detect-adaptive</code>,
+                <code>detect-threshold</code>
+              </p>
+            </article>
+            <article class="status-card expected-gap" role="listitem">
+              <span class="status-mark" aria-hidden="true"></span>
+              <h3>Expected Gaps</h3>
+              <p>hist, hash</p>
+            </article>
+            <article class="status-card oracle" role="listitem">
+              <span class="status-mark" aria-hidden="true"></span>
+              <h3>Reference Oracle</h3>
+              <p>PySceneDetect v0.7 via scenedetect-headless</p>
+            </article>
+          </div>
+          <p class="supporting-link">
+            See the
+            <a href="https://github.com/moritzbrantner/scenedetect-rs/blob/main/tests/parity/capability-matrix.md">
+              PySceneDetect capability matrix
+            </a>
+            for required Parity Cases and Expected Gaps.
+          </p>
+        </div>
+      </section>
+
+      <section id="benchmarks" class="benchmarks" aria-labelledby="benchmarks-heading">
+        <div class="section-inner">
+          <div class="section-heading">
+            <p class="eyebrow">Published Benchmark Snapshot</p>
+            <h2 id="benchmarks-heading">End-to-end CLI timing against PySceneDetect</h2>
+            <p>
+              Lower time is better. These report-only timings come from a local
+              machine and are not correctness gates. Real-video media is
+              optional, local, and not committed.
+            </p>
+          </div>
+
+          <div id="benchmark-summary" class="benchmark-summary" aria-live="polite">
+            Loading benchmark snapshot...
+          </div>
+
+          <div class="table-frame">
+            <table>
+              <thead>
+                <tr>
+                  <th scope="col">Benchmark Case</th>
+                  <th scope="col">Corpus</th>
+                  <th scope="col">Detector</th>
+                  <th scope="col">PySceneDetect mean</th>
+                  <th scope="col">scenedetect-rs mean</th>
+                  <th scope="col">Result ratio</th>
+                  <th scope="col">Faster implementation</th>
+                </tr>
+              </thead>
+              <tbody id="benchmark-rows">
+                <tr>
+                  <td colspan="7">Benchmark data is loading.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section id="contribute" class="contribute" aria-labelledby="contribute-heading">
+        <div class="section-inner">
+          <div class="section-heading">
+            <p class="eyebrow">Project links</p>
+            <h2 id="contribute-heading">Contribute through public interfaces</h2>
+          </div>
+          <div class="link-grid">
+            <a href="https://github.com/moritzbrantner/scenedetect-rs/blob/main/README.md">
+              README
+            </a>
+            <a href="https://github.com/moritzbrantner/scenedetect-rs/blob/main/CONTRIBUTING.md">
+              CONTRIBUTING
+            </a>
+            <a href="https://github.com/moritzbrantner/scenedetect-rs/issues">
+              GitHub issues
+            </a>
+            <a href="https://github.com/moritzbrantner/scenedetect-rs/blob/main/tests/parity/README.md">
+              Parity docs
+            </a>
+            <a href="https://github.com/moritzbrantner/scenedetect-rs/blob/main/tests/benchmarks/README.md">
+              Benchmark docs
+            </a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <span>scenedetect-rs</span>
+      <span>MIT licensed</span>
+    </footer>
+
+    <script src="app.js" defer></script>
+  </body>
+</html>

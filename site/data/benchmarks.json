@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-06-19T11:45:01+00:00",
+  "candidate_ref": "74e98b1-dirty",
+  "reference_oracle": "scenedetect-headless==0.7",
+  "source": {
+    "command": "tests/benchmarks/run-hyperfine.sh --include-real",
+    "machine_label": "local",
+    "notes": "Real-video Benchmark Corpus is optional and media is not committed."
+  },
+  "settings": {
+    "warmup": 1,
+    "runs": 3
+  },
+  "cases": [
+    {
+      "id": "generated-adaptive-hard-cuts",
+      "corpus": "generated",
+      "detector": "detect-adaptive",
+      "reference_mean_seconds": 0.30878571257333337,
+      "candidate_mean_seconds": 0.13726712890666667,
+      "ratio": 2.2495240851383214,
+      "winner": "candidate"
+    },
+    {
+      "id": "generated-content-hard-cuts",
+      "corpus": "generated",
+      "detector": "detect-content",
+      "reference_mean_seconds": 0.3107570559066667,
+      "candidate_mean_seconds": 0.14157615924,
+      "ratio": 2.1949815390871787,
+      "winner": "candidate"
+    },
+    {
+      "id": "generated-threshold-fade",
+      "corpus": "generated",
+      "detector": "detect-threshold",
+      "reference_mean_seconds": 0.3034495889066667,
+      "candidate_mean_seconds": 0.10972811290666666,
+      "ratio": 2.7654680361155672,
+      "winner": "candidate"
+    },
+    {
+      "id": "shrek-retold-early-content",
+      "corpus": "real",
+      "detector": "detect-content",
+      "reference_mean_seconds": 0.9298056585733333,
+      "candidate_mean_seconds": 0.76182936224,
+      "ratio": 1.2204907091522885,
+      "winner": "candidate"
+    },
+    {
+      "id": "shrek-retold-late-content",
+      "corpus": "real",
+      "detector": "detect-content",
+      "reference_mean_seconds": 0.6836365802400001,
+      "candidate_mean_seconds": 0.6564318665733334,
+      "ratio": 1.0414433165907668,
+      "winner": "candidate"
+    },
+    {
+      "id": "shrek-retold-middle-content",
+      "corpus": "real",
+      "detector": "detect-content",
+      "reference_mean_seconds": 0.7780267249066667,
+      "candidate_mean_seconds": 0.6796804739066667,
+      "ratio": 1.1446948305498987,
+      "winner": "candidate"
+    }
+  ]
+}

@@ -41,3 +41,19 @@ Reports are written to:
 - `tests/benchmarks/results/cli.md`
 
 Both directories are ignored by git.
+
+## Published Benchmark Snapshot
+
+The project site publishes a curated `site/data/benchmarks.json` snapshot. That
+file is committed, but it is derived from ignored local `hyperfine` output.
+
+Refresh it after a local benchmark run:
+
+```sh
+tests/benchmarks/run-hyperfine.sh --include-real
+python3 scripts/update-site-benchmarks.py
+python3 scripts/check-site.py
+```
+
+Benchmark timing remains report-only. It does not run in CI, the GitHub Pages
+workflow, `tdd:check`, or `agent:check`.

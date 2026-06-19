@@ -59,3 +59,7 @@ commands.
 
 **Benchmark Corpus**:
 Generated and optional local real-video fixtures used for timing.
+
+**Published Benchmark Snapshot**:
+A committed point-in-time Benchmark Report derived from local Benchmark Cases
+and published on the project site.
