@@ -33,6 +33,8 @@ options must appear after `list-scenes`:
 scenedetect-rs -i input.mp4 --output out detect-content list-scenes
 scenedetect-rs -i input.mp4 --stats stats.csv detect-content list-scenes --no-output-file
 scenedetect-rs -i input.mp4 --min-scene-len 100 detect-content --min-scene-len 1 list-scenes
+scenedetect-rs -i input.mp4 --output out detect-content list-scenes --format json
+scenedetect-rs -i input.mp4 detect-content list-scenes --format json --no-output-file
 ```
 
 Flexible PySceneDetect command ordering, such as placing global options after

@@ -431,6 +431,7 @@ dependencies = [
  "predicates",
  "scenedetect-core",
  "scenedetect-ffmpeg",
+ "serde_json",
  "tempfile",
  "tracing",
  "tracing-subscriber",
