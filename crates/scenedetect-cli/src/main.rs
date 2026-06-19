@@ -4,9 +4,10 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use scenedetect_core::{
-    detect_scenes, write_scene_list_csv, write_scene_list_json, write_stats_csv,
-    AdaptiveDetectorConfig, ContentDetectorConfig, ContentWeights, DetectionOptions,
-    DetectorConfig, FrameRate, FrameSource, MinSceneLenPolicy, ThresholdDetectorConfig, Timecode,
+    detect_scenes, write_scene_events_ndjson, write_scene_list_csv, write_scene_list_json,
+    write_stats_csv, AdaptiveDetectorConfig, ContentDetectorConfig, ContentWeights,
+    DetectionOptions, DetectorConfig, FrameRate, FrameSource, MinSceneLenPolicy,
+    ThresholdDetectorConfig, Timecode,
 };
 use scenedetect_ffmpeg::FfmpegFrameSource;
 
@@ -128,6 +129,7 @@ struct ListScenesArgs {
 enum SceneListFormat {
     Csv,
     Json,
+    Ndjson,
 }
 
 fn main() -> Result<()> {
@@ -192,6 +194,7 @@ fn scene_list_filename(args: &ListScenesArgs) -> &str {
     args.filename.as_deref().unwrap_or(match &args.format {
         SceneListFormat::Csv => "scenes.csv",
         SceneListFormat::Json => "scenes.json",
+        SceneListFormat::Ndjson => "scenes.ndjson",
     })
 }
 
@@ -203,6 +206,7 @@ fn write_scene_list<W: std::io::Write>(
     match format {
         SceneListFormat::Csv => write_scene_list_csv(scene_list, writer),
         SceneListFormat::Json => write_scene_list_json(scene_list, writer),
+        SceneListFormat::Ndjson => write_scene_events_ndjson(scene_list, writer),
     }?;
     Ok(())
 }

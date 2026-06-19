@@ -341,6 +341,97 @@ fn json_scene_list_no_output_file_writes_scene_list_to_stdout() {
 }
 
 #[test]
+fn ndjson_scene_events_no_output_file_writes_one_scene_span_per_stdout_line() {
+    if !ffmpeg_available() {
+        eprintln!("skipping CLI integration test because ffmpeg is unavailable");
+        return;
+    }
+
+    let temp = tempfile::tempdir().unwrap();
+    let video = temp.path().join("scene-change.mp4");
+    write_two_color_video(&video);
+
+    let mut cmd = Command::cargo_bin("scenedetect-rs").unwrap();
+    let output = cmd
+        .current_dir(temp.path())
+        .arg("-i")
+        .arg(&video)
+        .args([
+            "-m",
+            "1",
+            "detect-content",
+            "--threshold",
+            "20",
+            "list-scenes",
+            "--format",
+            "ndjson",
+            "--no-output-file",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let events: Vec<serde_json::Value> = String::from_utf8(output)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert_eq!(events.len(), 2);
+    assert_eq!(events[0]["event"], "scene");
+    assert_eq!(events[0]["scene_number"], 1);
+    assert_eq!(events[0]["start_frame"], 1);
+    assert_eq!(events[1]["event"], "scene");
+    assert_eq!(events[1]["scene_number"], 2);
+    assert_eq!(events[1]["start_frame"], 4);
+    assert!(!temp.path().join("scenes.ndjson").exists());
+}
+
+#[test]
+fn ndjson_scene_events_output_writes_one_scene_span_per_file_line() {
+    if !ffmpeg_available() {
+        eprintln!("skipping CLI integration test because ffmpeg is unavailable");
+        return;
+    }
+
+    let temp = tempfile::tempdir().unwrap();
+    let video = temp.path().join("scene-change.mp4");
+    let output_dir = temp.path().join("out");
+    write_two_color_video(&video);
+
+    let mut cmd = Command::cargo_bin("scenedetect-rs").unwrap();
+    cmd.arg("-i")
+        .arg(&video)
+        .arg("--output")
+        .arg(&output_dir)
+        .args(["-m", "1"])
+        .args([
+            "detect-content",
+            "--threshold",
+            "20",
+            "list-scenes",
+            "--format",
+            "ndjson",
+        ])
+        .assert()
+        .success();
+
+    let events = std::fs::read_to_string(output_dir.join("scenes.ndjson")).unwrap();
+    let events: Vec<serde_json::Value> = events
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert_eq!(events.len(), 2);
+    assert_eq!(events[0]["event"], "scene");
+    assert_eq!(events[0]["scene_number"], 1);
+    assert_eq!(events[1]["event"], "scene");
+    assert_eq!(events[1]["scene_number"], 2);
+    assert!(!output_dir.join("scenes.csv").exists());
+    assert!(!output_dir.join("scenes.json").exists());
+}
+
+#[test]
 fn invalid_pyscenedetect_style_global_option_order_fails_with_clap_error() {
     let mut cmd = Command::cargo_bin("scenedetect-rs").unwrap();
 
