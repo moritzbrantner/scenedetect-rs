@@ -59,6 +59,30 @@ fn write_three_color_video(video: &std::path::Path) {
         .success());
 }
 
+fn write_threshold_final_fade_video(video: &std::path::Path) {
+    assert!(Command::new("ffmpeg")
+        .args([
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=white:s=16x16:d=0.2:r=10",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=black:s=16x16:d=0.3:r=10",
+            "-filter_complex",
+            "[0:v][1:v]concat=n=2:v=1:a=0",
+            "-pix_fmt",
+            "yuv420p",
+        ])
+        .arg(video)
+        .status()
+        .unwrap()
+        .success());
+}
+
 #[test]
 fn cli_reports_missing_input_video() {
     let mut cmd = Command::cargo_bin("scenedetect-rs").unwrap();
@@ -159,6 +183,43 @@ fn detector_min_scene_len_overrides_global_min_scene_len() {
     assert!(
         detector_override_scenes.lines().count() > global_only_scenes.lines().count(),
         "detector-level min scene length should allow more scene boundaries than the global value"
+    );
+}
+
+#[test]
+fn threshold_detector_adds_final_fade_out_scene_by_default() {
+    if !ffmpeg_available() {
+        eprintln!("skipping CLI integration test because ffmpeg is unavailable");
+        return;
+    }
+
+    let temp = tempfile::tempdir().unwrap();
+    let video = temp.path().join("threshold-final-fade.mp4");
+    write_threshold_final_fade_video(&video);
+
+    let mut cmd = Command::cargo_bin("scenedetect-rs").unwrap();
+    let output = cmd
+        .arg("-i")
+        .arg(&video)
+        .args([
+            "detect-threshold",
+            "--threshold",
+            "12",
+            "--min-scene-len",
+            "1",
+            "list-scenes",
+            "--no-output-file",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let scenes = String::from_utf8(output).unwrap();
+    assert!(
+        scenes.contains("1,1,00:00:00.000,0.000000,2,00:00:00.200"),
+        "expected a final fade-out scene boundary at frame 2, got:\n{scenes}"
     );
 }
 

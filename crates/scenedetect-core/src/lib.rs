@@ -438,15 +438,12 @@ fn detect_threshold(
 ) -> (Vec<SceneBoundary>, DetectionStats) {
     let mut rows = Vec::new();
     let mut boundaries = Vec::new();
-    let mut last_boundary = 0;
+    let mut last_scene_cut = frames.first().map(|frame| frame.index.0).unwrap_or(0);
+    let mut last_fade_frame = None;
+    let mut last_fade_type = None;
 
-    for (idx, frame) in frames.iter().enumerate() {
+    for frame in frames {
         let luma = frame.mean_luma();
-        let previous_luma = idx
-            .checked_sub(1)
-            .map(|previous| frames[previous].mean_luma())
-            .unwrap_or(luma);
-        let threshold_crossing = previous_luma < config.threshold && luma >= config.threshold;
 
         let mut metrics = BTreeMap::new();
         metrics.insert("average_rgb".to_owned(), luma);
@@ -456,9 +453,45 @@ fn detect_threshold(
         });
 
         let frame_number = frame.index.0;
-        if threshold_crossing && frame_number.saturating_sub(last_boundary) >= min_scene_len {
-            boundaries.push(SceneBoundary { frame: frame.index });
-            last_boundary = frame_number;
+        match last_fade_type {
+            None => {
+                last_fade_frame = Some(frame_number);
+                last_fade_type = Some(if luma < config.threshold {
+                    FadeType::Out
+                } else {
+                    FadeType::In
+                });
+            }
+            Some(FadeType::In) if luma < config.threshold => {
+                last_fade_frame = Some(frame_number);
+                last_fade_type = Some(FadeType::Out);
+            }
+            Some(FadeType::Out) if luma >= config.threshold => {
+                if frame_number.saturating_sub(last_scene_cut) >= min_scene_len {
+                    let fade_out_frame = last_fade_frame.unwrap_or(frame_number);
+                    let duration = frame_number.saturating_sub(fade_out_frame);
+                    let split = fade_out_frame
+                        + round_half_to_even(duration as f64 * (1.0 + config.fade_bias) / 2.0);
+                    boundaries.push(SceneBoundary {
+                        frame: FrameIndex(split),
+                    });
+                    last_scene_cut = frame_number;
+                }
+                last_fade_frame = Some(frame_number);
+                last_fade_type = Some(FadeType::In);
+            }
+            _ => {}
+        }
+    }
+
+    if matches!(last_fade_type, Some(FadeType::Out)) && config.add_last_scene {
+        let total_frames = frames.len() as u64;
+        if total_frames.saturating_sub(last_scene_cut) >= min_scene_len {
+            if let Some(frame) = last_fade_frame {
+                boundaries.push(SceneBoundary {
+                    frame: FrameIndex(frame),
+                });
+            }
         }
     }
 
@@ -469,6 +502,26 @@ fn detect_threshold(
             rows,
         },
     )
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FadeType {
+    In,
+    Out,
+}
+
+fn round_half_to_even(value: f64) -> u64 {
+    let floor = value.floor();
+    let fraction = value - floor;
+    if (fraction - 0.5).abs() < f64::EPSILON {
+        let floor = floor as u64;
+        return if floor.is_multiple_of(2) {
+            floor
+        } else {
+            floor + 1
+        };
+    }
+    value.round() as u64
 }
 
 fn content_score(
@@ -1083,21 +1136,25 @@ mod tests {
     }
 
     #[test]
-    fn threshold_detector_emits_boundary_when_fade_returns_above_threshold() {
+    fn threshold_detector_places_fade_return_scene_boundary_between_fade_events() {
         let frames = frames(&[
             [0, 0, 0],
             [0, 0, 0],
             [0, 0, 0],
-            [80, 80, 80],
-            [120, 120, 120],
+            [0, 0, 0],
+            [128, 128, 128],
+            [128, 128, 128],
+            [255, 255, 255],
+            [255, 255, 255],
+            [255, 255, 255],
+            [255, 255, 255],
         ]);
-        let result = detect_frames(
+        let result = detect_scenes(
             DetectorConfig::Threshold(ThresholdDetectorConfig {
                 threshold: 12.0,
                 ..Default::default()
             }),
-            FrameRate(10.0),
-            &frames,
+            VecFrameSource::new(frames),
             DetectionOptions {
                 min_scene_len: 1,
                 ..Default::default()
@@ -1105,8 +1162,134 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(result.scene_list.scenes[0].end, FrameIndex(3));
+        assert_eq!(
+            result.scene_list.scenes,
+            vec![
+                SceneSpan {
+                    start: FrameIndex(0),
+                    end: FrameIndex(2)
+                },
+                SceneSpan {
+                    start: FrameIndex(2),
+                    end: FrameIndex(10)
+                }
+            ]
+        );
         assert_eq!(result.stats.metric_names, vec!["average_rgb"]);
+    }
+
+    #[test]
+    fn threshold_detector_options_control_fade_scene_boundaries() {
+        let fade_out_then_in = frames(&[
+            [20, 20, 20],
+            [20, 20, 20],
+            [0, 0, 0],
+            [0, 0, 0],
+            [80, 80, 80],
+            [80, 80, 80],
+        ]);
+
+        let default_bias = detect_scenes(
+            DetectorConfig::Threshold(ThresholdDetectorConfig {
+                threshold: 12.0,
+                fade_bias: 0.0,
+                add_last_scene: true,
+            }),
+            VecFrameSource::new(fade_out_then_in.clone()),
+            DetectionOptions {
+                min_scene_len: 1,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let no_dark_frames_at_threshold = detect_scenes(
+            DetectorConfig::Threshold(ThresholdDetectorConfig {
+                threshold: 0.0,
+                fade_bias: 0.0,
+                add_last_scene: true,
+            }),
+            VecFrameSource::new(fade_out_then_in.clone()),
+            DetectionOptions {
+                min_scene_len: 1,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let fade_out_bias = detect_scenes(
+            DetectorConfig::Threshold(ThresholdDetectorConfig {
+                threshold: 12.0,
+                fade_bias: -1.0,
+                add_last_scene: true,
+            }),
+            VecFrameSource::new(fade_out_then_in.clone()),
+            DetectionOptions {
+                min_scene_len: 1,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let fade_in_bias = detect_scenes(
+            DetectorConfig::Threshold(ThresholdDetectorConfig {
+                threshold: 12.0,
+                fade_bias: 1.0,
+                add_last_scene: true,
+            }),
+            VecFrameSource::new(fade_out_then_in),
+            DetectionOptions {
+                min_scene_len: 1,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        assert_eq!(default_bias.scene_list.scenes[0].end, FrameIndex(3));
+        assert_eq!(
+            no_dark_frames_at_threshold.scene_list.scenes,
+            vec![SceneSpan {
+                start: FrameIndex(0),
+                end: FrameIndex(6)
+            }]
+        );
+        assert_eq!(fade_out_bias.scene_list.scenes[0].end, FrameIndex(2));
+        assert_eq!(fade_in_bias.scene_list.scenes[0].end, FrameIndex(4));
+
+        let ends_on_fade_out =
+            frames(&[[80, 80, 80], [80, 80, 80], [0, 0, 0], [0, 0, 0], [0, 0, 0]]);
+        let with_final_scene = detect_scenes(
+            DetectorConfig::Threshold(ThresholdDetectorConfig {
+                threshold: 12.0,
+                fade_bias: 0.0,
+                add_last_scene: true,
+            }),
+            VecFrameSource::new(ends_on_fade_out.clone()),
+            DetectionOptions {
+                min_scene_len: 1,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let without_final_scene = detect_scenes(
+            DetectorConfig::Threshold(ThresholdDetectorConfig {
+                threshold: 12.0,
+                fade_bias: 0.0,
+                add_last_scene: false,
+            }),
+            VecFrameSource::new(ends_on_fade_out),
+            DetectionOptions {
+                min_scene_len: 1,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        assert_eq!(with_final_scene.scene_list.scenes[0].end, FrameIndex(2));
+        assert_eq!(
+            without_final_scene.scene_list.scenes,
+            vec![SceneSpan {
+                start: FrameIndex(0),
+                end: FrameIndex(5)
+            }]
+        );
     }
 
     #[test]
