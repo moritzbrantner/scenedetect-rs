@@ -320,6 +320,38 @@ impl Default for ThresholdDetectorConfig {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HistogramDetectorConfig {
+    pub threshold: f64,
+    pub bins: usize,
+}
+
+impl Default for HistogramDetectorConfig {
+    fn default() -> Self {
+        Self {
+            threshold: 0.05,
+            bins: 256,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HashDetectorConfig {
+    pub threshold: f64,
+    pub size: usize,
+    pub lowpass: usize,
+}
+
+impl Default for HashDetectorConfig {
+    fn default() -> Self {
+        Self {
+            threshold: 0.395,
+            size: 16,
+            lowpass: 2,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ContentWeights {
     pub hue: f64,
     pub saturation: f64,
@@ -343,6 +375,8 @@ pub enum DetectorConfig {
     Content(ContentDetectorConfig),
     Adaptive(AdaptiveDetectorConfig),
     Threshold(ThresholdDetectorConfig),
+    Histogram(HistogramDetectorConfig),
+    Hash(HashDetectorConfig),
 }
 
 pub trait Detector {
@@ -409,6 +443,12 @@ where
         }
         DetectorConfig::Threshold(config) => {
             detect_threshold_streaming(&mut source, config, options.min_scene_len, stats_sink)?
+        }
+        DetectorConfig::Histogram(config) => {
+            detect_histogram_streaming(&mut source, config, options.min_scene_len, stats_sink)?
+        }
+        DetectorConfig::Hash(config) => {
+            detect_hash_streaming(&mut source, config, options.min_scene_len, stats_sink)?
         }
     };
     Ok(build_scene_list(
@@ -772,6 +812,106 @@ where
     Ok((boundaries, total_frames))
 }
 
+fn detect_histogram_streaming<S, T>(
+    source: &mut S,
+    config: HistogramDetectorConfig,
+    min_scene_len: u64,
+    stats_sink: &mut T,
+) -> Result<(Vec<SceneBoundary>, u64)>
+where
+    S: FrameSource,
+    T: DetectionStatsSink,
+{
+    let bins = config.bins.max(1);
+    let metric_name = format!("hist_diff [bins={bins}]");
+    stats_sink.start(std::slice::from_ref(&metric_name))?;
+
+    let mut boundaries = Vec::new();
+    let mut last_cut = 0;
+    let mut previous_histogram: Option<Vec<f64>> = None;
+    let mut total_frames = 0_u64;
+    let correlation_threshold = 1.0 - config.threshold;
+
+    while let Some(frame) = source.next_frame()? {
+        let histogram = luma_histogram(&frame, bins);
+        let hist_diff = previous_histogram
+            .as_ref()
+            .map_or(0.0, |previous| histogram_correlation(previous, &histogram));
+
+        let mut metrics = BTreeMap::new();
+        metrics.insert(metric_name.clone(), hist_diff);
+        stats_sink.row(StatsRow {
+            frame: frame.index,
+            metrics,
+        })?;
+
+        let frame_number = frame.index.0;
+        if previous_histogram.is_some()
+            && hist_diff <= correlation_threshold
+            && frame_number.saturating_sub(last_cut) >= min_scene_len
+        {
+            boundaries.push(SceneBoundary { frame: frame.index });
+            last_cut = frame_number;
+        }
+
+        previous_histogram = Some(histogram);
+        total_frames += 1;
+    }
+
+    stats_sink.finish()?;
+    Ok((boundaries, total_frames))
+}
+
+fn detect_hash_streaming<S, T>(
+    source: &mut S,
+    config: HashDetectorConfig,
+    min_scene_len: u64,
+    stats_sink: &mut T,
+) -> Result<(Vec<SceneBoundary>, u64)>
+where
+    S: FrameSource,
+    T: DetectionStatsSink,
+{
+    let size = config.size.max(1);
+    let lowpass = config.lowpass.max(1);
+    let metric_name = format!("hash_dist [size={size} lowpass={lowpass}]");
+    stats_sink.start(std::slice::from_ref(&metric_name))?;
+
+    let mut boundaries = Vec::new();
+    let mut last_cut = 0;
+    let mut previous_hash: Option<Vec<bool>> = None;
+    let mut total_frames = 0_u64;
+
+    while let Some(frame) = source.next_frame()? {
+        let frame_hash = perceptual_hash(&frame, size, lowpass);
+        let hash_dist = previous_hash
+            .as_ref()
+            .map_or(0.0, |previous| hash_distance(previous, &frame_hash));
+
+        let mut metrics = BTreeMap::new();
+        metrics.insert(metric_name.clone(), hash_dist);
+        stats_sink.row(StatsRow {
+            frame: frame.index,
+            metrics,
+        })?;
+
+        let frame_number = frame.index.0;
+        if previous_hash.is_some()
+            && hash_dist >= config.threshold
+            && frame_number.saturating_sub(last_cut) >= min_scene_len
+        {
+            boundaries.push(SceneBoundary { frame: frame.index });
+            last_cut = frame_number;
+        }
+
+        previous_hash = Some(frame_hash);
+        total_frames += 1;
+    }
+
+    stats_sink.finish()?;
+    Ok((boundaries, total_frames))
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum FadeType {
     In,
@@ -832,6 +972,160 @@ fn content_score(
     } else {
         weighted_sum / denominator
     }
+}
+
+fn luma_histogram(frame: &Frame, bins: usize) -> Vec<f64> {
+    let mut histogram = vec![0.0; bins];
+    for px in frame.rgb.chunks_exact(3) {
+        let luma = rgb_luma(px);
+        let bin = ((luma * bins as f64) / 256.0)
+            .floor()
+            .clamp(0.0, (bins - 1) as f64) as usize;
+        histogram[bin] += 1.0;
+    }
+
+    let norm = histogram
+        .iter()
+        .map(|value| value * value)
+        .sum::<f64>()
+        .sqrt();
+    if norm > 0.0 {
+        for value in &mut histogram {
+            *value /= norm;
+        }
+    }
+    histogram
+}
+
+fn histogram_correlation(previous: &[f64], current: &[f64]) -> f64 {
+    let count = previous.len().min(current.len());
+    if count == 0 {
+        return 1.0;
+    }
+
+    let mean_previous = previous.iter().take(count).sum::<f64>() / count as f64;
+    let mean_current = current.iter().take(count).sum::<f64>() / count as f64;
+    let mut numerator = 0.0;
+    let mut previous_sq = 0.0;
+    let mut current_sq = 0.0;
+
+    for (previous, current) in previous.iter().zip(current.iter()).take(count) {
+        let previous_delta = previous - mean_previous;
+        let current_delta = current - mean_current;
+        numerator += previous_delta * current_delta;
+        previous_sq += previous_delta * previous_delta;
+        current_sq += current_delta * current_delta;
+    }
+
+    let denominator = (previous_sq * current_sq).sqrt();
+    if denominator == 0.0 {
+        1.0
+    } else {
+        numerator / denominator
+    }
+}
+
+fn perceptual_hash(frame: &Frame, size: usize, lowpass: usize) -> Vec<bool> {
+    let imsize = size.saturating_mul(lowpass).max(1);
+    let gray = grayscale(frame);
+    let resized = resize_area(&gray, frame.width as usize, frame.height as usize, imsize);
+    let max_value = resized
+        .iter()
+        .copied()
+        .fold(0.0_f64, |max, value| max.max(value))
+        .max(1.0);
+    let normalized: Vec<_> = resized.into_iter().map(|value| value / max_value).collect();
+    let dct = dct_2d(&normalized, imsize, size);
+
+    let mut sorted = dct.clone();
+    sorted.sort_by(|left, right| left.total_cmp(right));
+    let median = if sorted.is_empty() {
+        0.0
+    } else if sorted.len().is_multiple_of(2) {
+        let upper = sorted.len() / 2;
+        (sorted[upper - 1] + sorted[upper]) / 2.0
+    } else {
+        sorted[sorted.len() / 2]
+    };
+
+    dct.into_iter().map(|value| value > median).collect()
+}
+
+fn hash_distance(previous: &[bool], current: &[bool]) -> f64 {
+    let count = previous.len().min(current.len());
+    if count == 0 {
+        return 0.0;
+    }
+    let differing = previous
+        .iter()
+        .zip(current.iter())
+        .take(count)
+        .filter(|(previous, current)| previous != current)
+        .count();
+    differing as f64 / count as f64
+}
+
+fn grayscale(frame: &Frame) -> Vec<f64> {
+    frame.rgb.chunks_exact(3).map(rgb_luma).collect()
+}
+
+fn rgb_luma(px: &[u8]) -> f64 {
+    0.299 * px[0] as f64 + 0.587 * px[1] as f64 + 0.114 * px[2] as f64
+}
+
+fn resize_area(gray: &[f64], width: usize, height: usize, output_size: usize) -> Vec<f64> {
+    if width == 0 || height == 0 {
+        return vec![0.0; output_size * output_size];
+    }
+
+    let mut resized = vec![0.0; output_size * output_size];
+    for out_y in 0..output_size {
+        for out_x in 0..output_size {
+            let start_x = out_x * width / output_size;
+            let end_x = ((out_x + 1) * width).div_ceil(output_size).min(width);
+            let start_y = out_y * height / output_size;
+            let end_y = ((out_y + 1) * height).div_ceil(output_size).min(height);
+            let mut sum = 0.0;
+            let mut count = 0.0;
+            for y in start_y..end_y {
+                for x in start_x..end_x {
+                    sum += gray[y * width + x];
+                    count += 1.0;
+                }
+            }
+            resized[out_y * output_size + out_x] = if count == 0.0 { 0.0 } else { sum / count };
+        }
+    }
+    resized
+}
+
+fn dct_2d(input: &[f64], input_size: usize, output_size: usize) -> Vec<f64> {
+    let mut output = Vec::with_capacity(output_size * output_size);
+    let scale_0 = (1.0 / input_size as f64).sqrt();
+    let scale_n = (2.0 / input_size as f64).sqrt();
+
+    for v in 0..output_size {
+        for u in 0..output_size {
+            let mut sum = 0.0;
+            for y in 0..input_size {
+                let y_basis = ((std::f64::consts::PI * (2 * y + 1) as f64 * v as f64)
+                    / (2.0 * input_size as f64))
+                    .cos();
+                for x in 0..input_size {
+                    let x_basis = ((std::f64::consts::PI * (2 * x + 1) as f64 * u as f64)
+                        / (2.0 * input_size as f64))
+                        .cos();
+                    sum += input[y * input_size + x] * x_basis * y_basis;
+                }
+            }
+            let alpha_u = if u == 0 { scale_0 } else { scale_n };
+            let alpha_v = if v == 0 { scale_0 } else { scale_n };
+            let value = alpha_u * alpha_v * sum;
+            output.push(if value.abs() < 1.0e-12 { 0.0 } else { value });
+        }
+    }
+
+    output
 }
 
 fn build_scene_list(
@@ -1071,6 +1365,24 @@ mod tests {
             .collect()
     }
 
+    fn structural_pattern_frame(index: u64) -> Frame {
+        let width = 64;
+        let height = 64;
+        let mut rgb = Vec::new();
+        for y in 0..height {
+            for x in 0..width {
+                let value = ((x * 37 + y * 17 + x * y * 3) % 256) as u8;
+                rgb.extend_from_slice(&[value, value, value]);
+            }
+        }
+        Frame {
+            index: FrameIndex(index),
+            width,
+            height,
+            rgb,
+        }
+    }
+
     struct CountingFrameSource {
         frame_rate: FrameRate,
         frames: std::vec::IntoIter<Frame>,
@@ -1236,6 +1548,26 @@ mod tests {
                     [255, 255, 255],
                     [255, 255, 255],
                 ]),
+            ),
+            (
+                DetectorConfig::Histogram(HistogramDetectorConfig {
+                    threshold: 0.05,
+                    bins: 256,
+                }),
+                frames(&[[0, 0, 0], [0, 0, 0], [255, 255, 255], [255, 255, 255]]),
+            ),
+            (
+                DetectorConfig::Hash(HashDetectorConfig {
+                    threshold: 0.395,
+                    size: 16,
+                    lowpass: 2,
+                }),
+                vec![
+                    Frame::solid(0, 64, 64, [0, 0, 0]),
+                    Frame::solid(1, 64, 64, [0, 0, 0]),
+                    structural_pattern_frame(2),
+                    structural_pattern_frame(3),
+                ],
             ),
         ];
 
@@ -1751,6 +2083,115 @@ mod tests {
             vec![SceneSpan {
                 start: FrameIndex(0),
                 end: FrameIndex(5)
+            }]
+        );
+    }
+
+    #[test]
+    fn histogram_detector_emits_scene_list_for_hard_luma_change() {
+        let frames = frames(&[[0, 0, 0], [0, 0, 0], [255, 255, 255], [255, 255, 255]]);
+        let result = detect_frames(
+            DetectorConfig::Histogram(HistogramDetectorConfig {
+                threshold: 0.05,
+                bins: 256,
+            }),
+            FrameRate(10.0),
+            &frames,
+            DetectionOptions {
+                min_scene_len: 1,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            result.scene_list.scenes,
+            vec![
+                SceneSpan {
+                    start: FrameIndex(0),
+                    end: FrameIndex(2)
+                },
+                SceneSpan {
+                    start: FrameIndex(2),
+                    end: FrameIndex(4)
+                }
+            ]
+        );
+        assert_eq!(result.stats.metric_names, vec!["hist_diff [bins=256]"]);
+        assert_eq!(result.stats.rows.len(), frames.len());
+        assert_eq!(result.stats.rows[0].metrics["hist_diff [bins=256]"], 0.0);
+    }
+
+    #[test]
+    fn hash_detector_emits_scene_list_for_structural_pattern_change() {
+        let frames = vec![
+            Frame::solid(0, 64, 64, [0, 0, 0]),
+            Frame::solid(1, 64, 64, [0, 0, 0]),
+            structural_pattern_frame(2),
+            structural_pattern_frame(3),
+        ];
+        let result = detect_frames(
+            DetectorConfig::Hash(HashDetectorConfig {
+                threshold: 0.395,
+                size: 16,
+                lowpass: 2,
+            }),
+            FrameRate(10.0),
+            &frames,
+            DetectionOptions {
+                min_scene_len: 1,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            result.scene_list.scenes,
+            vec![
+                SceneSpan {
+                    start: FrameIndex(0),
+                    end: FrameIndex(2)
+                },
+                SceneSpan {
+                    start: FrameIndex(2),
+                    end: FrameIndex(4)
+                }
+            ]
+        );
+        assert_eq!(
+            result.stats.metric_names,
+            vec!["hash_dist [size=16 lowpass=2]"]
+        );
+        assert_eq!(result.stats.rows.len(), frames.len());
+        assert_eq!(
+            result.stats.rows[0].metrics["hash_dist [size=16 lowpass=2]"],
+            0.0
+        );
+    }
+
+    #[test]
+    fn hash_detector_does_not_require_uniform_luma_change_as_scene_boundary() {
+        let frames = frames(&[[0, 0, 0], [0, 0, 0], [255, 255, 255], [255, 255, 255]]);
+        let result = detect_frames(
+            DetectorConfig::Hash(HashDetectorConfig {
+                threshold: 0.395,
+                size: 4,
+                lowpass: 2,
+            }),
+            FrameRate(10.0),
+            &frames,
+            DetectionOptions {
+                min_scene_len: 1,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            result.scene_list.scenes,
+            vec![SceneSpan {
+                start: FrameIndex(0),
+                end: FrameIndex(4)
             }]
         );
     }

@@ -6,10 +6,9 @@ generated fixtures so coding agents and CI compare the Candidate against a
 stable target.
 
 PySceneDetect v0.7 includes `detect-content`, `detect-adaptive`,
-`detect-threshold`, `detect-hist`, and `detect-hash`. The current Candidate
-supports content, adaptive, and threshold Detectors. Histogram and perceptual
-hash behavior are tracked as Expected Gaps in the Capability Matrix until their
-Rust Detector and CLI surfaces exist.
+`detect-threshold`, `detect-hist`, and `detect-hash`. The Candidate supports
+these Detectors through the CLI parity surface, with the Capability Matrix
+tracking required Parity Cases and any future Expected Gaps.
 
 Benchmarks are report-only Benchmark Cases. They compare end-to-end CLI
 commands, including frame decode, detection, and scene-list CSV output, but

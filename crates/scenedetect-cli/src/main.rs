@@ -6,8 +6,8 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 use scenedetect_core::{
     detect_scenes_streaming, write_scene_events_ndjson, write_scene_list_csv,
     write_scene_list_json, AdaptiveDetectorConfig, ContentDetectorConfig, ContentWeights,
-    CsvStatsSink, DetectionOptions, DetectorConfig, FrameRate, FrameSource, MinSceneLenPolicy,
-    NoopStatsSink, ThresholdDetectorConfig, Timecode,
+    CsvStatsSink, DetectionOptions, DetectorConfig, FrameRate, FrameSource, HashDetectorConfig,
+    HistogramDetectorConfig, MinSceneLenPolicy, NoopStatsSink, ThresholdDetectorConfig, Timecode,
 };
 use scenedetect_ffmpeg::FfmpegFrameSource;
 
@@ -54,6 +54,10 @@ enum DetectorCommand {
     Adaptive(AdaptiveArgs),
     #[command(name = "detect-threshold")]
     Threshold(ThresholdArgs),
+    #[command(name = "detect-hist")]
+    Histogram(HistogramArgs),
+    #[command(name = "detect-hash")]
+    Hash(HashArgs),
 }
 
 #[derive(Debug, Args)]
@@ -98,6 +102,32 @@ struct ThresholdArgs {
     fade_bias: f64,
     #[arg(short = 'l', long = "add-last-scene", default_value_t = true)]
     add_last_scene: bool,
+    #[arg(short = 'm', long = "min-scene-len")]
+    min_scene_len: Option<String>,
+    #[command(subcommand)]
+    output: OutputCommand,
+}
+
+#[derive(Debug, Args)]
+struct HistogramArgs {
+    #[arg(short = 't', long = "threshold", default_value_t = 0.05, value_parser = parse_unit_interval)]
+    threshold: f64,
+    #[arg(short = 'b', long = "bins", default_value_t = 256, value_parser = parse_1_to_256)]
+    bins: usize,
+    #[arg(short = 'm', long = "min-scene-len")]
+    min_scene_len: Option<String>,
+    #[command(subcommand)]
+    output: OutputCommand,
+}
+
+#[derive(Debug, Args)]
+struct HashArgs {
+    #[arg(short = 't', long = "threshold", default_value_t = 0.395, value_parser = parse_unit_interval)]
+    threshold: f64,
+    #[arg(short = 's', long = "size", default_value_t = 16, value_parser = parse_1_to_256)]
+    size: usize,
+    #[arg(short = 'l', long = "lowpass", default_value_t = 2, value_parser = parse_1_to_256)]
+    lowpass: usize,
     #[arg(short = 'm', long = "min-scene-len")]
     min_scene_len: Option<String>,
     #[command(subcommand)]
@@ -249,6 +279,15 @@ fn detector_config(command: &DetectorCommand) -> DetectorConfig {
             fade_bias: args.fade_bias,
             add_last_scene: args.add_last_scene,
         }),
+        DetectorCommand::Histogram(args) => DetectorConfig::Histogram(HistogramDetectorConfig {
+            threshold: args.threshold,
+            bins: args.bins,
+        }),
+        DetectorCommand::Hash(args) => DetectorConfig::Hash(HashDetectorConfig {
+            threshold: args.threshold,
+            size: args.size,
+            lowpass: args.lowpass,
+        }),
     }
 }
 
@@ -257,6 +296,8 @@ fn detector_min_scene_len(command: &DetectorCommand) -> Option<String> {
         DetectorCommand::Content(args) => args.min_scene_len.clone(),
         DetectorCommand::Adaptive(args) => args.min_scene_len.clone(),
         DetectorCommand::Threshold(args) => args.min_scene_len.clone(),
+        DetectorCommand::Histogram(args) => args.min_scene_len.clone(),
+        DetectorCommand::Hash(args) => args.min_scene_len.clone(),
     }
 }
 
@@ -271,6 +312,12 @@ fn list_scenes_args(command: &DetectorCommand) -> &ListScenesArgs {
         DetectorCommand::Threshold(args) => match &args.output {
             OutputCommand::ListScenes(args) => args,
         },
+        DetectorCommand::Histogram(args) => match &args.output {
+            OutputCommand::ListScenes(args) => args,
+        },
+        DetectorCommand::Hash(args) => match &args.output {
+            OutputCommand::ListScenes(args) => args,
+        },
     }
 }
 
@@ -283,6 +330,28 @@ fn parse_weights(weights: Option<&[f64]>) -> ContentWeights {
         saturation: weights[1],
         luminance: weights[2],
         edges: weights[3],
+    }
+}
+
+fn parse_unit_interval(value: &str) -> std::result::Result<f64, String> {
+    let parsed = value
+        .parse::<f64>()
+        .map_err(|_| format!("{value:?} is not a number"))?;
+    if (0.0..=1.0).contains(&parsed) {
+        Ok(parsed)
+    } else {
+        Err(format!("{parsed} must be between 0.0 and 1.0"))
+    }
+}
+
+fn parse_1_to_256(value: &str) -> std::result::Result<usize, String> {
+    let parsed = value
+        .parse::<usize>()
+        .map_err(|_| format!("{value:?} is not a positive integer"))?;
+    if (1..=256).contains(&parsed) {
+        Ok(parsed)
+    } else {
+        Err(format!("{parsed} must be between 1 and 256"))
     }
 }
 

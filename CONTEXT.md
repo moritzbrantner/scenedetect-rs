@@ -20,6 +20,25 @@ _Avoid_: Timestamp
 A strategy that scores frames and proposes scene boundaries.
 _Avoid_: Algorithm
 
+**Histogram Detector**:
+A Detector that compares adjacent Frame luma histograms to propose Scene
+Boundaries.
+_Avoid_: Hist algorithm
+
+**Perceptual Hash Detector**:
+A Detector that compares adjacent Frame perceptual hashes to propose Scene
+Boundaries.
+_Avoid_: Hash algorithm
+
+**Histogram Correlation Score**:
+A Detection Stats value describing adjacent luma histogram similarity.
+_Avoid_: Histogram distance
+
+**Hash Distance**:
+A Detection Stats value describing normalized adjacent perceptual hash
+difference.
+_Avoid_: Raw hamming distance
+
 **Scene Boundary**:
 A frame position where one scene ends and another begins.
 _Avoid_: Cut

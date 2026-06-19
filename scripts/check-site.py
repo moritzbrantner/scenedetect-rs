@@ -121,6 +121,8 @@ def check_index() -> None:
         "detect-content",
         "detect-adaptive",
         "detect-threshold",
+        "detect-hist",
+        "detect-hash",
     ):
         if text not in html:
             raise SiteCheckError(f"site/index.html missing expected content: {text}")

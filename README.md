@@ -2,8 +2,8 @@
 
 `scenedetect-rs` is a Rust reimplementation and expansion of PySceneDetect.
 The first milestone focuses on CLI-compatible scene detection for
-`detect-content`, `detect-adaptive`, `detect-threshold`, scene-list CSV output,
-and detector stats CSV output.
+`detect-content`, `detect-adaptive`, `detect-threshold`, `detect-hist`,
+`detect-hash`, scene-list CSV output, and detector stats CSV output.
 
 The repository is set up for test-driven agent work. Agents should read
 [`AGENTS.md`](AGENTS.md), start from a public-interface behavior test, and finish
@@ -36,6 +36,8 @@ options must appear after `list-scenes`:
 scenedetect-rs -i input.mp4 --output out detect-content list-scenes
 scenedetect-rs -i input.mp4 --stats stats.csv detect-content list-scenes --no-output-file
 scenedetect-rs -i input.mp4 --min-scene-len 100 detect-content --min-scene-len 1 list-scenes
+scenedetect-rs -i input.mp4 detect-hist --threshold 0.05 --bins 256 list-scenes
+scenedetect-rs -i input.mp4 detect-hash --threshold 0.395 --size 16 --lowpass 2 list-scenes
 scenedetect-rs -i input.mp4 --output out detect-content list-scenes --format json
 scenedetect-rs -i input.mp4 detect-content list-scenes --format json --no-output-file
 scenedetect-rs -i input.mp4 --output out detect-content list-scenes --format ndjson

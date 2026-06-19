@@ -43,4 +43,11 @@ ffmpeg -y -v error \
   -c:v ffv1 \
   "$OUT_DIR/min-scene-len-close-cuts.mkv"
 
+ffmpeg -y -v error \
+  -f lavfi -i color=c=black:s=64x64:d=0.5:r=10 \
+  -f lavfi -i testsrc=size=64x64:rate=10:duration=0.5 \
+  -filter_complex "[0:v][1:v]concat=n=2:v=1:a=0,format=rgb24" \
+  -c:v ffv1 \
+  "$OUT_DIR/hash-pattern-cut.mkv"
+
 echo "$OUT_DIR"

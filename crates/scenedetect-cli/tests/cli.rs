@@ -83,6 +83,30 @@ fn write_threshold_final_fade_video(video: &std::path::Path) {
         .success());
 }
 
+fn write_hash_pattern_video(video: &std::path::Path) {
+    assert!(Command::new("ffmpeg")
+        .args([
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=black:s=16x16:d=0.3:r=10",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc=size=16x16:rate=10:duration=0.3",
+            "-filter_complex",
+            "[0:v][1:v]concat=n=2:v=1:a=0,format=rgb24",
+            "-pix_fmt",
+            "yuv420p",
+        ])
+        .arg(video)
+        .status()
+        .unwrap()
+        .success());
+}
+
 #[test]
 fn cli_reports_missing_input_video() {
     let mut cmd = Command::cargo_bin("scenedetect-rs").unwrap();
@@ -480,4 +504,117 @@ fn cli_writes_scene_list_and_stats_for_generated_video() {
     assert!(scenes.contains("Scene Number,Start Frame,Start Timecode"));
     assert!(scenes.lines().count() >= 3);
     assert!(stats.contains("Frame Number,content_val"));
+}
+
+#[test]
+fn hist_detector_writes_scene_list_and_stats_for_generated_video() {
+    if !ffmpeg_available() {
+        eprintln!("skipping CLI integration test because ffmpeg is unavailable");
+        return;
+    }
+
+    let temp = tempfile::tempdir().unwrap();
+    let video = temp.path().join("hist-scene-change.mp4");
+    let output_dir = temp.path().join("out");
+    let stats = temp.path().join("stats.csv");
+    write_two_color_video(&video);
+
+    let mut cmd = Command::cargo_bin("scenedetect-rs").unwrap();
+    cmd.arg("-i")
+        .arg(&video)
+        .arg("--stats")
+        .arg(&stats)
+        .args([
+            "-m",
+            "1",
+            "detect-hist",
+            "--threshold",
+            "0.05",
+            "--bins",
+            "256",
+            "list-scenes",
+        ])
+        .arg("--output")
+        .arg(&output_dir)
+        .assert()
+        .success();
+
+    let scenes = std::fs::read_to_string(output_dir.join("scenes.csv")).unwrap();
+    let stats = std::fs::read_to_string(stats).unwrap();
+    assert!(scenes.contains("Scene Number,Start Frame,Start Timecode"));
+    assert!(scenes.lines().count() >= 3);
+    assert!(stats.contains("Frame Number,hist_diff [bins=256]"));
+}
+
+#[test]
+fn hash_detector_writes_scene_list_and_stats_for_generated_video() {
+    if !ffmpeg_available() {
+        eprintln!("skipping CLI integration test because ffmpeg is unavailable");
+        return;
+    }
+
+    let temp = tempfile::tempdir().unwrap();
+    let video = temp.path().join("hash-scene-change.mp4");
+    let output_dir = temp.path().join("out");
+    let stats = temp.path().join("stats.csv");
+    write_hash_pattern_video(&video);
+
+    let mut cmd = Command::cargo_bin("scenedetect-rs").unwrap();
+    cmd.arg("-i")
+        .arg(&video)
+        .arg("--stats")
+        .arg(&stats)
+        .args([
+            "-m",
+            "1",
+            "detect-hash",
+            "--threshold",
+            "0.395",
+            "--size",
+            "16",
+            "--lowpass",
+            "2",
+            "list-scenes",
+        ])
+        .arg("--output")
+        .arg(&output_dir)
+        .assert()
+        .success();
+
+    let scenes = std::fs::read_to_string(output_dir.join("scenes.csv")).unwrap();
+    let stats = std::fs::read_to_string(stats).unwrap();
+    assert!(scenes.contains("Scene Number,Start Frame,Start Timecode"));
+    assert!(scenes.lines().count() >= 3);
+    assert!(stats.contains("Frame Number,hash_dist [size=16 lowpass=2]"));
+}
+
+#[test]
+fn hist_and_hash_detector_options_validate_pyscenedetect_ranges() {
+    let mut hist = Command::cargo_bin("scenedetect-rs").unwrap();
+    hist.args([
+        "-i",
+        "video.mp4",
+        "detect-hist",
+        "--threshold",
+        "1.5",
+        "list-scenes",
+        "--no-output-file",
+    ])
+    .assert()
+    .failure()
+    .stderr(predicate::str::contains("invalid value"));
+
+    let mut hash = Command::cargo_bin("scenedetect-rs").unwrap();
+    hash.args([
+        "-i",
+        "video.mp4",
+        "detect-hash",
+        "--size",
+        "0",
+        "list-scenes",
+        "--no-output-file",
+    ])
+    .assert()
+    .failure()
+    .stderr(predicate::str::contains("invalid value"));
 }

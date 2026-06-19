@@ -84,22 +84,20 @@ tolerance_frames = 1
 
 [[cases]]
 id = "hist-hard-cut"
-status = "expected-gap"
+status = "required"
 video = "tests/fixtures/generated/content-hard-cut.mkv"
 detector = "detect-hist"
 threshold = "0.05"
 args = ["--bins", "256"]
 min_scene_len = "1"
 tolerance_frames = 1
-reason = "scenedetect-rs does not yet expose a histogram Detector or detect-hist CLI command."
 
 [[cases]]
-id = "hash-hard-cut"
-status = "expected-gap"
-video = "tests/fixtures/generated/content-hard-cut.mkv"
+id = "hash-pattern-cut"
+status = "required"
+video = "tests/fixtures/generated/hash-pattern-cut.mkv"
 detector = "detect-hash"
 threshold = "0.395"
 args = ["--size", "16", "--lowpass", "2"]
 min_scene_len = "1"
 tolerance_frames = 1
-reason = "scenedetect-rs does not yet expose a perceptual hash Detector or detect-hash CLI command."
