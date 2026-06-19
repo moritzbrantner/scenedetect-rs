@@ -1,4 +1,5 @@
 mod artifacts;
+mod scene_list_command;
 
 use std::fs::{self, File};
 use std::path::{Path, PathBuf};
@@ -394,71 +395,70 @@ fn handle_export_html(
     request: &artifacts::SceneListRequest,
     frame_rate_override: Option<FrameRate>,
 ) -> Result<()> {
-    let request_key = artifacts::request_key(request)?;
     let report_reuse = !cli.quiet && !args.quiet;
 
-    if !args.no_output_file {
-        let output_dir = export_html_output_dir(cli, args);
-        fs::create_dir_all(&output_dir)?;
-        let output_path = output_dir.join(export_html_filename(args));
-        let render_kind = "scene_list_html";
-        let manifest_path =
-            artifacts::render_manifest_path(&output_dir, &output_path, render_kind)?;
-        if can_reuse_scene_list(cli)
-            && explicit_artifact_matches(cli, request)?
-            && artifacts::reusable_output_exists(
-                &manifest_path,
-                &output_path,
-                render_kind,
-                &request_key,
-                request,
-            )?
-        {
-            if report_reuse {
-                eprintln!("reusing Scene List output: {}", output_path.display());
-                println!("{}", output_path.display());
-            }
-            return Ok(());
-        }
+    if args.no_output_file {
+        return scene_list_command::run_export_html_stdout(
+            scene_list_command::ExportHtmlStdoutRequest {
+                input: cli.input.clone(),
+                detector,
+                options,
+                scene_list_request: request.clone(),
+                scene_list_artifact: cli.scene_list_artifact.clone(),
+                stats: cli.stats.clone(),
+                force: cli.force,
+                quiet: cli.quiet || args.quiet,
+                frame_rate_override,
+            },
+        );
+    }
 
-        let artifact_path = scene_list_artifact_path(cli, Some(&output_dir), &request_key);
-        let (scene_list, _) = get_or_create_scene_list(
-            cli,
-            detector,
-            options,
-            request,
-            artifact_path.as_deref(),
-            report_reuse,
-            frame_rate_override,
-        )?;
-        let file = File::create(&output_path).with_context(|| {
-            format!("failed to create HTML scene list {}", output_path.display())
-        })?;
-        write_scene_list_html(&scene_list, file)?;
-        artifacts::write_render_manifest(
+    let request_key = artifacts::request_key(request)?;
+
+    let output_dir = export_html_output_dir(cli, args);
+    fs::create_dir_all(&output_dir)?;
+    let output_path = output_dir.join(export_html_filename(args));
+    let render_kind = "scene_list_html";
+    let manifest_path = artifacts::render_manifest_path(&output_dir, &output_path, render_kind)?;
+    if can_reuse_scene_list(cli)
+        && explicit_artifact_matches(cli, request)?
+        && artifacts::reusable_output_exists(
             &manifest_path,
             &output_path,
             render_kind,
             &request_key,
             request,
-        )?;
-        if !cli.quiet && !args.quiet {
+        )?
+    {
+        if report_reuse {
+            eprintln!("reusing Scene List output: {}", output_path.display());
             println!("{}", output_path.display());
         }
-    } else {
-        let artifact_path = cli.scene_list_artifact.as_deref();
-        let (scene_list, _) = get_or_create_scene_list(
-            cli,
-            detector,
-            options,
-            request,
-            artifact_path,
-            report_reuse,
-            frame_rate_override,
-        )?;
-        if !cli.quiet && !args.quiet {
-            write_scene_list_html(&scene_list, std::io::stdout())?;
-        }
+        return Ok(());
+    }
+
+    let artifact_path = scene_list_artifact_path(cli, Some(&output_dir), &request_key);
+    let (scene_list, _) = get_or_create_scene_list(
+        cli,
+        detector,
+        options,
+        request,
+        artifact_path.as_deref(),
+        report_reuse,
+        frame_rate_override,
+    )?;
+    let file = File::create(&output_path)
+        .with_context(|| format!("failed to create HTML scene list {}", output_path.display()))?;
+    write_scene_list_html(&scene_list, file)?;
+    artifacts::write_render_manifest(
+        &manifest_path,
+        &output_path,
+        render_kind,
+        &request_key,
+        request,
+    )?;
+    if !cli.quiet && !args.quiet {
+        println!("{}", output_path.display());
     }
 
     Ok(())
