@@ -4,9 +4,9 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use scenedetect_core::{
-    detect_scenes, write_scene_list_csv, write_stats_csv, AdaptiveDetectorConfig,
-    ContentDetectorConfig, ContentWeights, DetectionOptions, DetectorConfig, FrameRate,
-    FrameSource, MinSceneLenPolicy, ThresholdDetectorConfig, Timecode,
+    detect_scenes, write_scene_list_csv, write_scene_list_json, write_stats_csv,
+    AdaptiveDetectorConfig, ContentDetectorConfig, ContentWeights, DetectionOptions,
+    DetectorConfig, FrameRate, FrameSource, MinSceneLenPolicy, ThresholdDetectorConfig, Timecode,
 };
 use scenedetect_ffmpeg::FfmpegFrameSource;
 
@@ -112,14 +112,22 @@ enum OutputCommand {
 struct ListScenesArgs {
     #[arg(short = 'o', long = "output")]
     output: Option<PathBuf>,
-    #[arg(short = 'f', long = "filename", default_value = "scenes.csv")]
-    filename: String,
+    #[arg(short = 'f', long = "filename")]
+    filename: Option<String>,
+    #[arg(long = "format", default_value = "csv")]
+    format: SceneListFormat,
     #[arg(short = 'n', long = "no-output-file")]
     no_output_file: bool,
     #[arg(short = 'q', long = "quiet")]
     quiet: bool,
     #[arg(short = 's', long = "skip-cuts")]
     skip_cuts: bool,
+}
+
+#[derive(Debug, Clone, ValueEnum)]
+enum SceneListFormat {
+    Csv,
+    Json,
 }
 
 fn main() -> Result<()> {
@@ -166,17 +174,36 @@ fn main() -> Result<()> {
             .cloned()
             .unwrap_or_else(|| PathBuf::from("."));
         fs::create_dir_all(&output_dir)?;
-        let output_path = output_dir.join(&list_scenes.filename);
+        let output_path = output_dir.join(scene_list_filename(list_scenes));
         let file = File::create(&output_path)
             .with_context(|| format!("failed to create scene list {}", output_path.display()))?;
-        write_scene_list_csv(&result.scene_list, file)?;
+        write_scene_list(&result.scene_list, file, &list_scenes.format)?;
         if !cli.quiet && !list_scenes.quiet {
             println!("{}", output_path.display());
         }
     } else if !cli.quiet && !list_scenes.quiet {
-        write_scene_list_csv(&result.scene_list, std::io::stdout())?;
+        write_scene_list(&result.scene_list, std::io::stdout(), &list_scenes.format)?;
     }
 
+    Ok(())
+}
+
+fn scene_list_filename(args: &ListScenesArgs) -> &str {
+    args.filename.as_deref().unwrap_or(match &args.format {
+        SceneListFormat::Csv => "scenes.csv",
+        SceneListFormat::Json => "scenes.json",
+    })
+}
+
+fn write_scene_list<W: std::io::Write>(
+    scene_list: &scenedetect_core::SceneList,
+    writer: W,
+    format: &SceneListFormat,
+) -> Result<()> {
+    match format {
+        SceneListFormat::Csv => write_scene_list_csv(scene_list, writer),
+        SceneListFormat::Json => write_scene_list_json(scene_list, writer),
+    }?;
     Ok(())
 }
 

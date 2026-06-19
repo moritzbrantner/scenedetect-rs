@@ -261,6 +261,86 @@ fn list_scenes_no_output_file_writes_scene_list_to_stdout() {
 }
 
 #[test]
+fn json_scene_list_output_writes_ordered_scene_spans_to_file() {
+    if !ffmpeg_available() {
+        eprintln!("skipping CLI integration test because ffmpeg is unavailable");
+        return;
+    }
+
+    let temp = tempfile::tempdir().unwrap();
+    let video = temp.path().join("scene-change.mp4");
+    let output_dir = temp.path().join("out");
+    write_two_color_video(&video);
+
+    let mut cmd = Command::cargo_bin("scenedetect-rs").unwrap();
+    cmd.arg("-i")
+        .arg(&video)
+        .arg("--output")
+        .arg(&output_dir)
+        .args(["-m", "1"])
+        .args([
+            "detect-content",
+            "--threshold",
+            "20",
+            "list-scenes",
+            "--format",
+            "json",
+        ])
+        .assert()
+        .success();
+
+    let scenes = std::fs::read_to_string(output_dir.join("scenes.json")).unwrap();
+    let scenes: serde_json::Value = serde_json::from_str(&scenes).unwrap();
+    assert_eq!(scenes["frame_rate"], 10.0);
+    assert_eq!(scenes["scenes"][0]["scene_number"], 1);
+    assert_eq!(scenes["scenes"][0]["start_frame"], 1);
+    assert_eq!(scenes["scenes"][1]["scene_number"], 2);
+    assert_eq!(scenes["scenes"][1]["start_frame"], 4);
+    assert!(!output_dir.join("scenes.csv").exists());
+}
+
+#[test]
+fn json_scene_list_no_output_file_writes_scene_list_to_stdout() {
+    if !ffmpeg_available() {
+        eprintln!("skipping CLI integration test because ffmpeg is unavailable");
+        return;
+    }
+
+    let temp = tempfile::tempdir().unwrap();
+    let video = temp.path().join("scene-change.mp4");
+    write_two_color_video(&video);
+
+    let mut cmd = Command::cargo_bin("scenedetect-rs").unwrap();
+    let output = cmd
+        .current_dir(temp.path())
+        .arg("-i")
+        .arg(&video)
+        .args([
+            "-m",
+            "1",
+            "detect-content",
+            "--threshold",
+            "20",
+            "list-scenes",
+            "--format",
+            "json",
+            "--no-output-file",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let scenes: serde_json::Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(scenes["frame_rate"], 10.0);
+    assert_eq!(scenes["scene_count"], 2);
+    assert_eq!(scenes["scenes"][0]["scene_number"], 1);
+    assert_eq!(scenes["scenes"][1]["scene_number"], 2);
+    assert!(!temp.path().join("scenes.json").exists());
+}
+
+#[test]
 fn invalid_pyscenedetect_style_global_option_order_fails_with_clap_error() {
     let mut cmd = Command::cargo_bin("scenedetect-rs").unwrap();
 
