@@ -955,6 +955,8 @@ fn explicit_scene_list_artifact_is_used_with_no_output_file() {
             "Scene Number,Start Frame,Start Timecode",
         ))
         .stderr(predicate::str::contains("reusing Scene List Artifact"));
+
+    assert!(!temp.path().join(".scenedetect-rs").exists());
 }
 
 #[test]
@@ -1229,6 +1231,7 @@ fn json_scene_list_no_output_file_writes_scene_list_to_stdout() {
     assert_eq!(scenes["scenes"][0]["scene_number"], 1);
     assert_eq!(scenes["scenes"][1]["scene_number"], 2);
     assert!(!temp.path().join("scenes.json").exists());
+    assert!(!temp.path().join(".scenedetect-rs").exists());
 }
 
 #[test]
@@ -1277,6 +1280,7 @@ fn ndjson_scene_events_no_output_file_writes_one_scene_span_per_stdout_line() {
     assert_eq!(events[1]["scene_number"], 2);
     assert_eq!(events[1]["start_frame"], 4);
     assert!(!temp.path().join("scenes.ndjson").exists());
+    assert!(!temp.path().join(".scenedetect-rs").exists());
 }
 
 #[test]

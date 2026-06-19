@@ -201,6 +201,16 @@ enum SceneListFormat {
     Ndjson,
 }
 
+impl From<&SceneListFormat> for scene_list_command::SceneListOutputFormat {
+    fn from(format: &SceneListFormat) -> Self {
+        match format {
+            SceneListFormat::Csv => Self::Csv,
+            SceneListFormat::Json => Self::Json,
+            SceneListFormat::Ndjson => Self::Ndjson,
+        }
+    }
+}
+
 #[derive(Debug, Clone, ValueEnum)]
 enum BoundaryReviewFormat {
     Csv,
@@ -318,72 +328,71 @@ fn handle_list_scenes(
     request: &artifacts::SceneListRequest,
     frame_rate_override: Option<FrameRate>,
 ) -> Result<()> {
+    let quiet = cli.quiet || args.quiet;
+    if args.no_output_file {
+        return scene_list_command::run_list_scenes_stdout(
+            scene_list_command::ListScenesStdoutRequest {
+                input: cli.input.clone(),
+                detector,
+                options,
+                scene_list_request: request.clone(),
+                scene_list_artifact: cli.scene_list_artifact.clone(),
+                stats: cli.stats.clone(),
+                force: cli.force,
+                quiet,
+                frame_rate_override,
+                format: scene_list_command::SceneListOutputFormat::from(&args.format),
+            },
+        );
+    }
+
     let request_key = artifacts::request_key(request)?;
-    let report_reuse = !cli.quiet && !args.quiet;
-
-    if !args.no_output_file {
-        let output_dir = scene_list_output_dir(cli, args);
-        fs::create_dir_all(&output_dir)?;
-        let output_path = output_dir.join(scene_list_filename(args));
-        let render_kind = scene_list_render_kind(&args.format);
-        let manifest_path =
-            artifacts::render_manifest_path(&output_dir, &output_path, render_kind)?;
-        if can_reuse_scene_list(cli)
-            && explicit_artifact_matches(cli, request)?
-            && artifacts::reusable_output_exists(
-                &manifest_path,
-                &output_path,
-                render_kind,
-                &request_key,
-                request,
-            )?
-        {
-            if report_reuse {
-                eprintln!("reusing Scene List output: {}", output_path.display());
-                println!("{}", output_path.display());
-            }
-            return Ok(());
-        }
-
-        let artifact_path = scene_list_artifact_path(cli, Some(&output_dir), &request_key);
-        let (scene_list, _) = get_or_create_scene_list(
-            cli,
-            detector,
-            options,
-            request,
-            artifact_path.as_deref(),
-            report_reuse,
-            frame_rate_override,
-        )?;
-        let file = File::create(&output_path)
-            .with_context(|| format!("failed to create scene list {}", output_path.display()))?;
-        write_scene_list(&scene_list, file, &args.format)?;
-        artifacts::write_render_manifest(
+    let report_reuse = !quiet;
+    let output_dir = scene_list_output_dir(cli, args);
+    fs::create_dir_all(&output_dir)?;
+    let output_path = output_dir.join(scene_list_filename(args));
+    let render_kind = scene_list_render_kind(&args.format);
+    let manifest_path = artifacts::render_manifest_path(&output_dir, &output_path, render_kind)?;
+    if can_reuse_scene_list(cli)
+        && explicit_artifact_matches(cli, request)?
+        && artifacts::reusable_output_exists(
             &manifest_path,
             &output_path,
             render_kind,
             &request_key,
             request,
-        )?;
-        if !cli.quiet && !args.quiet {
+        )?
+    {
+        if report_reuse {
+            eprintln!("reusing Scene List output: {}", output_path.display());
             println!("{}", output_path.display());
         }
-    } else {
-        let artifact_path = cli.scene_list_artifact.as_deref();
-        let (scene_list, _) = get_or_create_scene_list(
-            cli,
-            detector,
-            options,
-            request,
-            artifact_path,
-            report_reuse,
-            frame_rate_override,
-        )?;
-        if !cli.quiet && !args.quiet {
-            write_scene_list(&scene_list, std::io::stdout(), &args.format)?;
-        }
+        return Ok(());
     }
 
+    let artifact_path = scene_list_artifact_path(cli, Some(&output_dir), &request_key);
+    let (scene_list, _) = get_or_create_scene_list(
+        cli,
+        detector,
+        options,
+        request,
+        artifact_path.as_deref(),
+        report_reuse,
+        frame_rate_override,
+    )?;
+    let file = File::create(&output_path)
+        .with_context(|| format!("failed to create scene list {}", output_path.display()))?;
+    write_scene_list(&scene_list, file, &args.format)?;
+    artifacts::write_render_manifest(
+        &manifest_path,
+        &output_path,
+        render_kind,
+        &request_key,
+        request,
+    )?;
+    if !quiet {
+        println!("{}", output_path.display());
+    }
     Ok(())
 }
 
