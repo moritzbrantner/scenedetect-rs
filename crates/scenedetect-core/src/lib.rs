@@ -560,32 +560,53 @@ fn build_scene_list(
 }
 
 pub fn write_scene_list_csv<W: Write>(scene_list: &SceneList, writer: W) -> Result<()> {
-    let mut csv = csv::Writer::from_writer(writer);
+    let mut csv = csv::WriterBuilder::new().flexible(true).from_writer(writer);
+    let mut timecode_list = vec!["Timecode List:".to_owned()];
+    timecode_list.extend(
+        scene_list.scenes.iter().skip(1).map(|scene| {
+            Timecode::from_frames(scene.start.0).display_at_rate(scene_list.frame_rate)
+        }),
+    );
+    csv.write_record(timecode_list)?;
     csv.write_record([
         "Scene Number",
         "Start Frame",
         "Start Timecode",
+        "Start Time (seconds)",
         "End Frame",
         "End Timecode",
-        "Length Frames",
-        "Length Timecode",
+        "End Time (seconds)",
+        "Length (frames)",
+        "Length (timecode)",
+        "Length (seconds)",
     ])?;
 
     for (idx, scene) in scene_list.scenes.iter().enumerate() {
         let length = scene.end.0.saturating_sub(scene.start.0);
         csv.write_record([
             (idx + 1).to_string(),
-            scene.start.0.to_string(),
+            (scene.start.0 + 1).to_string(),
             Timecode::from_frames(scene.start.0).display_at_rate(scene_list.frame_rate),
+            seconds_at_rate(scene.start.0, scene_list.frame_rate),
             scene.end.0.to_string(),
             Timecode::from_frames(scene.end.0).display_at_rate(scene_list.frame_rate),
+            seconds_at_rate(scene.end.0, scene_list.frame_rate),
             length.to_string(),
             Timecode::from_frames(length).display_at_rate(scene_list.frame_rate),
+            seconds_at_rate(length, scene_list.frame_rate),
         ])?;
     }
 
     csv.flush()?;
     Ok(())
+}
+
+fn seconds_at_rate(frames: u64, frame_rate: FrameRate) -> String {
+    format!("{:.6}", seconds_value_at_rate(frames, frame_rate))
+}
+
+fn seconds_value_at_rate(frames: u64, frame_rate: FrameRate) -> f64 {
+    frames as f64 / frame_rate.0
 }
 
 pub fn write_stats_csv<W: Write>(stats: &DetectionStats, writer: W) -> Result<()> {
@@ -610,16 +631,79 @@ pub fn write_stats_csv<W: Write>(stats: &DetectionStats, writer: W) -> Result<()
 }
 
 pub fn write_scene_list_json<W: Write>(scene_list: &SceneList, writer: W) -> Result<()> {
-    serde_json::to_writer_pretty(writer, scene_list)?;
+    let output = SceneListExport {
+        frame_rate: scene_list.frame_rate.0,
+        scene_count: scene_list.scenes.len(),
+        scenes: scene_exports(scene_list),
+    };
+    serde_json::to_writer_pretty(writer, &output)?;
     Ok(())
 }
 
 pub fn write_scene_events_ndjson<W: Write>(scene_list: &SceneList, mut writer: W) -> Result<()> {
-    for scene in &scene_list.scenes {
-        serde_json::to_writer(&mut writer, scene)?;
+    for scene in scene_exports(scene_list) {
+        let event = SceneEventExport {
+            event: "scene",
+            scene,
+        };
+        serde_json::to_writer(&mut writer, &event)?;
         writeln!(writer)?;
     }
     Ok(())
+}
+
+#[derive(Debug, Serialize)]
+struct SceneListExport {
+    frame_rate: f64,
+    scene_count: usize,
+    scenes: Vec<SceneExport>,
+}
+
+#[derive(Debug, Serialize)]
+struct SceneEventExport {
+    event: &'static str,
+    #[serde(flatten)]
+    scene: SceneExport,
+}
+
+#[derive(Debug, Serialize)]
+struct SceneExport {
+    scene_number: usize,
+    start_frame: u64,
+    start_timecode: String,
+    start_seconds: f64,
+    end_frame: u64,
+    end_timecode: String,
+    end_seconds: f64,
+    length_frames: u64,
+    length_timecode: String,
+    length_seconds: f64,
+}
+
+fn scene_exports(scene_list: &SceneList) -> Vec<SceneExport> {
+    scene_list
+        .scenes
+        .iter()
+        .enumerate()
+        .map(|(idx, scene)| {
+            let length = scene.end.0.saturating_sub(scene.start.0);
+            SceneExport {
+                scene_number: idx + 1,
+                start_frame: scene.start.0 + 1,
+                start_timecode: Timecode::from_frames(scene.start.0)
+                    .display_at_rate(scene_list.frame_rate),
+                start_seconds: seconds_value_at_rate(scene.start.0, scene_list.frame_rate),
+                end_frame: scene.end.0,
+                end_timecode: Timecode::from_frames(scene.end.0)
+                    .display_at_rate(scene_list.frame_rate),
+                end_seconds: seconds_value_at_rate(scene.end.0, scene_list.frame_rate),
+                length_frames: length,
+                length_timecode: Timecode::from_frames(length)
+                    .display_at_rate(scene_list.frame_rate),
+                length_seconds: seconds_value_at_rate(length, scene_list.frame_rate),
+            }
+        })
+        .collect()
 }
 
 impl fmt::Display for FrameIndex {
@@ -676,6 +760,48 @@ mod tests {
                 .frames(),
             25
         );
+    }
+
+    #[test]
+    fn empty_video_emits_no_scenes_and_no_stats_rows() {
+        let result = detect_frames(
+            DetectorConfig::Content(ContentDetectorConfig::default()),
+            FrameRate(10.0),
+            &[],
+            DetectionOptions::default(),
+        )
+        .unwrap();
+
+        assert!(result.scene_list.scenes.is_empty());
+        assert_eq!(result.stats.metric_names, vec!["content_val"]);
+        assert!(result.stats.rows.is_empty());
+    }
+
+    #[test]
+    fn single_scene_video_spans_all_decoded_frames() {
+        let frames = frames(&[[0, 0, 0], [0, 0, 0], [0, 0, 0]]);
+        let result = detect_frames(
+            DetectorConfig::Content(ContentDetectorConfig {
+                threshold: 20.0,
+                ..Default::default()
+            }),
+            FrameRate(10.0),
+            &frames,
+            DetectionOptions {
+                min_scene_len: 1,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            result.scene_list.scenes,
+            vec![SceneSpan {
+                start: FrameIndex(0),
+                end: FrameIndex(3)
+            }]
+        );
+        assert_eq!(result.stats.rows.len(), frames.len());
     }
 
     #[test]
@@ -777,38 +903,104 @@ mod tests {
     }
 
     #[test]
-    fn scene_list_csv_contains_timecode_and_lengths() {
+    fn scene_list_csv_uses_pyscenedetect_frame_and_timecode_columns() {
         let scene_list = SceneList {
             frame_rate: FrameRate(10.0),
-            scenes: vec![SceneSpan {
-                start: FrameIndex(0),
-                end: FrameIndex(5),
-            }],
+            scenes: vec![
+                SceneSpan {
+                    start: FrameIndex(0),
+                    end: FrameIndex(3),
+                },
+                SceneSpan {
+                    start: FrameIndex(3),
+                    end: FrameIndex(5),
+                },
+            ],
         };
         let mut output = Vec::new();
 
         write_scene_list_csv(&scene_list, &mut output).unwrap();
         let output = String::from_utf8(output).unwrap();
 
-        assert!(output.contains("Scene Number,Start Frame,Start Timecode"));
-        assert!(output.contains("1,0,00:00:00.000,5,00:00:00.500,5,00:00:00.500"));
+        assert!(output.starts_with("Timecode List:,00:00:00.300\n"));
+        assert!(output.contains(
+            "Scene Number,Start Frame,Start Timecode,Start Time (seconds),End Frame,End Timecode,End Time (seconds),Length (frames),Length (timecode),Length (seconds)"
+        ));
+        assert!(output
+            .contains("1,1,00:00:00.000,0.000000,3,00:00:00.300,0.300000,3,00:00:00.300,0.300000"));
+        assert!(output
+            .contains("2,4,00:00:00.300,0.300000,5,00:00:00.500,0.500000,2,00:00:00.200,0.200000"));
     }
 
     #[test]
     fn stats_csv_contains_detector_metric_columns() {
-        let stats = DetectionStats {
-            metric_names: vec!["content_val".to_owned()],
-            rows: vec![StatsRow {
-                frame: FrameIndex(1),
-                metrics: BTreeMap::from([("content_val".to_owned(), 42.0)]),
-            }],
-        };
+        let frames = frames(&[[0, 0, 0], [3, 3, 3], [255, 255, 255], [252, 252, 252]]);
+        let result = detect_frames(
+            DetectorConfig::Adaptive(AdaptiveDetectorConfig {
+                threshold: 3.0,
+                min_content_val: 20.0,
+                frame_window: 1,
+                ..Default::default()
+            }),
+            FrameRate(10.0),
+            &frames,
+            DetectionOptions {
+                min_scene_len: 1,
+                ..Default::default()
+            },
+        )
+        .unwrap();
         let mut output = Vec::new();
 
-        write_stats_csv(&stats, &mut output).unwrap();
+        write_stats_csv(&result.stats, &mut output).unwrap();
         let output = String::from_utf8(output).unwrap();
+        let lines: Vec<_> = output.lines().collect();
 
-        assert!(output.contains("Frame Number,content_val"));
-        assert!(output.contains("1,42.000000"));
+        assert_eq!(lines[0], "Frame Number,content_val,adaptive_ratio");
+        assert_eq!(lines.len(), frames.len() + 1);
+        assert!(lines[1].starts_with("0,0.000000,0.000000"));
+    }
+
+    #[test]
+    fn json_scene_list_and_ndjson_events_use_export_fields() {
+        let scene_list = SceneList {
+            frame_rate: FrameRate(10.0),
+            scenes: vec![
+                SceneSpan {
+                    start: FrameIndex(0),
+                    end: FrameIndex(3),
+                },
+                SceneSpan {
+                    start: FrameIndex(3),
+                    end: FrameIndex(5),
+                },
+            ],
+        };
+        let mut json = Vec::new();
+        let mut ndjson = Vec::new();
+
+        write_scene_list_json(&scene_list, &mut json).unwrap();
+        write_scene_events_ndjson(&scene_list, &mut ndjson).unwrap();
+
+        let json: serde_json::Value = serde_json::from_slice(&json).unwrap();
+        assert_eq!(json["frame_rate"], 10.0);
+        assert_eq!(json["scene_count"], 2);
+        assert_eq!(json["scenes"][0]["scene_number"], 1);
+        assert_eq!(json["scenes"][0]["start_frame"], 1);
+        assert_eq!(json["scenes"][0]["start_timecode"], "00:00:00.000");
+        assert_eq!(json["scenes"][0]["end_frame"], 3);
+        assert_eq!(json["scenes"][0]["end_timecode"], "00:00:00.300");
+        assert_eq!(json["scenes"][0]["length_frames"], 3);
+
+        let ndjson = String::from_utf8(ndjson).unwrap();
+        let events: Vec<serde_json::Value> = ndjson
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0]["event"], "scene");
+        assert_eq!(events[0]["scene_number"], 1);
+        assert_eq!(events[1]["start_frame"], 4);
+        assert_eq!(events[1]["length_seconds"], 0.2);
     }
 }
