@@ -83,3 +83,7 @@ The repo uses the default five-label triage vocabulary. See `docs/agents/triage-
 ### Domain docs
 
 This is a single-context repo with root `CONTEXT.md` and root `docs/adr/`. See `docs/agents/domain.md`.
+
+### Planning workflow
+
+Substantial new work should be planned into GitHub PRD issues instead of implemented directly. See `docs/agents/planning-workflow.md`.
