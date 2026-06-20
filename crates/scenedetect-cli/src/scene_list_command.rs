@@ -45,20 +45,19 @@ pub(crate) struct ExportHtmlStdoutRequest {
     pub(crate) frame_rate_override: Option<FrameRate>,
 }
 
-pub(crate) struct ListScenesFileFirstWriteRequest {
+pub(crate) struct ListScenesFileRequest {
     pub(crate) input: PathBuf,
     pub(crate) detector: DetectorConfig,
     pub(crate) options: DetectionOptions,
     pub(crate) scene_list_request: artifacts::SceneListRequest,
     pub(crate) scene_list_artifact: Option<PathBuf>,
-    pub(crate) output_dir: PathBuf,
-    pub(crate) output_path: PathBuf,
+    pub(crate) output: Option<PathBuf>,
+    pub(crate) filename: Option<String>,
     pub(crate) stats: Option<PathBuf>,
     pub(crate) force: bool,
     pub(crate) quiet: bool,
     pub(crate) frame_rate_override: Option<FrameRate>,
     pub(crate) format: SceneListOutputFormat,
-    pub(crate) render_kind: &'static str,
 }
 
 pub(crate) struct ExportHtmlFileRequest {
@@ -80,6 +79,12 @@ struct ExportHtmlFileOutput {
     output_path: PathBuf,
 }
 
+struct ListScenesFileOutput {
+    output_dir: PathBuf,
+    output_path: PathBuf,
+    render_kind: &'static str,
+}
+
 pub(crate) fn run_list_scenes_stdout(request: ListScenesStdoutRequest) -> Result<()> {
     let scene_list = get_or_create_scene_list(SceneListAcquisitionRequest {
         input: &request.input,
@@ -98,31 +103,31 @@ pub(crate) fn run_list_scenes_stdout(request: ListScenesStdoutRequest) -> Result
     Ok(())
 }
 
-pub(crate) fn run_list_scenes_file(request: ListScenesFileFirstWriteRequest) -> Result<()> {
+pub(crate) fn run_list_scenes_file(request: ListScenesFileRequest) -> Result<()> {
     let request_key = artifacts::request_key(&request.scene_list_request)?;
-    fs::create_dir_all(&request.output_dir)?;
-    if reusable_list_scenes_output_exists(&request, &request_key)? {
+    let output = prepare_list_scenes_file_output(&request)?;
+    if reusable_list_scenes_output_exists(&request, &output, &request_key)? {
         if !request.quiet {
             eprintln!(
                 "reusing Scene List output: {}",
-                request.output_path.display()
+                output.output_path.display()
             );
-            println!("{}", request.output_path.display());
+            println!("{}", output.output_path.display());
         }
         return Ok(());
     }
 
-    run_list_scenes_file_first_write(request, &request_key)
+    run_list_scenes_file_first_write(request, output, &request_key)
 }
 
 fn run_list_scenes_file_first_write(
-    request: ListScenesFileFirstWriteRequest,
+    request: ListScenesFileRequest,
+    output: ListScenesFileOutput,
     request_key: &str,
 ) -> Result<()> {
-    fs::create_dir_all(&request.output_dir)?;
     let scene_list_artifact = scene_list_artifact_path(
         request.scene_list_artifact.as_deref(),
-        &request.output_dir,
+        &output.output_dir,
         request_key,
     );
     let scene_list = get_or_create_scene_list(SceneListAcquisitionRequest {
@@ -136,33 +141,34 @@ fn run_list_scenes_file_first_write(
         quiet: request.quiet,
         frame_rate_override: request.frame_rate_override,
     })?;
-    let file = File::create(&request.output_path).with_context(|| {
+    let file = File::create(&output.output_path).with_context(|| {
         format!(
             "failed to create scene list {}",
-            request.output_path.display()
+            output.output_path.display()
         )
     })?;
     write_scene_list(&scene_list, file, request.format)?;
     let manifest_path = artifacts::render_manifest_path(
-        &request.output_dir,
-        &request.output_path,
-        request.render_kind,
+        &output.output_dir,
+        &output.output_path,
+        output.render_kind,
     )?;
     artifacts::write_render_manifest(
         &manifest_path,
-        &request.output_path,
-        request.render_kind,
+        &output.output_path,
+        output.render_kind,
         request_key,
         &request.scene_list_request,
     )?;
     if !request.quiet {
-        println!("{}", request.output_path.display());
+        println!("{}", output.output_path.display());
     }
     Ok(())
 }
 
 fn reusable_list_scenes_output_exists(
-    request: &ListScenesFileFirstWriteRequest,
+    request: &ListScenesFileRequest,
+    output: &ListScenesFileOutput,
     request_key: &str,
 ) -> Result<bool> {
     if !can_reuse_list_scenes_output(request)
@@ -175,21 +181,34 @@ fn reusable_list_scenes_output_exists(
     }
 
     let manifest_path = artifacts::render_manifest_path(
-        &request.output_dir,
-        &request.output_path,
-        request.render_kind,
+        &output.output_dir,
+        &output.output_path,
+        output.render_kind,
     )?;
     artifacts::reusable_output_exists(
         &manifest_path,
-        &request.output_path,
-        request.render_kind,
+        &output.output_path,
+        output.render_kind,
         request_key,
         &request.scene_list_request,
     )
 }
 
-fn can_reuse_list_scenes_output(request: &ListScenesFileFirstWriteRequest) -> bool {
+fn can_reuse_list_scenes_output(request: &ListScenesFileRequest) -> bool {
     !request.force && request.stats.is_none()
+}
+
+fn prepare_list_scenes_file_output(
+    request: &ListScenesFileRequest,
+) -> Result<ListScenesFileOutput> {
+    let output_dir = request.output.clone().unwrap_or_else(|| PathBuf::from("."));
+    fs::create_dir_all(&output_dir)?;
+    let output_path = output_dir.join(list_scenes_filename(request));
+    Ok(ListScenesFileOutput {
+        output_dir,
+        output_path,
+        render_kind: list_scenes_render_kind(request.format),
+    })
 }
 
 pub(crate) fn run_export_html_stdout(request: ExportHtmlStdoutRequest) -> Result<()> {
@@ -405,4 +424,20 @@ fn scene_list_artifact_path(
 
 fn export_html_filename(request: &ExportHtmlFileRequest) -> &str {
     request.filename.as_deref().unwrap_or("scenes.html")
+}
+
+fn list_scenes_filename(request: &ListScenesFileRequest) -> &str {
+    request.filename.as_deref().unwrap_or(match request.format {
+        SceneListOutputFormat::Csv => "scenes.csv",
+        SceneListOutputFormat::Json => "scenes.json",
+        SceneListOutputFormat::Ndjson => "scenes.ndjson",
+    })
+}
+
+fn list_scenes_render_kind(format: SceneListOutputFormat) -> &'static str {
+    match format {
+        SceneListOutputFormat::Csv => "scene_list_csv",
+        SceneListOutputFormat::Json => "scene_list_json",
+        SceneListOutputFormat::Ndjson => "scene_events_ndjson",
+    }
 }
