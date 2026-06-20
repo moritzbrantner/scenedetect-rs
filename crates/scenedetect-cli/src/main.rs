@@ -2,7 +2,7 @@ mod artifacts;
 mod scene_list_command;
 
 use std::fs::{self, File};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 use clap::{Args, Parser, Subcommand, ValueEnum};
@@ -339,25 +339,19 @@ fn handle_list_scenes(
         );
     }
 
-    let output_dir = scene_list_output_dir(cli, args);
-    fs::create_dir_all(&output_dir)?;
-    let output_path = output_dir.join(scene_list_filename(args));
-    let render_kind = scene_list_render_kind(&args.format);
-
-    scene_list_command::run_list_scenes_file(scene_list_command::ListScenesFileFirstWriteRequest {
+    scene_list_command::run_list_scenes_file(scene_list_command::ListScenesFileRequest {
         input: cli.input.clone(),
         detector,
         options,
         scene_list_request: request.clone(),
         scene_list_artifact: cli.scene_list_artifact.clone(),
-        output_dir,
-        output_path,
+        output: args.output.as_ref().or(cli.output.as_ref()).cloned(),
+        filename: args.filename.clone(),
         stats: cli.stats.clone(),
         force: cli.force,
         quiet,
         frame_rate_override,
         format: scene_list_command::SceneListOutputFormat::from(&args.format),
-        render_kind,
     })
 }
 
@@ -401,30 +395,6 @@ fn handle_export_html(
         frame_rate_override,
     };
     scene_list_command::run_export_html_file(file_request)
-}
-
-fn scene_list_output_dir(cli: &Cli, args: &ListScenesArgs) -> PathBuf {
-    args.output
-        .as_ref()
-        .or(cli.output.as_ref())
-        .cloned()
-        .unwrap_or_else(|| PathBuf::from("."))
-}
-
-fn scene_list_filename(args: &ListScenesArgs) -> &str {
-    args.filename.as_deref().unwrap_or(match &args.format {
-        SceneListFormat::Csv => "scenes.csv",
-        SceneListFormat::Json => "scenes.json",
-        SceneListFormat::Ndjson => "scenes.ndjson",
-    })
-}
-
-fn scene_list_render_kind(format: &SceneListFormat) -> &'static str {
-    match format {
-        SceneListFormat::Csv => "scene_list_csv",
-        SceneListFormat::Json => "scene_list_json",
-        SceneListFormat::Ndjson => "scene_events_ndjson",
-    }
 }
 
 fn boundary_review_filename(args: &ListBoundariesArgs) -> &str {
@@ -546,12 +516,4 @@ fn parse_1_to_256(value: &str) -> std::result::Result<usize, String> {
     } else {
         Err(format!("{parsed} must be between 1 and 256"))
     }
-}
-
-#[allow(dead_code)]
-fn default_output_dir(input: &Path) -> PathBuf {
-    input
-        .parent()
-        .unwrap_or_else(|| Path::new("."))
-        .to_path_buf()
 }
