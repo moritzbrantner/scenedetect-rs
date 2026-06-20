@@ -339,48 +339,26 @@ fn handle_list_scenes(
         );
     }
 
-    let request_key = artifacts::request_key(request)?;
-    let report_reuse = !quiet;
     let output_dir = scene_list_output_dir(cli, args);
     fs::create_dir_all(&output_dir)?;
     let output_path = output_dir.join(scene_list_filename(args));
     let render_kind = scene_list_render_kind(&args.format);
-    let manifest_path = artifacts::render_manifest_path(&output_dir, &output_path, render_kind)?;
-    if can_reuse_scene_list(cli)
-        && explicit_artifact_matches(cli, request)?
-        && artifacts::reusable_output_exists(
-            &manifest_path,
-            &output_path,
-            render_kind,
-            &request_key,
-            request,
-        )?
-    {
-        if report_reuse {
-            eprintln!("reusing Scene List output: {}", output_path.display());
-            println!("{}", output_path.display());
-        }
-        return Ok(());
-    }
 
-    scene_list_command::run_list_scenes_file_first_write(
-        scene_list_command::ListScenesFileFirstWriteRequest {
-            input: cli.input.clone(),
-            detector,
-            options,
-            scene_list_request: request.clone(),
-            scene_list_artifact: cli.scene_list_artifact.clone(),
-            output_dir,
-            output_path,
-            stats: cli.stats.clone(),
-            force: cli.force,
-            quiet,
-            frame_rate_override,
-            format: scene_list_command::SceneListOutputFormat::from(&args.format),
-            render_kind,
-            request_key,
-        },
-    )
+    scene_list_command::run_list_scenes_file(scene_list_command::ListScenesFileFirstWriteRequest {
+        input: cli.input.clone(),
+        detector,
+        options,
+        scene_list_request: request.clone(),
+        scene_list_artifact: cli.scene_list_artifact.clone(),
+        output_dir,
+        output_path,
+        stats: cli.stats.clone(),
+        force: cli.force,
+        quiet,
+        frame_rate_override,
+        format: scene_list_command::SceneListOutputFormat::from(&args.format),
+        render_kind,
+    })
 }
 
 fn handle_export_html(
@@ -423,17 +401,6 @@ fn handle_export_html(
         frame_rate_override,
     };
     scene_list_command::run_export_html_file(file_request)
-}
-
-fn can_reuse_scene_list(cli: &Cli) -> bool {
-    !cli.force && cli.stats.is_none()
-}
-
-fn explicit_artifact_matches(cli: &Cli, request: &artifacts::SceneListRequest) -> Result<bool> {
-    let Some(path) = cli.scene_list_artifact.as_deref() else {
-        return Ok(true);
-    };
-    Ok(artifacts::read_scene_list_artifact(path, request)?.is_some())
 }
 
 fn scene_list_output_dir(cli: &Cli, args: &ListScenesArgs) -> PathBuf {
