@@ -182,6 +182,34 @@ pub struct StatsRow {
     pub metrics: BTreeMap<String, f64>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DetectionStatsDecision {
+    NotEvaluated,
+    Accepted,
+    SuppressedMinSceneLen,
+    BelowThreshold,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RichDetectionStatsRow {
+    pub frame: FrameIndex,
+    pub score: f64,
+    pub threshold: f64,
+    pub decision: DetectionStatsDecision,
+    pub metrics: BTreeMap<String, f64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ContentDetectionStats {
+    pub frame_rate: FrameRate,
+    pub total_frames: u64,
+    pub detector_config: ContentDetectorConfig,
+    pub options: DetectionOptions,
+    pub metric_names: Vec<String>,
+    pub rows: Vec<RichDetectionStatsRow>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DetectionResult {
     pub scene_list: SceneList,
@@ -483,6 +511,154 @@ pub fn detect_frames(
             frames: frames.iter(),
         },
         options,
+    )
+}
+
+pub fn detect_content_stats<S>(
+    mut source: S,
+    config: ContentDetectorConfig,
+    options: DetectionOptions,
+) -> Result<ContentDetectionStats>
+where
+    S: FrameSource,
+{
+    let frame_rate = source.frame_rate();
+    let metric_names = vec![
+        "content_val".to_owned(),
+        "delta_hue".to_owned(),
+        "delta_saturation".to_owned(),
+        "delta_luminance".to_owned(),
+        "delta_edges".to_owned(),
+    ];
+    let mut rows = Vec::new();
+    let mut last_candidate_boundary = 0;
+    let mut previous = None;
+    let mut total_frames = 0_u64;
+
+    while let Some(frame) = source.next_frame()? {
+        let metrics = match previous.as_ref() {
+            Some(previous) => content_metrics(previous, &frame, &config.weights, config.luma_only),
+            None => empty_content_metrics(),
+        };
+        let score = metrics.get("content_val").copied().unwrap_or(0.0);
+        let frame_number = frame.index.0;
+        let decision = if previous.is_none() {
+            DetectionStatsDecision::NotEvaluated
+        } else if score >= config.threshold {
+            let decision =
+                if frame_number.saturating_sub(last_candidate_boundary) >= options.min_scene_len {
+                    DetectionStatsDecision::Accepted
+                } else {
+                    DetectionStatsDecision::SuppressedMinSceneLen
+                };
+            last_candidate_boundary = frame_number;
+            decision
+        } else {
+            DetectionStatsDecision::BelowThreshold
+        };
+
+        rows.push(RichDetectionStatsRow {
+            frame: frame.index,
+            score,
+            threshold: config.threshold,
+            decision,
+            metrics,
+        });
+
+        previous = Some(frame);
+        total_frames += 1;
+    }
+
+    Ok(ContentDetectionStats {
+        frame_rate,
+        total_frames,
+        detector_config: config,
+        options,
+        metric_names,
+        rows,
+    })
+}
+
+pub fn scene_list_from_content_detection_stats(stats: &ContentDetectionStats) -> SceneList {
+    let boundaries = stats
+        .rows
+        .iter()
+        .filter(|row| row.decision == DetectionStatsDecision::Accepted)
+        .map(|row| SceneBoundary { frame: row.frame })
+        .collect();
+    build_scene_list(
+        stats.frame_rate,
+        stats.total_frames,
+        boundaries,
+        stats.options.clone(),
+    )
+}
+
+pub fn detection_stats_from_content_detection_stats(
+    stats: &ContentDetectionStats,
+) -> DetectionStats {
+    DetectionStats {
+        metric_names: stats.metric_names.clone(),
+        rows: stats
+            .rows
+            .iter()
+            .map(|row| StatsRow {
+                frame: row.frame,
+                metrics: row.metrics.clone(),
+            })
+            .collect(),
+    }
+}
+
+pub fn boundary_review_from_content_detection_stats(
+    stats: &ContentDetectionStats,
+    review_options: BoundaryReviewOptions,
+) -> BoundaryReview {
+    let review_threshold = review_options
+        .review_threshold
+        .unwrap_or(stats.detector_config.threshold * 0.8);
+    let boundaries = stats
+        .rows
+        .iter()
+        .filter(|row| row.decision == DetectionStatsDecision::Accepted)
+        .map(|row| SceneBoundary { frame: row.frame })
+        .collect();
+    let candidate_seeds = stats
+        .rows
+        .iter()
+        .filter(|row| row.score >= review_threshold)
+        .map(|row| {
+            let status = match row.decision {
+                DetectionStatsDecision::Accepted => BoundaryCandidateStatus::Accepted,
+                DetectionStatsDecision::SuppressedMinSceneLen => {
+                    BoundaryCandidateStatus::SuppressedMinSceneLen
+                }
+                DetectionStatsDecision::BelowThreshold | DetectionStatsDecision::NotEvaluated => {
+                    BoundaryCandidateStatus::NearMiss
+                }
+            };
+            BoundaryCandidateSeed {
+                status,
+                frame: row.frame,
+                score_metric: "content_val".to_owned(),
+                score: row.score,
+                detector_threshold: stats.detector_config.threshold,
+                review_threshold,
+                metrics: row.metrics.clone(),
+            }
+        })
+        .collect();
+
+    build_boundary_review(
+        stats.frame_rate,
+        "content",
+        "content_val",
+        stats.detector_config.threshold,
+        review_threshold,
+        stats.total_frames,
+        boundaries,
+        stats.options.clone(),
+        candidate_seeds,
     )
 }
 
@@ -1326,7 +1502,32 @@ fn content_score(
     weights: &ContentWeights,
     luma_only: bool,
 ) -> f64 {
+    content_metrics(previous, current, weights, luma_only)
+        .get("content_val")
+        .copied()
+        .unwrap_or(0.0)
+}
+
+fn empty_content_metrics() -> BTreeMap<String, f64> {
+    BTreeMap::from([
+        ("content_val".to_owned(), 0.0),
+        ("delta_hue".to_owned(), 0.0),
+        ("delta_saturation".to_owned(), 0.0),
+        ("delta_luminance".to_owned(), 0.0),
+        ("delta_edges".to_owned(), 0.0),
+    ])
+}
+
+fn content_metrics(
+    previous: &Frame,
+    current: &Frame,
+    weights: &ContentWeights,
+    luma_only: bool,
+) -> BTreeMap<String, f64> {
     let mut weighted_sum = 0.0;
+    let mut hue_sum = 0.0;
+    let mut saturation_sum = 0.0;
+    let mut luminance_sum = 0.0;
     let mut pixel_count = 0.0;
     let channel_weight_total = weights.hue + weights.saturation + weights.luminance;
 
@@ -1341,11 +1542,19 @@ fn content_score(
                 0.299 * prev[0] as f64 + 0.587 * prev[1] as f64 + 0.114 * prev[2] as f64;
             let curr_luma =
                 0.299 * curr[0] as f64 + 0.587 * curr[1] as f64 + 0.114 * curr[2] as f64;
-            weighted_sum += (prev_luma - curr_luma).abs();
+            let luminance = (prev_luma - curr_luma).abs();
+            luminance_sum += luminance;
+            weighted_sum += luminance;
         } else {
-            weighted_sum += (prev[0] as f64 - curr[0] as f64).abs() * weights.hue;
-            weighted_sum += (prev[1] as f64 - curr[1] as f64).abs() * weights.saturation;
-            weighted_sum += (prev[2] as f64 - curr[2] as f64).abs() * weights.luminance;
+            let hue = (prev[0] as f64 - curr[0] as f64).abs();
+            let saturation = (prev[1] as f64 - curr[1] as f64).abs();
+            let luminance = (prev[2] as f64 - curr[2] as f64).abs();
+            hue_sum += hue;
+            saturation_sum += saturation;
+            luminance_sum += luminance;
+            weighted_sum += hue * weights.hue;
+            weighted_sum += saturation * weights.saturation;
+            weighted_sum += luminance * weights.luminance;
         }
     }
 
@@ -1355,11 +1564,26 @@ fn content_score(
         pixel_count * channel_weight_total
     };
 
-    if denominator == 0.0 {
+    let content_val = if denominator == 0.0 {
         0.0
     } else {
         weighted_sum / denominator
-    }
+    };
+    let component_denominator = if pixel_count == 0.0 { 1.0 } else { pixel_count };
+
+    BTreeMap::from([
+        ("content_val".to_owned(), content_val),
+        ("delta_hue".to_owned(), hue_sum / component_denominator),
+        (
+            "delta_saturation".to_owned(),
+            saturation_sum / component_denominator,
+        ),
+        (
+            "delta_luminance".to_owned(),
+            luminance_sum / component_denominator,
+        ),
+        ("delta_edges".to_owned(), 0.0),
+    ])
 }
 
 fn luma_histogram(frame: &Frame, bins: usize) -> Vec<f64> {
@@ -2100,6 +2324,63 @@ mod tests {
                 end: FrameIndex(4)
             }]
         );
+    }
+
+    #[test]
+    fn content_detection_stats_derive_scene_list_and_boundary_review() {
+        let frames = frames(&[[0, 0, 0], [0, 0, 0], [255, 255, 255], [255, 255, 255]]);
+        let stats = detect_content_stats(
+            VecFrameSource::new(frames),
+            ContentDetectorConfig {
+                threshold: 20.0,
+                ..Default::default()
+            },
+            DetectionOptions {
+                min_scene_len: 1,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        assert_eq!(stats.total_frames, 4);
+        assert_eq!(stats.metric_names[0], "content_val");
+        assert_eq!(stats.rows[0].decision, DetectionStatsDecision::NotEvaluated);
+        assert_eq!(
+            stats.rows[1].decision,
+            DetectionStatsDecision::BelowThreshold
+        );
+        assert_eq!(stats.rows[2].decision, DetectionStatsDecision::Accepted);
+        assert_eq!(stats.rows[2].threshold, 20.0);
+        assert!(stats.rows[2].score >= 20.0);
+        assert!(stats.rows[2].metrics.contains_key("delta_luminance"));
+
+        let scene_list = scene_list_from_content_detection_stats(&stats);
+        assert_eq!(
+            scene_list.scenes,
+            vec![
+                SceneSpan {
+                    start: FrameIndex(0),
+                    end: FrameIndex(2)
+                },
+                SceneSpan {
+                    start: FrameIndex(2),
+                    end: FrameIndex(4)
+                }
+            ]
+        );
+
+        let review = boundary_review_from_content_detection_stats(
+            &stats,
+            BoundaryReviewOptions {
+                review_threshold: Some(10.0),
+            },
+        );
+        assert_eq!(review.candidates.len(), 1);
+        assert_eq!(
+            review.candidates[0].status,
+            BoundaryCandidateStatus::Accepted
+        );
+        assert_eq!(review.candidates[0].frame, FrameIndex(2));
     }
 
     #[test]

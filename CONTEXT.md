@@ -57,10 +57,10 @@ A contiguous range of frames belonging to one scene.
 _Avoid_: Segment
 
 **Scene List**:
-Ordered scene spans emitted by detection.
+Ordered Scene Spans derived from Detection Stats.
 
 **Scene List Artifact**:
-Canonical reusable representation of a Scene List plus detection provenance.
+Legacy reusable representation of a Scene List plus detection provenance.
 _Avoid_: Cache file
 
 **Reusable Output**:
@@ -69,7 +69,8 @@ Scene List Artifact.
 _Avoid_: Existing file
 
 **Detection Stats**:
-Per-frame metrics used to explain or tune detection.
+Canonical reusable record of Detector provenance, per-frame scores, decisions,
+and metrics used to derive Scene Lists and review outputs.
 _Avoid_: Metrics file
 
 **Reference Oracle**:

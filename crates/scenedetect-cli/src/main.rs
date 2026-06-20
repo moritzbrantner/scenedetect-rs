@@ -1,15 +1,20 @@
 mod artifacts;
+mod native_stats;
 mod scene_list_command;
 
 use std::fs::{self, File};
+use std::io::IsTerminal;
 use std::path::PathBuf;
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use scenedetect_core::{
-    detect_boundary_review_streaming, write_boundary_review_csv, write_boundary_review_json,
-    AdaptiveDetectorConfig, BoundaryReviewOptions, ContentDetectorConfig, ContentWeights,
-    CsvStatsSink, DetectionOptions, DetectorConfig, FrameRate, HashDetectorConfig,
+    boundary_review_from_content_detection_stats, detect_boundary_review_streaming,
+    detect_content_stats, detection_stats_from_content_detection_stats,
+    scene_list_from_content_detection_stats, write_boundary_review_csv, write_boundary_review_json,
+    write_scene_events_ndjson, write_scene_list_csv, write_scene_list_html, write_scene_list_json,
+    write_stats_csv, AdaptiveDetectorConfig, BoundaryReviewOptions, ContentDetectorConfig,
+    ContentWeights, CsvStatsSink, DetectionOptions, DetectorConfig, FrameRate, HashDetectorConfig,
     HistogramDetectorConfig, MinSceneLenPolicy, NoopStatsSink, ThresholdDetectorConfig, Timecode,
 };
 use scenedetect_ffmpeg::{probe_video, FfmpegFrameSource};
@@ -19,7 +24,7 @@ use scenedetect_ffmpeg::{probe_video, FfmpegFrameSource};
 #[command(about = "Rust scene detection CLI with PySceneDetect parity goals.")]
 struct Cli {
     #[arg(short = 'i', long = "input")]
-    input: PathBuf,
+    input: Option<PathBuf>,
     #[arg(short = 'o', long = "output")]
     output: Option<PathBuf>,
     #[arg(short = 's', long = "stats")]
@@ -41,7 +46,7 @@ struct Cli {
     #[arg(short = 'v', long = "verbosity", default_value = "warning")]
     verbosity: Verbosity,
     #[command(subcommand)]
-    detector: DetectorCommand,
+    command: Command,
 }
 
 #[derive(Debug, Clone, ValueEnum)]
@@ -53,7 +58,7 @@ enum Verbosity {
     None,
 }
 
-#[derive(Debug, Subcommand)]
+#[derive(Debug, Clone, Subcommand)]
 enum DetectorCommand {
     #[command(name = "detect-content")]
     Content(ContentArgs),
@@ -67,7 +72,115 @@ enum DetectorCommand {
     Hash(HashArgs),
 }
 
+#[derive(Debug, Subcommand)]
+enum Command {
+    Detect(NativeDetectArgs),
+    Render(NativeRenderArgs),
+    #[command(name = "detect-content")]
+    Content(ContentArgs),
+    #[command(name = "detect-adaptive")]
+    Adaptive(AdaptiveArgs),
+    #[command(name = "detect-threshold")]
+    Threshold(ThresholdArgs),
+    #[command(name = "detect-hist")]
+    Histogram(HistogramArgs),
+    #[command(name = "detect-hash")]
+    Hash(HashArgs),
+}
+
 #[derive(Debug, Args)]
+struct NativeDetectArgs {
+    #[command(subcommand)]
+    detector: NativeDetectorCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum NativeDetectorCommand {
+    Content(NativeContentArgs),
+}
+
+#[derive(Debug, Args)]
+struct NativeContentArgs {
+    #[arg(short = 'i', long = "input")]
+    input: PathBuf,
+    #[arg(short = 't', long = "threshold", default_value_t = 27.0)]
+    threshold: f64,
+    #[arg(short = 'w', long = "weights", num_args = 4)]
+    weights: Option<Vec<f64>>,
+    #[arg(short = 'l', long = "luma-only")]
+    luma_only: bool,
+    #[arg(short = 'm', long = "min-scene-len", default_value = "15")]
+    min_scene_len: String,
+    #[arg(long = "progress", default_value = "auto")]
+    progress: ProgressMode,
+    #[arg(long = "force")]
+    force: bool,
+    #[arg(short = 'q', long = "quiet")]
+    quiet: bool,
+}
+
+#[derive(Debug, Args)]
+struct NativeRenderArgs {
+    #[command(subcommand)]
+    output: NativeRenderCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum NativeRenderCommand {
+    Scenes(NativeRenderScenesArgs),
+    Stats(NativeRenderStatsArgs),
+    Boundaries(NativeRenderBoundariesArgs),
+    Html(NativeRenderHtmlArgs),
+}
+
+#[derive(Debug, Args)]
+struct NativeRenderScenesArgs {
+    #[arg(short = 'i', long = "input")]
+    input: PathBuf,
+    #[arg(long = "format", default_value = "csv")]
+    format: SceneListFormat,
+    #[arg(short = 'o', long = "output")]
+    output: Option<PathBuf>,
+}
+
+#[derive(Debug, Args)]
+struct NativeRenderStatsArgs {
+    #[arg(short = 'i', long = "input")]
+    input: PathBuf,
+    #[arg(long = "csv")]
+    csv: bool,
+    #[arg(short = 'o', long = "output")]
+    output: Option<PathBuf>,
+}
+
+#[derive(Debug, Args)]
+struct NativeRenderBoundariesArgs {
+    #[arg(short = 'i', long = "input")]
+    input: PathBuf,
+    #[arg(long = "format", default_value = "csv")]
+    format: BoundaryReviewFormat,
+    #[arg(long = "review-threshold")]
+    review_threshold: Option<f64>,
+    #[arg(short = 'o', long = "output")]
+    output: Option<PathBuf>,
+}
+
+#[derive(Debug, Args)]
+struct NativeRenderHtmlArgs {
+    #[arg(short = 'i', long = "input")]
+    input: PathBuf,
+    #[arg(short = 'o', long = "output")]
+    output: Option<PathBuf>,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum ProgressMode {
+    Auto,
+    Always,
+    Never,
+}
+
+#[derive(Debug, Clone, Args)]
 struct ContentArgs {
     #[arg(short = 't', long = "threshold", default_value_t = 27.0)]
     threshold: f64,
@@ -83,7 +196,7 @@ struct ContentArgs {
     output: OutputCommand,
 }
 
-#[derive(Debug, Args)]
+#[derive(Debug, Clone, Args)]
 struct AdaptiveArgs {
     #[arg(short = 't', long = "threshold", default_value_t = 3.0)]
     threshold: f64,
@@ -101,7 +214,7 @@ struct AdaptiveArgs {
     output: OutputCommand,
 }
 
-#[derive(Debug, Args)]
+#[derive(Debug, Clone, Args)]
 struct ThresholdArgs {
     #[arg(short = 't', long = "threshold", default_value_t = 12.0)]
     threshold: f64,
@@ -115,7 +228,7 @@ struct ThresholdArgs {
     output: OutputCommand,
 }
 
-#[derive(Debug, Args)]
+#[derive(Debug, Clone, Args)]
 struct HistogramArgs {
     #[arg(short = 't', long = "threshold", default_value_t = 0.05, value_parser = parse_unit_interval)]
     threshold: f64,
@@ -127,7 +240,7 @@ struct HistogramArgs {
     output: OutputCommand,
 }
 
-#[derive(Debug, Args)]
+#[derive(Debug, Clone, Args)]
 struct HashArgs {
     #[arg(short = 't', long = "threshold", default_value_t = 0.395, value_parser = parse_unit_interval)]
     threshold: f64,
@@ -141,14 +254,14 @@ struct HashArgs {
     output: OutputCommand,
 }
 
-#[derive(Debug, Subcommand)]
+#[derive(Debug, Clone, Subcommand)]
 enum OutputCommand {
     ListScenes(ListScenesArgs),
     ListBoundaries(ListBoundariesArgs),
     ExportHtml(ExportHtmlArgs),
 }
 
-#[derive(Debug, Args)]
+#[derive(Debug, Clone, Args)]
 struct ListScenesArgs {
     #[arg(short = 'o', long = "output")]
     output: Option<PathBuf>,
@@ -164,7 +277,7 @@ struct ListScenesArgs {
     skip_cuts: bool,
 }
 
-#[derive(Debug, Args)]
+#[derive(Debug, Clone, Args)]
 struct ListBoundariesArgs {
     #[arg(short = 'o', long = "output")]
     output: Option<PathBuf>,
@@ -180,7 +293,7 @@ struct ListBoundariesArgs {
     quiet: bool,
 }
 
-#[derive(Debug, Args)]
+#[derive(Debug, Clone, Args)]
 struct ExportHtmlArgs {
     #[arg(short = 'o', long = "output")]
     output: Option<PathBuf>,
@@ -219,15 +332,30 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     init_tracing(&cli.verbosity);
 
+    match &cli.command {
+        Command::Detect(args) => return handle_native_detect(&cli, args),
+        Command::Render(args) => return handle_native_render(args),
+        Command::Content(_)
+        | Command::Adaptive(_)
+        | Command::Threshold(_)
+        | Command::Histogram(_)
+        | Command::Hash(_) => {}
+    }
+
+    let legacy_detector = legacy_detector_command(&cli.command)
+        .expect("legacy command branch only receives legacy Detector commands");
+    let input = legacy_input(&cli)?;
+    warn_legacy_command_if_interactive(&cli);
+
     let frame_rate_override = cli.framerate.map(FrameRate);
-    let mut video_metadata = probe_video(&cli.input)
-        .with_context(|| format!("failed to open input video {}", cli.input.display()))?;
+    let mut video_metadata = probe_video(input)
+        .with_context(|| format!("failed to open input video {}", input.display()))?;
     if let Some(frame_rate) = frame_rate_override {
         video_metadata.frame_rate = frame_rate;
     }
     let frame_rate = video_metadata.frame_rate;
 
-    let detector_min_scene_len = detector_min_scene_len(&cli.detector);
+    let detector_min_scene_len = detector_min_scene_len(&legacy_detector);
     let min_scene_len = detector_min_scene_len
         .as_ref()
         .unwrap_or(&cli.min_scene_len);
@@ -241,21 +369,16 @@ fn main() -> Result<()> {
         },
     };
 
-    let detector = detector_config(&cli.detector);
-    let request = artifacts::scene_list_request(
-        &cli.input,
-        frame_rate,
-        frame_rate_override,
-        &detector,
-        &options,
-    )?;
-    match output_command(&cli.detector) {
+    let detector = detector_config(&legacy_detector);
+    let request =
+        artifacts::scene_list_request(input, frame_rate, frame_rate_override, &detector, &options)?;
+    match output_command(&legacy_detector) {
         OutputCommand::ListScenes(args) => {
             handle_list_scenes(&cli, args, detector, options, &request, frame_rate_override)?;
         }
         OutputCommand::ListBoundaries(args) => {
-            let source = FfmpegFrameSource::open(&cli.input, frame_rate_override)
-                .with_context(|| format!("failed to open input video {}", cli.input.display()))?;
+            let source = FfmpegFrameSource::open(input, frame_rate_override)
+                .with_context(|| format!("failed to open input video {}", input.display()))?;
             let review_options = BoundaryReviewOptions {
                 review_threshold: args.review_threshold,
             };
@@ -313,6 +436,200 @@ fn main() -> Result<()> {
     Ok(())
 }
 
+fn handle_native_detect(cli: &Cli, args: &NativeDetectArgs) -> Result<()> {
+    match &args.detector {
+        NativeDetectorCommand::Content(args) => handle_native_detect_content(cli, args),
+    }
+}
+
+fn handle_native_detect_content(cli: &Cli, args: &NativeContentArgs) -> Result<()> {
+    let quiet = cli.quiet || args.quiet;
+    let metadata = probe_video(&args.input)
+        .with_context(|| format!("failed to open input video {}", args.input.display()))?;
+    let min_scene_len = Timecode::parse_at_rate(&args.min_scene_len, metadata.frame_rate)?.frames();
+    let options = DetectionOptions {
+        min_scene_len,
+        min_scene_len_policy: MinSceneLenPolicy::Suppress,
+    };
+    let config = ContentDetectorConfig {
+        threshold: args.threshold,
+        weights: parse_weights(args.weights.as_deref()),
+        luma_only: args.luma_only,
+    };
+
+    let progress_enabled = progress_enabled(args.progress) && !quiet;
+    if progress_enabled {
+        eprintln!("detecting content  0 frames  00:00:00.000  boundaries: 0");
+    }
+
+    let source = FfmpegFrameSource::open(&args.input, None)
+        .with_context(|| format!("failed to open input video {}", args.input.display()))?;
+    let stats = detect_content_stats(source, config, options)?;
+    let scene_list = scene_list_from_content_detection_stats(&stats);
+    let stats_path = native_stats::detection_stats_path_for_input(&args.input)?;
+    let document =
+        native_stats::DetectionStatsDocument::from_content_stats(&args.input, &metadata, stats)?;
+    native_stats::write_detection_stats(&stats_path, &document)?;
+
+    if progress_enabled {
+        let total_frames = document.input.total_frames;
+        let timecode = Timecode::from_frames(total_frames).display_at_rate(metadata.frame_rate);
+        eprintln!(
+            "detecting content  {total_frames} frames  {timecode}  100%  boundaries: {}",
+            scene_list.scenes.len().saturating_sub(1)
+        );
+        eprintln!("wrote Detection Stats: {}", stats_path.display());
+    }
+
+    Ok(())
+}
+
+fn handle_native_render(args: &NativeRenderArgs) -> Result<()> {
+    match &args.output {
+        NativeRenderCommand::Scenes(args) => handle_native_render_scenes(args),
+        NativeRenderCommand::Stats(args) => handle_native_render_stats(args),
+        NativeRenderCommand::Boundaries(args) => handle_native_render_boundaries(args),
+        NativeRenderCommand::Html(args) => handle_native_render_html(args),
+    }
+}
+
+fn handle_native_render_scenes(args: &NativeRenderScenesArgs) -> Result<()> {
+    let stats = native_stats::read_detection_stats_for_input(&args.input)?;
+    let scene_list = scene_list_from_content_detection_stats(&stats);
+    let output_path = args
+        .output
+        .clone()
+        .unwrap_or(native_stats::render_output_path_for_input(
+            &args.input,
+            match args.format {
+                SceneListFormat::Csv => "scenes.csv",
+                SceneListFormat::Json => "scenes.json",
+                SceneListFormat::Ndjson => "scenes.ndjson",
+            },
+        )?);
+    let file = File::create(&output_path)
+        .with_context(|| format!("failed to create Scene List {}", output_path.display()))?;
+    write_native_scene_list(&scene_list, file, &args.format)?;
+    println!("{}", output_path.display());
+    Ok(())
+}
+
+fn handle_native_render_stats(args: &NativeRenderStatsArgs) -> Result<()> {
+    if !args.csv {
+        return Err(anyhow!("native stats rendering currently requires --csv"));
+    }
+    let stats = native_stats::read_detection_stats_for_input(&args.input)?;
+    let output_path = args
+        .output
+        .clone()
+        .unwrap_or(native_stats::render_output_path_for_input(
+            &args.input,
+            "stats.csv",
+        )?);
+    let file = File::create(&output_path).with_context(|| {
+        format!(
+            "failed to create Detection Stats CSV {}",
+            output_path.display()
+        )
+    })?;
+    let legacy_stats = detection_stats_from_content_detection_stats(&stats);
+    write_stats_csv(&legacy_stats, file)?;
+    println!("{}", output_path.display());
+    Ok(())
+}
+
+fn handle_native_render_boundaries(args: &NativeRenderBoundariesArgs) -> Result<()> {
+    let stats = native_stats::read_detection_stats_for_input(&args.input)?;
+    let output_path = args
+        .output
+        .clone()
+        .unwrap_or(native_stats::render_output_path_for_input(
+            &args.input,
+            match args.format {
+                BoundaryReviewFormat::Csv => "boundaries.csv",
+                BoundaryReviewFormat::Json => "boundaries.json",
+            },
+        )?);
+    let review = boundary_review_from_content_detection_stats(
+        &stats,
+        BoundaryReviewOptions {
+            review_threshold: args.review_threshold,
+        },
+    );
+    let file = File::create(&output_path).with_context(|| {
+        format!(
+            "failed to create Boundary Candidate review {}",
+            output_path.display()
+        )
+    })?;
+    write_boundary_review(&review, file, &args.format)?;
+    println!("{}", output_path.display());
+    Ok(())
+}
+
+fn handle_native_render_html(args: &NativeRenderHtmlArgs) -> Result<()> {
+    let stats = native_stats::read_detection_stats_for_input(&args.input)?;
+    let scene_list = scene_list_from_content_detection_stats(&stats);
+    let output_path = args
+        .output
+        .clone()
+        .unwrap_or(native_stats::render_output_path_for_input(
+            &args.input,
+            "scenes.html",
+        )?);
+    let file = File::create(&output_path)
+        .with_context(|| format!("failed to create HTML Scene List {}", output_path.display()))?;
+    write_scene_list_html(&scene_list, file)?;
+    println!("{}", output_path.display());
+    Ok(())
+}
+
+fn write_native_scene_list<W: std::io::Write>(
+    scene_list: &scenedetect_core::SceneList,
+    writer: W,
+    format: &SceneListFormat,
+) -> Result<()> {
+    match format {
+        SceneListFormat::Csv => write_scene_list_csv(scene_list, writer),
+        SceneListFormat::Json => write_scene_list_json(scene_list, writer),
+        SceneListFormat::Ndjson => write_scene_events_ndjson(scene_list, writer),
+    }?;
+    Ok(())
+}
+
+fn progress_enabled(progress: ProgressMode) -> bool {
+    match progress {
+        ProgressMode::Auto => std::io::stderr().is_terminal(),
+        ProgressMode::Always => true,
+        ProgressMode::Never => false,
+    }
+}
+
+fn legacy_detector_command(command: &Command) -> Option<DetectorCommand> {
+    match command {
+        Command::Content(args) => Some(DetectorCommand::Content(args.clone())),
+        Command::Adaptive(args) => Some(DetectorCommand::Adaptive(args.clone())),
+        Command::Threshold(args) => Some(DetectorCommand::Threshold(args.clone())),
+        Command::Histogram(args) => Some(DetectorCommand::Histogram(args.clone())),
+        Command::Hash(args) => Some(DetectorCommand::Hash(args.clone())),
+        Command::Detect(_) | Command::Render(_) => None,
+    }
+}
+
+fn legacy_input(cli: &Cli) -> Result<&PathBuf> {
+    cli.input
+        .as_ref()
+        .ok_or_else(|| anyhow!("legacy commands require --input <INPUT>"))
+}
+
+fn warn_legacy_command_if_interactive(cli: &Cli) {
+    if !cli.quiet && std::io::stderr().is_terminal() {
+        eprintln!(
+            "warning: PySceneDetect-compatible commands are deprecated; prefer `detect` and `render`"
+        );
+    }
+}
+
 fn handle_list_scenes(
     cli: &Cli,
     args: &ListScenesArgs,
@@ -322,10 +639,11 @@ fn handle_list_scenes(
     frame_rate_override: Option<FrameRate>,
 ) -> Result<()> {
     let quiet = cli.quiet || args.quiet;
+    let input = legacy_input(cli)?.clone();
     if args.no_output_file {
         return scene_list_command::run_list_scenes_stdout(
             scene_list_command::ListScenesStdoutRequest {
-                input: cli.input.clone(),
+                input,
                 detector,
                 options,
                 scene_list_request: request.clone(),
@@ -340,7 +658,7 @@ fn handle_list_scenes(
     }
 
     scene_list_command::run_list_scenes_file(scene_list_command::ListScenesFileRequest {
-        input: cli.input.clone(),
+        input,
         detector,
         options,
         scene_list_request: request.clone(),
@@ -364,11 +682,12 @@ fn handle_export_html(
     frame_rate_override: Option<FrameRate>,
 ) -> Result<()> {
     let quiet = cli.quiet || args.quiet;
+    let input = legacy_input(cli)?.clone();
 
     if args.no_output_file {
         return scene_list_command::run_export_html_stdout(
             scene_list_command::ExportHtmlStdoutRequest {
-                input: cli.input.clone(),
+                input,
                 detector,
                 options,
                 scene_list_request: request.clone(),
@@ -382,7 +701,7 @@ fn handle_export_html(
     }
 
     let file_request = scene_list_command::ExportHtmlFileRequest {
-        input: cli.input.clone(),
+        input,
         detector,
         options,
         scene_list_request: request.clone(),

@@ -35,6 +35,23 @@ Project site:
 
 ## CLI Examples
 
+Native commands make Detection Stats the primary reusable output:
+
+```sh
+scenedetect-rs detect content -i input.mp4
+scenedetect-rs detect content -i input.mp4 --progress always
+scenedetect-rs render scenes -i input.mp4
+scenedetect-rs render stats -i input.mp4 --csv
+scenedetect-rs render boundaries -i input.mp4
+scenedetect-rs render html -i input.mp4
+```
+
+`detect content` writes visible Detection Stats next to the input video as
+`input.scenedetect.json`. Render commands derive stem-based outputs from that
+file, such as `input.scenes.csv`, `input.stats.csv`, `input.boundaries.csv`,
+and `input.scenes.html`.
+
+Legacy PySceneDetect-compatible commands remain available for parity work.
 Global options must appear before the Detector command, and `list-scenes`
 options must appear after `list-scenes`:
 

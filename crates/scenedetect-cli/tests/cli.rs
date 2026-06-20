@@ -167,6 +167,217 @@ fn assert_success_without_reusable_output(output: Output) {
 }
 
 #[test]
+fn native_detect_content_writes_visible_detection_stats_json() {
+    if !ffmpeg_available() {
+        eprintln!("skipping CLI integration test because ffmpeg is unavailable");
+        return;
+    }
+
+    let temp = tempfile::tempdir().unwrap();
+    let video = temp.path().join("scene-change.mp4");
+    write_two_color_video(&video);
+
+    let mut cmd = Command::cargo_bin("scenedetect-rs").unwrap();
+    cmd.args(["detect", "content"])
+        .arg("-i")
+        .arg(&video)
+        .args(["--threshold", "20", "--min-scene-len", "1"])
+        .assert()
+        .success();
+
+    let stats_path = temp.path().join("scene-change.scenedetect.json");
+    let stats: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(stats_path).unwrap()).unwrap();
+
+    assert_eq!(stats["schema_version"], 1);
+    assert_eq!(stats["kind"], "detection_stats");
+    assert_eq!(stats["detector"]["name"], "content");
+    assert_eq!(stats["detector"]["config"]["threshold"], 20.0);
+    assert_eq!(stats["options"]["min_scene_len"], 1);
+    assert_eq!(stats["metric_names"][0], "content_val");
+    assert!(stats["input"]["path"]
+        .as_str()
+        .unwrap()
+        .ends_with("scene-change.mp4"));
+    assert!(stats["input"]["byte_len"].as_u64().unwrap() > 0);
+    assert_eq!(stats["rows"].as_array().unwrap().len(), 6);
+    assert_eq!(stats["rows"][0]["score"], 0.0);
+    assert_eq!(stats["rows"][0]["threshold"], 20.0);
+    assert_eq!(stats["rows"][0]["decision"], "not_evaluated");
+    assert_eq!(stats["rows"][3]["decision"], "accepted");
+    assert!(stats["rows"][3]["metrics"]["content_val"].as_f64().unwrap() >= 20.0);
+}
+
+#[test]
+fn native_detect_content_overwrites_stale_detection_stats_json() {
+    if !ffmpeg_available() {
+        eprintln!("skipping CLI integration test because ffmpeg is unavailable");
+        return;
+    }
+
+    let temp = tempfile::tempdir().unwrap();
+    let video = temp.path().join("scene-change.mp4");
+    write_two_color_video(&video);
+    let stats_path = temp.path().join("scene-change.scenedetect.json");
+    std::fs::write(&stats_path, r#"{"kind":"stale"}"#).unwrap();
+
+    let mut cmd = Command::cargo_bin("scenedetect-rs").unwrap();
+    cmd.args(["detect", "content"])
+        .arg("-i")
+        .arg(&video)
+        .args(["--threshold", "20", "--min-scene-len", "1"])
+        .assert()
+        .success();
+
+    let stats: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(stats_path).unwrap()).unwrap();
+    assert_eq!(stats["schema_version"], 1);
+    assert_eq!(stats["kind"], "detection_stats");
+}
+
+#[test]
+fn native_render_commands_derive_outputs_from_detection_stats() {
+    if !ffmpeg_available() {
+        eprintln!("skipping CLI integration test because ffmpeg is unavailable");
+        return;
+    }
+
+    let temp = tempfile::tempdir().unwrap();
+    let video = temp.path().join("scene-change.mp4");
+    write_two_color_video(&video);
+
+    let mut detect = Command::cargo_bin("scenedetect-rs").unwrap();
+    detect
+        .args(["detect", "content"])
+        .arg("-i")
+        .arg(&video)
+        .args(["--threshold", "20", "--min-scene-len", "1"])
+        .assert()
+        .success();
+
+    std::fs::remove_file(&video).unwrap();
+
+    for render_args in [
+        vec!["render", "scenes"],
+        vec!["render", "stats", "--csv"],
+        vec!["render", "boundaries"],
+        vec!["render", "html"],
+    ] {
+        let mut render = Command::cargo_bin("scenedetect-rs").unwrap();
+        render
+            .args(render_args)
+            .arg("-i")
+            .arg(&video)
+            .assert()
+            .success();
+    }
+
+    let scenes = std::fs::read_to_string(temp.path().join("scene-change.scenes.csv")).unwrap();
+    assert!(scenes.contains("Scene Number,Start Frame,Start Timecode"));
+    assert!(scenes.lines().count() >= 3);
+
+    let stats = std::fs::read_to_string(temp.path().join("scene-change.stats.csv")).unwrap();
+    assert!(stats.contains("Frame Number,content_val"));
+    assert!(stats.contains("delta_edges"));
+
+    let boundaries =
+        std::fs::read_to_string(temp.path().join("scene-change.boundaries.csv")).unwrap();
+    assert!(boundaries.contains("Rank,Status,Boundary Candidate Number"));
+    assert!(boundaries.contains("accepted"));
+
+    let html = std::fs::read_to_string(temp.path().join("scene-change.scenes.html")).unwrap();
+    assert!(html.contains("<title>Scene List</title>"));
+}
+
+#[test]
+fn native_detect_content_reports_progress_to_stderr_when_forced() {
+    if !ffmpeg_available() {
+        eprintln!("skipping CLI integration test because ffmpeg is unavailable");
+        return;
+    }
+
+    let temp = tempfile::tempdir().unwrap();
+    let video = temp.path().join("scene-change.mp4");
+    write_two_color_video(&video);
+
+    let mut cmd = Command::cargo_bin("scenedetect-rs").unwrap();
+    cmd.args(["detect", "content"])
+        .arg("-i")
+        .arg(&video)
+        .args([
+            "--threshold",
+            "20",
+            "--min-scene-len",
+            "1",
+            "--progress",
+            "always",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::is_empty())
+        .stderr(predicate::str::contains("detecting content"))
+        .stderr(predicate::str::contains("frames"))
+        .stderr(predicate::str::contains("100%"))
+        .stderr(predicate::str::contains("boundaries:"))
+        .stderr(predicate::str::contains("wrote Detection Stats:"));
+}
+
+#[test]
+fn native_detect_content_suppresses_progress_for_auto_noninteractive_and_never() {
+    if !ffmpeg_available() {
+        eprintln!("skipping CLI integration test because ffmpeg is unavailable");
+        return;
+    }
+
+    for progress in ["auto", "never"] {
+        let temp = tempfile::tempdir().unwrap();
+        let video = temp.path().join("scene-change.mp4");
+        write_two_color_video(&video);
+
+        let mut cmd = Command::cargo_bin("scenedetect-rs").unwrap();
+        cmd.args(["detect", "content"])
+            .arg("-i")
+            .arg(&video)
+            .args(["--threshold", "20", "--min-scene-len", "1"])
+            .args(["--progress", progress])
+            .assert()
+            .success()
+            .stdout(predicate::str::is_empty())
+            .stderr(predicate::str::is_empty());
+    }
+}
+
+#[test]
+fn native_render_fails_when_detection_stats_are_missing() {
+    let temp = tempfile::tempdir().unwrap();
+    let video = temp.path().join("missing.mp4");
+
+    let mut cmd = Command::cargo_bin("scenedetect-rs").unwrap();
+    cmd.args(["render", "scenes"])
+        .arg("-i")
+        .arg(&video)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("Detection Stats are missing"))
+        .stderr(predicate::str::contains("scenedetect-rs detect content"));
+}
+
+#[test]
+fn native_render_fails_when_detection_stats_are_invalid() {
+    let temp = tempfile::tempdir().unwrap();
+    let video = temp.path().join("broken.mp4");
+    std::fs::write(temp.path().join("broken.scenedetect.json"), "not json").unwrap();
+
+    let mut cmd = Command::cargo_bin("scenedetect-rs").unwrap();
+    cmd.args(["render", "scenes"])
+        .arg("-i")
+        .arg(&video)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("failed to parse Detection Stats"));
+}
+
+#[test]
 fn content_detector_writes_score_ranked_boundary_candidates_to_csv() {
     if !ffmpeg_available() {
         eprintln!("skipping CLI integration test because ffmpeg is unavailable");
@@ -1546,7 +1757,7 @@ fn invalid_pyscenedetect_style_global_option_order_fails_with_clap_error() {
         .failure()
         .stderr(predicate::str::contains("unexpected argument '-i' found"))
         .stderr(predicate::str::contains(
-            "Usage: scenedetect-rs --input <INPUT> detect-content",
+            "Usage: scenedetect-rs detect-content",
         ));
 }
 

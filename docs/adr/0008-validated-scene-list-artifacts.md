@@ -1,5 +1,8 @@
 # Validated Scene List Artifacts
 
+Status: accepted for legacy PySceneDetect-compatible commands; superseded by
+ADR-0009 for the native command workflow.
+
 `scenedetect-rs` reuses completed Scene List work through validated Scene List
 Artifacts and render manifests instead of raw file-exists checks. The artifact
 records detection provenance, so commands can skip duplicate detection only
