@@ -46,3 +46,7 @@ Do not create implementation slice issues by default. The agent-loop, or a later
 Explicit user direction wins. If the user clearly asks for direct implementation, follow that request unless it conflicts with safety, permissions, or repo policy.
 
 If the current session cannot mutate GitHub Issues, end with a final plan whose next action is to create the PRD issue with labels `prd` and `ready-for-agent`.
+
+## Model policy
+
+Agent-loop workers use the hosted model policy from the installed `agent-loop` skill. See `~/.codex/skills/agent-loop/references/model-policy.md`.
