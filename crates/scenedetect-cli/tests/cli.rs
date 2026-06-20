@@ -146,6 +146,12 @@ fn export_html_render_manifest(output_dir: &Path) -> PathBuf {
     manifests[0].clone()
 }
 
+fn assert_single_hidden_scene_list_artifact(output_dir: &Path) {
+    let artifact_dir = output_dir.join(".scenedetect-rs").join("scene-list");
+    let artifacts = std::fs::read_dir(artifact_dir).unwrap().count();
+    assert_eq!(artifacts, 1);
+}
+
 fn assert_success_without_reusable_output(output: Output) {
     assert!(output.status.success());
     let stderr = String::from_utf8(output.stderr).unwrap();
@@ -407,11 +413,13 @@ fn content_detector_writes_scene_list_to_global_output_directory() {
         .arg(&output_dir)
         .args(["detect-content", "--threshold", "20", "list-scenes"])
         .assert()
-        .success();
+        .success()
+        .stdout(predicate::str::contains("scenes.csv"));
 
     let scenes = std::fs::read_to_string(output_dir.join("scenes.csv")).unwrap();
     assert!(scenes.contains("Scene Number,Start Frame,Start Timecode"));
     assert!(scenes.lines().count() >= 3);
+    assert_single_hidden_scene_list_artifact(&output_dir);
 }
 
 #[test]
@@ -447,9 +455,7 @@ fn export_html_first_write_uses_default_filename_and_writes_hidden_artifact() {
     assert!(html.contains("<title>Scene List</title>"));
     assert!(html.contains("<td>00:00:00.000</td>"));
 
-    let artifact_dir = output_dir.join(".scenedetect-rs").join("scene-list");
-    let artifacts = std::fs::read_dir(artifact_dir).unwrap().count();
-    assert_eq!(artifacts, 1);
+    assert_single_hidden_scene_list_artifact(&output_dir);
 }
 
 #[test]
@@ -1180,7 +1186,8 @@ fn json_scene_list_output_writes_ordered_scene_spans_to_file() {
             "json",
         ])
         .assert()
-        .success();
+        .success()
+        .stdout(predicate::str::contains("scenes.json"));
 
     let scenes = std::fs::read_to_string(output_dir.join("scenes.json")).unwrap();
     let scenes: serde_json::Value = serde_json::from_str(&scenes).unwrap();
@@ -1190,6 +1197,7 @@ fn json_scene_list_output_writes_ordered_scene_spans_to_file() {
     assert_eq!(scenes["scenes"][1]["scene_number"], 2);
     assert_eq!(scenes["scenes"][1]["start_frame"], 4);
     assert!(!output_dir.join("scenes.csv").exists());
+    assert_single_hidden_scene_list_artifact(&output_dir);
 }
 
 #[test]
@@ -1310,7 +1318,8 @@ fn ndjson_scene_events_output_writes_one_scene_span_per_file_line() {
             "ndjson",
         ])
         .assert()
-        .success();
+        .success()
+        .stdout(predicate::str::contains("scenes.ndjson"));
 
     let events = std::fs::read_to_string(output_dir.join("scenes.ndjson")).unwrap();
     let events: Vec<serde_json::Value> = events
@@ -1324,6 +1333,7 @@ fn ndjson_scene_events_output_writes_one_scene_span_per_file_line() {
     assert_eq!(events[1]["scene_number"], 2);
     assert!(!output_dir.join("scenes.csv").exists());
     assert!(!output_dir.join("scenes.json").exists());
+    assert_single_hidden_scene_list_artifact(&output_dir);
 }
 
 #[test]
