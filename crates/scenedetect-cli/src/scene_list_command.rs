@@ -45,6 +45,23 @@ pub(crate) struct ExportHtmlStdoutRequest {
     pub(crate) frame_rate_override: Option<FrameRate>,
 }
 
+pub(crate) struct ListScenesFileFirstWriteRequest {
+    pub(crate) input: PathBuf,
+    pub(crate) detector: DetectorConfig,
+    pub(crate) options: DetectionOptions,
+    pub(crate) scene_list_request: artifacts::SceneListRequest,
+    pub(crate) scene_list_artifact: Option<PathBuf>,
+    pub(crate) output_dir: PathBuf,
+    pub(crate) output_path: PathBuf,
+    pub(crate) stats: Option<PathBuf>,
+    pub(crate) force: bool,
+    pub(crate) quiet: bool,
+    pub(crate) frame_rate_override: Option<FrameRate>,
+    pub(crate) format: SceneListOutputFormat,
+    pub(crate) render_kind: &'static str,
+    pub(crate) request_key: String,
+}
+
 pub(crate) struct ExportHtmlFileRequest {
     pub(crate) input: PathBuf,
     pub(crate) detector: DetectorConfig,
@@ -78,6 +95,51 @@ pub(crate) fn run_list_scenes_stdout(request: ListScenesStdoutRequest) -> Result
     })?;
     if !request.quiet {
         write_scene_list(&scene_list, std::io::stdout(), request.format)?;
+    }
+    Ok(())
+}
+
+pub(crate) fn run_list_scenes_file_first_write(
+    request: ListScenesFileFirstWriteRequest,
+) -> Result<()> {
+    fs::create_dir_all(&request.output_dir)?;
+    let scene_list_artifact = scene_list_artifact_path(
+        request.scene_list_artifact.as_deref(),
+        &request.output_dir,
+        &request.request_key,
+    );
+    let scene_list = get_or_create_scene_list(SceneListAcquisitionRequest {
+        input: &request.input,
+        detector: request.detector,
+        options: request.options,
+        scene_list_request: &request.scene_list_request,
+        scene_list_artifact: Some(scene_list_artifact.as_ref()),
+        stats: request.stats.as_deref(),
+        force: request.force,
+        quiet: request.quiet,
+        frame_rate_override: request.frame_rate_override,
+    })?;
+    let file = File::create(&request.output_path).with_context(|| {
+        format!(
+            "failed to create scene list {}",
+            request.output_path.display()
+        )
+    })?;
+    write_scene_list(&scene_list, file, request.format)?;
+    let manifest_path = artifacts::render_manifest_path(
+        &request.output_dir,
+        &request.output_path,
+        request.render_kind,
+    )?;
+    artifacts::write_render_manifest(
+        &manifest_path,
+        &request.output_path,
+        request.render_kind,
+        &request.request_key,
+        &request.scene_list_request,
+    )?;
+    if !request.quiet {
+        println!("{}", request.output_path.display());
     }
     Ok(())
 }
@@ -134,7 +196,11 @@ fn run_export_html_file_first_write(
     output: ExportHtmlFileOutput,
     request_key: &str,
 ) -> Result<()> {
-    let scene_list_artifact = scene_list_artifact_path(&request, &output.output_dir, request_key);
+    let scene_list_artifact = scene_list_artifact_path(
+        request.scene_list_artifact.as_deref(),
+        &output.output_dir,
+        request_key,
+    );
     let scene_list = get_or_create_scene_list(SceneListAcquisitionRequest {
         input: &request.input,
         detector: request.detector,
@@ -272,13 +338,12 @@ fn write_scene_list<W: std::io::Write>(
 }
 
 fn scene_list_artifact_path(
-    request: &ExportHtmlFileRequest,
+    scene_list_artifact: Option<&Path>,
     output_dir: &Path,
     request_key: &str,
 ) -> PathBuf {
-    request
-        .scene_list_artifact
-        .clone()
+    scene_list_artifact
+        .map(Path::to_path_buf)
         .unwrap_or_else(|| artifacts::default_scene_list_artifact_path(output_dir, request_key))
 }
 

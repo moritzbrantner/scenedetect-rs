@@ -7,12 +7,10 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use scenedetect_core::{
-    detect_boundary_review_streaming, detect_scenes_streaming, write_boundary_review_csv,
-    write_boundary_review_json, write_scene_events_ndjson, write_scene_list_csv,
-    write_scene_list_json, AdaptiveDetectorConfig, BoundaryReviewOptions, ContentDetectorConfig,
-    ContentWeights, CsvStatsSink, DetectionOptions, DetectorConfig, FrameRate, HashDetectorConfig,
-    HistogramDetectorConfig, MinSceneLenPolicy, NoopStatsSink, SceneList, ThresholdDetectorConfig,
-    Timecode,
+    detect_boundary_review_streaming, write_boundary_review_csv, write_boundary_review_json,
+    AdaptiveDetectorConfig, BoundaryReviewOptions, ContentDetectorConfig, ContentWeights,
+    CsvStatsSink, DetectionOptions, DetectorConfig, FrameRate, HashDetectorConfig,
+    HistogramDetectorConfig, MinSceneLenPolicy, NoopStatsSink, ThresholdDetectorConfig, Timecode,
 };
 use scenedetect_ffmpeg::{probe_video, FfmpegFrameSource};
 
@@ -315,11 +313,6 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-enum SceneListSource {
-    Artifact,
-    Detection,
-}
-
 fn handle_list_scenes(
     cli: &Cli,
     args: &ListScenesArgs,
@@ -370,30 +363,24 @@ fn handle_list_scenes(
         return Ok(());
     }
 
-    let artifact_path = scene_list_artifact_path(cli, Some(&output_dir), &request_key);
-    let (scene_list, _) = get_or_create_scene_list(
-        cli,
-        detector,
-        options,
-        request,
-        artifact_path.as_deref(),
-        report_reuse,
-        frame_rate_override,
-    )?;
-    let file = File::create(&output_path)
-        .with_context(|| format!("failed to create scene list {}", output_path.display()))?;
-    write_scene_list(&scene_list, file, &args.format)?;
-    artifacts::write_render_manifest(
-        &manifest_path,
-        &output_path,
-        render_kind,
-        &request_key,
-        request,
-    )?;
-    if !quiet {
-        println!("{}", output_path.display());
-    }
-    Ok(())
+    scene_list_command::run_list_scenes_file_first_write(
+        scene_list_command::ListScenesFileFirstWriteRequest {
+            input: cli.input.clone(),
+            detector,
+            options,
+            scene_list_request: request.clone(),
+            scene_list_artifact: cli.scene_list_artifact.clone(),
+            output_dir,
+            output_path,
+            stats: cli.stats.clone(),
+            force: cli.force,
+            quiet,
+            frame_rate_override,
+            format: scene_list_command::SceneListOutputFormat::from(&args.format),
+            render_kind,
+            request_key,
+        },
+    )
 }
 
 fn handle_export_html(
@@ -438,48 +425,6 @@ fn handle_export_html(
     scene_list_command::run_export_html_file(file_request)
 }
 
-fn get_or_create_scene_list(
-    cli: &Cli,
-    detector: DetectorConfig,
-    options: DetectionOptions,
-    request: &artifacts::SceneListRequest,
-    artifact_path: Option<&Path>,
-    report_reuse: bool,
-    frame_rate_override: Option<FrameRate>,
-) -> Result<(SceneList, SceneListSource)> {
-    if can_reuse_scene_list(cli) {
-        if let Some(path) = artifact_path {
-            if let Some(scene_list) = artifacts::read_scene_list_artifact(path, request)? {
-                if report_reuse {
-                    eprintln!("reusing Scene List Artifact: {}", path.display());
-                }
-                return Ok((scene_list, SceneListSource::Artifact));
-            }
-        }
-    }
-
-    let source = FfmpegFrameSource::open(&cli.input, frame_rate_override)
-        .with_context(|| format!("failed to open input video {}", cli.input.display()))?;
-    let scene_list = if let Some(stats_path) = cli.stats.as_ref() {
-        if let Some(parent) = stats_path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        let file = File::create(stats_path)
-            .with_context(|| format!("failed to create stats file {}", stats_path.display()))?;
-        let mut stats_sink = CsvStatsSink::new(file);
-        detect_scenes_streaming(detector, source, options, &mut stats_sink)?
-    } else {
-        let mut stats_sink = NoopStatsSink;
-        detect_scenes_streaming(detector, source, options, &mut stats_sink)?
-    };
-
-    if let Some(path) = artifact_path {
-        artifacts::write_scene_list_artifact(path, request, &scene_list)?;
-    }
-
-    Ok((scene_list, SceneListSource::Detection))
-}
-
 fn can_reuse_scene_list(cli: &Cli) -> bool {
     !cli.force && cli.stats.is_none()
 }
@@ -489,18 +434,6 @@ fn explicit_artifact_matches(cli: &Cli, request: &artifacts::SceneListRequest) -
         return Ok(true);
     };
     Ok(artifacts::read_scene_list_artifact(path, request)?.is_some())
-}
-
-fn scene_list_artifact_path(
-    cli: &Cli,
-    output_dir: Option<&Path>,
-    request_key: &str,
-) -> Option<PathBuf> {
-    if let Some(path) = cli.scene_list_artifact.as_ref() {
-        return Some(path.clone());
-    }
-    output_dir
-        .map(|output_dir| artifacts::default_scene_list_artifact_path(output_dir, request_key))
 }
 
 fn scene_list_output_dir(cli: &Cli, args: &ListScenesArgs) -> PathBuf {
@@ -532,19 +465,6 @@ fn boundary_review_filename(args: &ListBoundariesArgs) -> &str {
         BoundaryReviewFormat::Csv => "boundaries.csv",
         BoundaryReviewFormat::Json => "boundaries.json",
     })
-}
-
-fn write_scene_list<W: std::io::Write>(
-    scene_list: &scenedetect_core::SceneList,
-    writer: W,
-    format: &SceneListFormat,
-) -> Result<()> {
-    match format {
-        SceneListFormat::Csv => write_scene_list_csv(scene_list, writer),
-        SceneListFormat::Json => write_scene_list_json(scene_list, writer),
-        SceneListFormat::Ndjson => write_scene_events_ndjson(scene_list, writer),
-    }?;
-    Ok(())
 }
 
 fn write_boundary_review<W: std::io::Write>(
