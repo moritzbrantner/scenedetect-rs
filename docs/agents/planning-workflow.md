@@ -1,6 +1,7 @@
 # Planning Workflow
 
 This repo is configured for the agent-loop workflow. GitHub Issues are the durable work queue.
+This file mirrors the bundled template at `~/.codex/skills/moenarch-setup-agent-loop-skills/planning-workflow.md`; keep repo-specific details in `docs/agents/issue-tracker.md`, `docs/agents/triage-labels.md`, and `docs/agents/domain.md`.
 
 ## Default For Substantial Work
 
@@ -39,14 +40,10 @@ After creating the PRD issue, report the issue number or URL and stop.
 
 Do not start implementation from the same thread unless the user explicitly asks for direct implementation.
 
-Do not create implementation slice issues by default. The agent-loop, or a later issue-splitting pass, handles `to-issues`.
+Do not create implementation slice issues by default. The agent-loop, or a later issue-splitting pass, handles `moenarch-to-issues`.
 
 ## Overrides
 
 Explicit user direction wins. If the user clearly asks for direct implementation, follow that request unless it conflicts with safety, permissions, or repo policy.
 
 If the current session cannot mutate GitHub Issues, end with a final plan whose next action is to create the PRD issue with labels `prd` and `ready-for-agent`.
-
-## Model policy
-
-Agent-loop workers use the hosted model policy from the installed `agent-loop` skill. See `~/.codex/skills/agent-loop/references/model-policy.md`.
