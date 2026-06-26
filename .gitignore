@@ -7,6 +7,8 @@
 /.python/
 /tests/fixtures/generated/
 /tests/parity/output/
+/tests/local-oracle/goldens/
+/tests/local-oracle/output/
 /tests/benchmarks/generated/
 /tests/benchmarks/results/
 *.pyc
