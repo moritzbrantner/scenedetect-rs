@@ -1,0 +1,26 @@
+schema_version = 1
+repository = "moritzbrantner/scenedetect-rs"
+issue = 72
+source_sha = "eb28c092ad1cbb260d845b16693d77b8c9728148"
+registry = "crates.io"
+dependency_order = ["scenedetect-core"]
+expected_tags = ["scenedetect-core-v0.1.0"]
+required_checks = [
+  "cargo metadata --format-version 1 --no-deps --locked",
+  "python3 scripts/check_release_plan.py --check releases/scenedetect-core-0.1.0.toml",
+  "cargo package -p scenedetect-core --locked --registry crates-io",
+]
+required_consumer_checks = []
+
+[[packages]]
+name = "scenedetect-core"
+version = "0.1.0"
+owner = "moritzbrantner/scenedetect-rs"
+manifest_path = "crates/scenedetect-core/Cargo.toml"
+dependencies = []
+tag = "scenedetect-core-v0.1.0"
+
+[[github_releases]]
+tag = "scenedetect-core-v0.1.0"
+title = "Release scenedetect-core 0.1.0"
+notes = "Initial release of the reusable scene detection model and Detector contracts."

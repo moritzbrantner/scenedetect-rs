@@ -1,0 +1,17 @@
+schema_version = 1
+max_workers = 2
+
+[verification]
+# Issue #72 deliberately authorizes structural release evidence only. The
+# publisher independently retains clean-head, destination issue, approval,
+# registry checksum/yank, and immutable source-tag safeguards immediately
+# around irreversible effects.
+commands = [
+  "cargo metadata --format-version 1 --no-deps --locked",
+  "python3 scripts/check_release_plan.py --check releases/scenedetect-core-0.1.0.toml",
+  "cargo package -p scenedetect-core --locked --registry crates-io",
+]
+
+[publication]
+command = "python3 scripts/publish_release.py"
+authorization_label = "release:approved"

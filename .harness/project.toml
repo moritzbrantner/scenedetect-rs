@@ -1,0 +1,15 @@
+schema_version = 1
+profile_status = "draft"
+project_id = "moritzbrantner/scenedetect-rs"
+default_base_ref = "origin/main"
+maturity = "growing"
+project_kinds = ["library", "cli", "native-processing"]
+verification_surface_globs = [".agent-loop.toml", ".harness/**", "AGENTS.md", "Cargo.toml", "Cargo.lock", "crates/scenedetect-core/Cargo.toml", "releases/**", "scripts/check_release_plan.py", "scripts/publish_release.py", "docs/AGENT_DRIVEN_RELEASES.md", "docs/RELEASE_CHECKLIST.md"]
+required_external_sources = [
+  { id = "issue:#71", canonical_url = "https://github.com/moritzbrantner/scenedetect-rs/issues/71", minimum_updated_at = "2026-08-15T20:16:01Z" },
+  { id = "issue:#72", canonical_url = "https://github.com/moritzbrantner/scenedetect-rs/issues/72", minimum_updated_at = "2026-08-15T20:16:23Z" },
+]
+generated_path_globs = ["target/**"]
+selection_fallback_ids = []
+
+[required_risk_categories]
