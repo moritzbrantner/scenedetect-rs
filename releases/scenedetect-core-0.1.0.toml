@@ -1,7 +1,7 @@
 schema_version = 1
 repository = "moritzbrantner/scenedetect-rs"
 issue = 72
-source_sha = "eb28c092ad1cbb260d845b16693d77b8c9728148"
+source_sha = "14735e2874889ad52757401253157536210c1df3"
 registry = "crates.io"
 dependency_order = ["scenedetect-core"]
 expected_tags = ["scenedetect-core-v0.1.0"]
