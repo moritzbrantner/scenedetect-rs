@@ -1,5 +1,6 @@
 [package]
 name = "scenedetect-core"
+description = "Reusable scene detection model and detector contracts"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
