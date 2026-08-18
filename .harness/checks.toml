@@ -1,0 +1,58 @@
+schema_version = 1
+
+[[checks]]
+id = "metadata"
+command = ["cargo", "metadata", "--format-version", "1", "--no-deps", "--locked"]
+scope = ["Cargo.toml", "Cargo.lock", "crates/scenedetect-core/Cargo.toml"]
+tier = "full"
+blocking = true
+evidence_classes = ["static"]
+protected_properties = ["INV-001"]
+source_of_truth = ["issue:#71", "issue:#72", "invariant:INV-001"]
+state_class = "deterministic"
+timeout_seconds = 300
+tools = ["cargo"]
+services = []
+generated_outputs = ["target/**"]
+cost_class = "low"
+success_exit_codes = [0]
+failure_semantics = "Cargo metadata does not expose the exact selected package and registry-only dependency surface."
+independence_group = "cargo-metadata"
+
+[[checks]]
+id = "scenedetect-core-manifest"
+command = ["python3", "scripts/check_release_plan.py", "--check", "releases/scenedetect-core-0.1.0.toml"]
+scope = [".agent-loop.toml", "Cargo.toml", "Cargo.lock", "crates/scenedetect-core/Cargo.toml", "releases/scenedetect-core-0.1.0.toml", "scripts/check_release_plan.py", "scripts/publish_release.py"]
+tier = "full"
+blocking = true
+evidence_classes = ["contract"]
+protected_properties = ["INV-001", "INV-002"]
+source_of_truth = ["issue:#71", "issue:#72", "invariant:INV-002"]
+state_class = "deterministic"
+timeout_seconds = 300
+tools = ["python3", "cargo", "git"]
+services = ["crates.io", "github.com"]
+generated_outputs = []
+cost_class = "low"
+success_exit_codes = [0]
+failure_semantics = "The one-package manifest, destination issue, source/control split, registry state, or immutable tag binding differs from the exact contract."
+independence_group = "release-manifest-validator"
+
+[[checks]]
+id = "scenedetect-core-archive"
+command = ["cargo", "package", "-p", "scenedetect-core", "--locked", "--registry", "crates-io"]
+scope = ["Cargo.toml", "Cargo.lock", "crates/scenedetect-core/**"]
+tier = "full"
+blocking = true
+evidence_classes = ["integration"]
+protected_properties = ["INV-003"]
+source_of_truth = ["issue:#71", "issue:#72", "invariant:INV-003"]
+state_class = "deterministic"
+timeout_seconds = 1800
+tools = ["cargo"]
+services = ["crates.io"]
+generated_outputs = ["target/**"]
+cost_class = "medium"
+success_exit_codes = [0]
+failure_semantics = "The selected scenedetect-core crate could not be packaged from its locked crates.io dependency closure."
+independence_group = "selected-cargo-package"

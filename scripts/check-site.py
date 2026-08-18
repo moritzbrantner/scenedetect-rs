@@ -92,7 +92,7 @@ def check_pages_workflow() -> None:
     workflow = read_text(PAGES_WORKFLOW)
     required = [
         "actions/configure-pages@v5",
-        "actions/upload-pages-artifact@v4",
+        "actions/upload-pages-artifact@v5",
         "actions/deploy-pages@v4",
         "pages: write",
         "id-token: write",

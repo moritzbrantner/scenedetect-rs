@@ -44,6 +44,13 @@ Before handoff:
 - `bun run tdd:check`
 - `bun run agent:check`
 
+An exact destination-local release issue may deliberately replace this ladder
+with a smaller structural command set when it changes release controls only.
+For issue #72, run only the commands in `.agent-loop.toml`: locked Cargo
+metadata, exact manifest validation, and `cargo package` for
+`scenedetect-core`. Unit, parity, workspace, Clippy, documentation, consumer,
+build, and broad package suites are skipped and must not be reported as passed.
+
 When branch or patch comparison is useful:
 
 - `bun run agent:eval -- --candidate-ref <branch-or-sha>`
@@ -55,7 +62,8 @@ An agent is done only when:
 
 - acceptance criteria are satisfied
 - behavior tests exist or were deliberately deemed unnecessary
-- `bun run agent:check` passes
+- `bun run agent:check` passes, unless an exact release-only issue explicitly
+  replaces it with its structural verification commands
 - Moonlight eval passes when applicable
 - PR description includes verification evidence
 
