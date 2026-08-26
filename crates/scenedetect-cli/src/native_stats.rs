@@ -43,6 +43,7 @@ pub enum DetectionStatsDetector {
     Content(ContentDetectorConfig),
     Adaptive(AdaptiveDetectorConfig),
     Threshold(ThresholdDetectorConfig),
+    #[serde(rename = "hist")]
     Histogram(HistogramDetectorConfig),
     Hash(HashDetectorConfig),
 }
