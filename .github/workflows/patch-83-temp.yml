@@ -1,0 +1,30 @@
+name: Apply issue 83 patch
+
+on:
+  push:
+    branches:
+      - agent-loop/issue-83-native-detectors
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event.head_commit.message != 'Apply issue 83 patch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: agent-loop/issue-83-native-detectors
+      - run: python3 scripts/patch-83-temp.py
+      - name: Format
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt
+          cargo fmt --all
+      - name: Commit patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add crates/scenedetect-cli/src/main.rs crates/scenedetect-cli/tests/native_detectors.rs tests/parity/cases.toml
+          git commit -m "Apply issue 83 patch"
+          git push origin HEAD:agent-loop/issue-83-native-detectors
