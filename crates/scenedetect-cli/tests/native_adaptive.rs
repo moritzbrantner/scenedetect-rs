@@ -98,7 +98,6 @@ fn native_adaptive_detection_reuses_one_stats_artifact_for_renders() {
             "--format",
             "json",
             "--no-output-file",
-            "--quiet",
         ])
         .output()
         .unwrap();
