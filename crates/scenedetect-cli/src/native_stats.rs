@@ -4,12 +4,16 @@ use std::time::UNIX_EPOCH;
 
 use anyhow::{anyhow, Context, Result};
 use scenedetect_core::{
-    ContentDetectionStats, ContentDetectorConfig, DetectionOptions, FrameRate, Timecode,
+    AdaptiveDetectorConfig, ContentDetectionStats, ContentDetectorConfig, DetectionOptions,
+    DetectorConfig, FrameRate, HashDetectorConfig, HistogramDetectorConfig,
+    ThresholdDetectorConfig, Timecode,
 };
 use scenedetect_ffmpeg::VideoMetadata;
 use serde::{Deserialize, Serialize};
 
-const DETECTION_STATS_SCHEMA_VERSION: u32 = 1;
+const CONTENT_DETECTION_STATS_SCHEMA_VERSION: u32 = 1;
+const DETECTION_STATS_SCHEMA_VERSION: u32 = 2;
+const MIN_SUPPORTED_DETECTION_STATS_SCHEMA_VERSION: u32 = 1;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DetectionStatsDocument {
@@ -33,10 +37,39 @@ pub struct DetectionStatsInput {
     pub total_frames: u64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DetectionStatsDetector {
-    pub name: String,
-    pub config: ContentDetectorConfig,
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "name", content = "config", rename_all = "snake_case")]
+pub enum DetectionStatsDetector {
+    Content(ContentDetectorConfig),
+    Adaptive(AdaptiveDetectorConfig),
+    Threshold(ThresholdDetectorConfig),
+    #[serde(rename = "hist")]
+    Histogram(HistogramDetectorConfig),
+    Hash(HashDetectorConfig),
+}
+
+impl DetectionStatsDetector {
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::Content(_) => "content",
+            Self::Adaptive(_) => "adaptive",
+            Self::Threshold(_) => "threshold",
+            Self::Histogram(_) => "hist",
+            Self::Hash(_) => "hash",
+        }
+    }
+}
+
+impl From<DetectorConfig> for DetectionStatsDetector {
+    fn from(config: DetectorConfig) -> Self {
+        match config {
+            DetectorConfig::Content(config) => Self::Content(config),
+            DetectorConfig::Adaptive(config) => Self::Adaptive(config),
+            DetectorConfig::Threshold(config) => Self::Threshold(config),
+            DetectorConfig::Histogram(config) => Self::Histogram(config),
+            DetectorConfig::Hash(config) => Self::Hash(config),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -74,7 +107,7 @@ impl DetectionStatsDocument {
             .collect();
 
         Ok(Self {
-            schema_version: DETECTION_STATS_SCHEMA_VERSION,
+            schema_version: CONTENT_DETECTION_STATS_SCHEMA_VERSION,
             kind: "detection_stats".to_owned(),
             input: DetectionStatsInput {
                 path: path.display().to_string(),
@@ -85,30 +118,39 @@ impl DetectionStatsDocument {
                 frame_rate: stats.frame_rate.0,
                 total_frames: stats.total_frames,
             },
-            detector: DetectionStatsDetector {
-                name: "content".to_owned(),
-                config: stats.detector_config,
-            },
+            detector: DetectionStatsDetector::Content(stats.detector_config),
             options: stats.options,
             metric_names: stats.metric_names,
             rows,
         })
     }
 
-    pub fn into_content_stats(self) -> Result<ContentDetectionStats> {
-        if self.schema_version != DETECTION_STATS_SCHEMA_VERSION || self.kind != "detection_stats" {
+    pub fn validate(&self) -> Result<()> {
+        if !(MIN_SUPPORTED_DETECTION_STATS_SCHEMA_VERSION..=DETECTION_STATS_SCHEMA_VERSION)
+            .contains(&self.schema_version)
+            || self.kind != "detection_stats"
+        {
             return Err(anyhow!("invalid Detection Stats document"));
         }
-        if self.detector.name != "content" {
-            return Err(anyhow!(
-                "native render currently supports content Detection Stats only"
-            ));
-        }
+        Ok(())
+    }
+
+    pub fn into_content_stats(self) -> Result<ContentDetectionStats> {
+        self.validate()?;
+        let detector_config = match self.detector {
+            DetectionStatsDetector::Content(config) => config,
+            detector => {
+                return Err(anyhow!(
+                    "native content rendering cannot read {} Detection Stats",
+                    detector.name()
+                ))
+            }
+        };
 
         Ok(ContentDetectionStats {
             frame_rate: FrameRate(self.input.frame_rate),
             total_frames: self.input.total_frames,
-            detector_config: self.detector.config,
+            detector_config,
             options: self.options,
             metric_names: self.metric_names,
             rows: self
@@ -145,7 +187,7 @@ pub fn write_detection_stats(path: &Path, document: &DetectionStatsDocument) -> 
     Ok(())
 }
 
-pub fn read_detection_stats_for_input(input: &Path) -> Result<ContentDetectionStats> {
+pub fn read_detection_stats_document_for_input(input: &Path) -> Result<DetectionStatsDocument> {
     let path = detection_stats_path_for_input(input)?;
     let file = File::open(&path).with_context(|| {
         format!(
@@ -156,7 +198,12 @@ pub fn read_detection_stats_for_input(input: &Path) -> Result<ContentDetectionSt
     })?;
     let document: DetectionStatsDocument = serde_json::from_reader(file)
         .with_context(|| format!("failed to parse Detection Stats {}", path.display()))?;
-    document.into_content_stats()
+    document.validate()?;
+    Ok(document)
+}
+
+pub fn read_detection_stats_for_input(input: &Path) -> Result<ContentDetectionStats> {
+    read_detection_stats_document_for_input(input)?.into_content_stats()
 }
 
 fn stem_path(input: &Path, suffix: &str) -> Result<PathBuf> {
@@ -175,4 +222,80 @@ fn modified_unix_nanos(metadata: &fs::Metadata) -> Result<u64> {
         .map_err(|error| anyhow!("modified time predates unix epoch: {error}"))?
         .as_nanos();
     u64::try_from(nanos).map_err(|_| anyhow!("modified time does not fit in u64 nanoseconds"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn schema_v1_content_document_remains_readable() {
+        let document: DetectionStatsDocument = serde_json::from_str(
+            r#"{
+              "schema_version": 1,
+              "kind": "detection_stats",
+              "input": {
+                "path": "/tmp/example.mp4",
+                "byte_len": 1,
+                "modified_unix_nanos": 2,
+                "width": 16,
+                "height": 16,
+                "frame_rate": 10.0,
+                "total_frames": 2
+              },
+              "detector": {
+                "name": "content",
+                "config": {
+                  "threshold": 20.0,
+                  "weights": {
+                    "hue": 1.0,
+                    "saturation": 1.0,
+                    "luminance": 1.0,
+                    "edges": 0.0
+                  },
+                  "luma_only": false
+                }
+              },
+              "options": {
+                "min_scene_len": 1,
+                "min_scene_len_policy": "Suppress"
+              },
+              "metric_names": ["content_val"],
+              "rows": [
+                {
+                  "frame": 0,
+                  "timecode": "00:00:00.000",
+                  "score": 0.0,
+                  "threshold": 20.0,
+                  "decision": "not_evaluated",
+                  "metrics": {"content_val": 0.0}
+                }
+              ]
+            }"#,
+        )
+        .unwrap();
+
+        let stats = document.into_content_stats().unwrap();
+        assert_eq!(stats.detector_config.threshold, 20.0);
+        assert_eq!(stats.total_frames, 2);
+        assert_eq!(stats.rows.len(), 1);
+    }
+
+    #[test]
+    fn generalized_detector_shape_round_trips_all_canonical_configs() {
+        let configs = [
+            DetectionStatsDetector::Content(ContentDetectorConfig::default()),
+            DetectionStatsDetector::Adaptive(AdaptiveDetectorConfig::default()),
+            DetectionStatsDetector::Threshold(ThresholdDetectorConfig::default()),
+            DetectionStatsDetector::Histogram(HistogramDetectorConfig::default()),
+            DetectionStatsDetector::Hash(HashDetectorConfig::default()),
+        ];
+
+        for config in configs {
+            let value = serde_json::to_value(&config).unwrap();
+            assert_eq!(value["name"], config.name());
+            let restored: DetectionStatsDetector = serde_json::from_value(value).unwrap();
+            assert_eq!(restored, config);
+        }
+    }
 }
