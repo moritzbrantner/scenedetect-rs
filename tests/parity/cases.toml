@@ -56,6 +56,7 @@ tolerance_frames = 1
 [[cases]]
 id = "threshold-fade-return"
 status = "required"
+native_detector = "threshold"
 video = "tests/fixtures/generated/threshold-fade-return.mkv"
 detector = "detect-threshold"
 threshold = "12"
@@ -86,6 +87,7 @@ tolerance_frames = 1
 [[cases]]
 id = "hist-hard-cut"
 status = "required"
+native_detector = "hist"
 video = "tests/fixtures/generated/content-hard-cut.mkv"
 detector = "detect-hist"
 threshold = "0.05"
@@ -96,6 +98,7 @@ tolerance_frames = 1
 [[cases]]
 id = "hash-pattern-cut"
 status = "required"
+native_detector = "hash"
 video = "tests/fixtures/generated/hash-pattern-cut.mkv"
 detector = "detect-hash"
 threshold = "0.395"
