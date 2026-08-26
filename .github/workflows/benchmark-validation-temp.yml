@@ -1,0 +1,27 @@
+name: Temporary benchmark configuration validation
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark-config:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Validate benchmark case coverage
+        run: python3 tests/benchmarks/validate.py
+      - name: Verify benchmark timing is not in correctness scripts
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          scripts = json.loads(Path('package.json').read_text())['scripts']
+          for gate in ('tdd:check', 'agent:check'):
+              value = scripts[gate]
+              if 'benchmark:generated' in value or 'benchmark:real' in value or 'hyperfine' in value:
+                  raise SystemExit(f'{gate} unexpectedly runs benchmark timing: {value}')
+          print('benchmark timing remains report-only')
+          PY
