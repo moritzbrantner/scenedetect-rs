@@ -11,6 +11,7 @@ use scenedetect_core::{
 use scenedetect_ffmpeg::VideoMetadata;
 use serde::{Deserialize, Serialize};
 
+const CONTENT_DETECTION_STATS_SCHEMA_VERSION: u32 = 1;
 const DETECTION_STATS_SCHEMA_VERSION: u32 = 2;
 const MIN_SUPPORTED_DETECTION_STATS_SCHEMA_VERSION: u32 = 1;
 
@@ -115,7 +116,7 @@ impl DetectionStatsDocument {
             .collect();
 
         Ok(Self {
-            schema_version: DETECTION_STATS_SCHEMA_VERSION,
+            schema_version: CONTENT_DETECTION_STATS_SCHEMA_VERSION,
             kind: "detection_stats".to_owned(),
             input: DetectionStatsInput {
                 path: path.display().to_string(),
