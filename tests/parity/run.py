@@ -87,6 +87,12 @@ def validate_case(case: dict[str, Any], index: int) -> None:
     if not isinstance(tolerance, int) or tolerance < 0:
         raise ConfigError(f"{label} must define non-negative tolerance_frames")
 
+    native_detector = case.get("native_detector")
+    if native_detector is not None and native_detector not in {
+        "content", "adaptive", "threshold", "hist", "hash"
+    }:
+        raise ConfigError(f"{label} has invalid native_detector {native_detector!r}")
+
     reason = case.get("reason")
     if status == "expected-gap" and not isinstance(reason, str):
         raise ConfigError(f"{label} expected-gap must include a reason")
@@ -219,6 +225,72 @@ def prepare_oracle(config: dict[str, Any]) -> str:
     return uv_bin
 
 
+
+def load_native_scene_json(path: Path, case_id: str) -> list[dict[str, int]]:
+    try:
+        with path.open() as file:
+            payload = json.load(file)
+    except json.JSONDecodeError as error:
+        raise AssertionError(f"{case_id}: native Scene List JSON is invalid: {error}") from error
+    scenes = payload.get("scenes") if isinstance(payload, dict) else None
+    if not isinstance(scenes, list):
+        raise AssertionError(f"{case_id}: native Scene List scenes must be an array")
+    normalized = []
+    for index, scene in enumerate(scenes, start=1):
+        if not isinstance(scene, dict):
+            raise AssertionError(f"{case_id}: native scene {index} must be an object")
+        start = scene.get("start_frame")
+        end = scene.get("end_frame")
+        if not isinstance(start, int) or not isinstance(end, int):
+            raise AssertionError(f"{case_id}: native scene {index} has invalid frame columns")
+        normalized.append({"start": start - 1, "end": end})
+    return normalized
+
+
+def run_native_case(
+    case: dict[str, Any],
+    candidate_bin: Path,
+    video: Path,
+    reference: list[dict[str, int]],
+    case_dir: Path,
+) -> None:
+    native_detector = case.get("native_detector")
+    if native_detector is None:
+        return
+    native_args = detector_args(case, "candidate_args")
+    run(
+        [
+            str(candidate_bin),
+            "detect",
+            native_detector,
+            "-i",
+            str(video),
+            *native_args,
+            "--min-scene-len",
+            case["min_scene_len"],
+            "--progress",
+            "never",
+            "--quiet",
+        ]
+    )
+    native_json = case_dir / "native-scenes.json"
+    run(
+        [
+            str(candidate_bin),
+            "render",
+            "scenes",
+            "-i",
+            str(video),
+            "--format",
+            "json",
+            "--output",
+            str(native_json),
+        ]
+    )
+    native_scenes = load_native_scene_json(native_json, case["id"])
+    compare_scenes(case, reference, native_scenes)
+    print(f"native parity ok: {case['id']}: {len(reference)} scenes")
+
 def run_required_case(
     case: dict[str, Any],
     config: dict[str, Any],
@@ -298,6 +370,7 @@ def run_required_case(
     )
     compare_scenes(case, reference, candidate)
     print(f"parity ok: {case_id}: {len(reference)} scenes")
+    run_native_case(case, candidate_bin, video, reference, case_dir)
 
 
 def selected_cases(cases: list[dict[str, Any]], case_id: str | None) -> list[dict[str, Any]]:

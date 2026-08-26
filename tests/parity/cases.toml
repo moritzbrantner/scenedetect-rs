@@ -47,6 +47,7 @@ id = "adaptive-fast-motion"
 status = "required"
 video = "tests/fixtures/generated/adaptive-fast-motion.mkv"
 detector = "detect-adaptive"
+native_detector = "adaptive"
 threshold = "3"
 args = ["--min-content-val", "15", "--frame-window", "2"]
 min_scene_len = "1"
