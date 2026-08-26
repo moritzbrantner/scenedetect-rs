@@ -1,0 +1,66 @@
+{
+  "frame_rate": 10.0,
+  "total_frames": 3,
+  "detector_config": {
+    "threshold": 20.0,
+    "weights": {
+      "hue": 1.0,
+      "saturation": 1.0,
+      "luminance": 1.0,
+      "edges": 0.0
+    },
+    "luma_only": false
+  },
+  "options": {
+    "min_scene_len": 1,
+    "min_scene_len_policy": "Suppress"
+  },
+  "metric_names": [
+    "content_val",
+    "delta_hue",
+    "delta_saturation",
+    "delta_luminance",
+    "delta_edges"
+  ],
+  "rows": [
+    {
+      "frame": 0,
+      "score": 0.0,
+      "threshold": 20.0,
+      "decision": "not_evaluated",
+      "metrics": {
+        "content_val": 0.0,
+        "delta_edges": 0.0,
+        "delta_hue": 0.0,
+        "delta_luminance": 0.0,
+        "delta_saturation": 0.0
+      }
+    },
+    {
+      "frame": 1,
+      "score": 30.0,
+      "threshold": 20.0,
+      "decision": "accepted",
+      "metrics": {
+        "content_val": 30.0,
+        "delta_edges": 0.0,
+        "delta_hue": 0.0,
+        "delta_luminance": 90.0,
+        "delta_saturation": 0.0
+      }
+    },
+    {
+      "frame": 2,
+      "score": 5.0,
+      "threshold": 20.0,
+      "decision": "below_threshold",
+      "metrics": {
+        "content_val": 5.0,
+        "delta_edges": 0.0,
+        "delta_hue": 0.0,
+        "delta_luminance": 15.0,
+        "delta_saturation": 0.0
+      }
+    }
+  ]
+}
