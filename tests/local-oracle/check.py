@@ -127,7 +127,6 @@ def candidate_stdout(
             "--format",
             output_format,
             "--no-output-file",
-            "--quiet",
         ]
     )
 
