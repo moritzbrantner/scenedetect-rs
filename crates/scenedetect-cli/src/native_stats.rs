@@ -5,8 +5,8 @@ use std::time::UNIX_EPOCH;
 use anyhow::{anyhow, Context, Result};
 use scenedetect_core::{
     AdaptiveDetectorConfig, ContentDetectionStats, ContentDetectorConfig, DetectionOptions,
-    DetectorConfig, FrameRate, HashDetectorConfig, HistogramDetectorConfig, ThresholdDetectorConfig,
-    Timecode,
+    DetectorConfig, FrameRate, HashDetectorConfig, HistogramDetectorConfig,
+    ThresholdDetectorConfig, Timecode,
 };
 use scenedetect_ffmpeg::VideoMetadata;
 use serde::{Deserialize, Serialize};
