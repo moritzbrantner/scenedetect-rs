@@ -302,10 +302,6 @@ pub fn read_detection_stats_document_for_input(input: &Path) -> Result<Detection
     Ok(document)
 }
 
-pub fn read_detection_stats_for_input(input: &Path) -> Result<ContentDetectionStats> {
-    read_detection_stats_document_for_input(input)?.into_content_stats()
-}
-
 fn detection_stats_input(
     input: &Path,
     metadata: &VideoMetadata,
