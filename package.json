@@ -16,6 +16,9 @@
     "oracle:check": "python3 tests/local-oracle/check.py",
     "oracle:check-surfaces": "python3 tests/local-oracle/check-surfaces.py",
     "oracle:verify": "tests/local-oracle/run.py verify",
+    "benchmark:validate": "python3 tests/benchmarks/validate.py",
+    "benchmark:generated": "tests/benchmarks/run-hyperfine.sh --generated-only",
+    "benchmark:real": "tests/benchmarks/run-hyperfine.sh --include-real",
     "agent:check": "bun run tdd:check",
     "agent:eval": "scripts/moonlight.sh eval run --project moonlight.eval.toml --storage-path .moonlight/agent-runs.jsonl --format markdown",
     "agent:eval:report": "scripts/moonlight.sh eval report --storage-path .moonlight/agent-runs.jsonl --format markdown"

@@ -31,6 +31,22 @@ args = ["--threshold", "12"]
 min_scene_len = "1"
 
 [[cases]]
+id = "generated-histogram-hard-cuts"
+corpus = "generated"
+video = "tests/benchmarks/generated/generated-hard-cuts.mkv"
+detector = "detect-hist"
+args = ["--threshold", "0.05", "--bins", "256"]
+min_scene_len = "1"
+
+[[cases]]
+id = "generated-hash-hard-cuts"
+corpus = "generated"
+video = "tests/benchmarks/generated/generated-hard-cuts.mkv"
+detector = "detect-hash"
+args = ["--threshold", "0.395", "--size", "16", "--lowpass", "2"]
+min_scene_len = "1"
+
+[[cases]]
 id = "shrek-retold-early-content"
 corpus = "real"
 video = "tests/benchmarks/generated/shrek-retold-early-30s.mkv"
