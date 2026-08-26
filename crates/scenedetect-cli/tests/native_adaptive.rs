@@ -133,7 +133,9 @@ fn native_adaptive_detection_reuses_one_stats_artifact_for_renders() {
         .arg(&html)
         .assert()
         .success();
-    assert!(std::fs::read_to_string(html).unwrap().contains("Scene List"));
+    assert!(std::fs::read_to_string(html)
+        .unwrap()
+        .contains("Scene List"));
 
     let boundary_output = Command::cargo_bin("scenedetect-rs")
         .unwrap()
