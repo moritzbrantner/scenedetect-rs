@@ -78,10 +78,8 @@ fn source_consumer_detects_once_and_derives_scene_outputs_from_stats() {
         ]
     );
 
-    let review = boundary_review_from_content_detection_stats(
-        &stats,
-        BoundaryReviewOptions::default(),
-    );
+    let review =
+        boundary_review_from_content_detection_stats(&stats, BoundaryReviewOptions::default());
     assert_eq!(review.scene_list, scene_list);
     assert!(review.candidates.iter().any(|candidate| {
         candidate.status == BoundaryCandidateStatus::Accepted && candidate.frame == FrameIndex(1)
@@ -113,12 +111,13 @@ fn prior_content_detection_stats_shape_remains_deserializable() {
         ]
     );
 
-    let review = boundary_review_from_content_detection_stats(
-        &stats,
-        BoundaryReviewOptions::default(),
-    );
+    let review =
+        boundary_review_from_content_detection_stats(&stats, BoundaryReviewOptions::default());
     assert_eq!(review.candidates.len(), 1);
-    assert_eq!(review.candidates[0].status, BoundaryCandidateStatus::Accepted);
+    assert_eq!(
+        review.candidates[0].status,
+        BoundaryCandidateStatus::Accepted
+    );
     assert_eq!(review.candidates[0].frame, FrameIndex(1));
 
     let round_trip = serde_json::to_string(&stats).unwrap();
