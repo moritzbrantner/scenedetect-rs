@@ -1,3 +1,4 @@
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File};
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
@@ -5,7 +6,8 @@ use std::time::UNIX_EPOCH;
 use anyhow::{anyhow, Context, Result};
 use scenedetect_core::{
     AdaptiveDetectorConfig, ContentDetectionStats, ContentDetectorConfig, DetectionOptions,
-    DetectorConfig, FrameRate, HashDetectorConfig, HistogramDetectorConfig,
+    DetectionResult, DetectionStats, DetectionStatsDecision, DetectorConfig, FrameIndex, FrameRate,
+    HashDetectorConfig, HistogramDetectorConfig, SceneList, SceneSpan, StatsRow,
     ThresholdDetectorConfig, Timecode,
 };
 use scenedetect_ffmpeg::VideoMetadata;
@@ -78,8 +80,8 @@ pub struct DetectionStatsRowDocument {
     pub timecode: String,
     pub score: f64,
     pub threshold: f64,
-    pub decision: scenedetect_core::DetectionStatsDecision,
-    pub metrics: std::collections::BTreeMap<String, f64>,
+    pub decision: DetectionStatsDecision,
+    pub metrics: BTreeMap<String, f64>,
 }
 
 impl DetectionStatsDocument {
@@ -88,11 +90,7 @@ impl DetectionStatsDocument {
         metadata: &VideoMetadata,
         stats: ContentDetectionStats,
     ) -> Result<Self> {
-        let file_metadata = fs::metadata(input)
-            .with_context(|| format!("failed to read input video metadata {}", input.display()))?;
-        let path = input
-            .canonicalize()
-            .with_context(|| format!("failed to canonicalize input video {}", input.display()))?;
+        let input = detection_stats_input(input, metadata, stats.total_frames)?;
         let rows = stats
             .rows
             .into_iter()
@@ -109,18 +107,68 @@ impl DetectionStatsDocument {
         Ok(Self {
             schema_version: CONTENT_DETECTION_STATS_SCHEMA_VERSION,
             kind: "detection_stats".to_owned(),
-            input: DetectionStatsInput {
-                path: path.display().to_string(),
-                byte_len: file_metadata.len(),
-                modified_unix_nanos: modified_unix_nanos(&file_metadata)?,
-                width: metadata.width,
-                height: metadata.height,
-                frame_rate: stats.frame_rate.0,
-                total_frames: stats.total_frames,
-            },
+            input,
             detector: DetectionStatsDetector::Content(stats.detector_config),
             options: stats.options,
             metric_names: stats.metric_names,
+            rows,
+        })
+    }
+
+    pub fn from_detection_result(
+        input: &Path,
+        metadata: &VideoMetadata,
+        detector: DetectorConfig,
+        options: DetectionOptions,
+        result: DetectionResult,
+    ) -> Result<Self> {
+        let frame_rate = result.scene_list.frame_rate;
+        let total_frames = result
+            .scene_list
+            .scenes
+            .last()
+            .map(|scene| scene.end.0)
+            .unwrap_or(result.stats.rows.len() as u64);
+        let accepted_frames = result
+            .scene_list
+            .scenes
+            .iter()
+            .skip(1)
+            .map(|scene| scene.start.0)
+            .collect::<BTreeSet<_>>();
+        let rows = result
+            .stats
+            .rows
+            .into_iter()
+            .map(|row| {
+                let (score, threshold, candidate) = detector_row_semantics(&detector, &row.metrics);
+                let decision = if row.frame.0 == 0 {
+                    DetectionStatsDecision::NotEvaluated
+                } else if accepted_frames.contains(&row.frame.0) {
+                    DetectionStatsDecision::Accepted
+                } else if candidate {
+                    DetectionStatsDecision::SuppressedMinSceneLen
+                } else {
+                    DetectionStatsDecision::BelowThreshold
+                };
+                DetectionStatsRowDocument {
+                    frame: row.frame.0,
+                    timecode: Timecode::from_frames(row.frame.0).display_at_rate(frame_rate),
+                    score,
+                    threshold,
+                    decision,
+                    metrics: row.metrics,
+                }
+            })
+            .collect();
+
+        Ok(Self {
+            schema_version: DETECTION_STATS_SCHEMA_VERSION,
+            kind: "detection_stats".to_owned(),
+            input: detection_stats_input(input, metadata, total_frames)?,
+            detector: detector.into(),
+            options,
+            metric_names: result.stats.metric_names,
             rows,
         })
     }
@@ -133,6 +181,58 @@ impl DetectionStatsDocument {
             return Err(anyhow!("invalid Detection Stats document"));
         }
         Ok(())
+    }
+
+    pub fn scene_list(&self) -> Result<SceneList> {
+        self.validate()?;
+        if self.input.total_frames == 0 {
+            return Ok(SceneList {
+                frame_rate: FrameRate(self.input.frame_rate),
+                scenes: Vec::new(),
+            });
+        }
+
+        let mut starts = vec![0];
+        starts.extend(
+            self.rows
+                .iter()
+                .filter(|row| row.decision == DetectionStatsDecision::Accepted)
+                .map(|row| row.frame)
+                .filter(|frame| *frame > 0 && *frame < self.input.total_frames),
+        );
+        starts.sort_unstable();
+        starts.dedup();
+
+        let mut scenes = starts
+            .windows(2)
+            .map(|pair| SceneSpan {
+                start: FrameIndex(pair[0]),
+                end: FrameIndex(pair[1]),
+            })
+            .collect::<Vec<_>>();
+        scenes.push(SceneSpan {
+            start: FrameIndex(*starts.last().unwrap_or(&0)),
+            end: FrameIndex(self.input.total_frames),
+        });
+        Ok(SceneList {
+            frame_rate: FrameRate(self.input.frame_rate),
+            scenes,
+        })
+    }
+
+    pub fn detection_stats(&self) -> Result<DetectionStats> {
+        self.validate()?;
+        Ok(DetectionStats {
+            metric_names: self.metric_names.clone(),
+            rows: self
+                .rows
+                .iter()
+                .map(|row| StatsRow {
+                    frame: FrameIndex(row.frame),
+                    metrics: row.metrics.clone(),
+                })
+                .collect(),
+        })
     }
 
     pub fn into_content_stats(self) -> Result<ContentDetectionStats> {
@@ -157,7 +257,7 @@ impl DetectionStatsDocument {
                 .rows
                 .into_iter()
                 .map(|row| scenedetect_core::RichDetectionStatsRow {
-                    frame: scenedetect_core::FrameIndex(row.frame),
+                    frame: FrameIndex(row.frame),
                     score: row.score,
                     threshold: row.threshold,
                     decision: row.decision,
@@ -202,8 +302,71 @@ pub fn read_detection_stats_document_for_input(input: &Path) -> Result<Detection
     Ok(document)
 }
 
-pub fn read_detection_stats_for_input(input: &Path) -> Result<ContentDetectionStats> {
-    read_detection_stats_document_for_input(input)?.into_content_stats()
+fn detection_stats_input(
+    input: &Path,
+    metadata: &VideoMetadata,
+    total_frames: u64,
+) -> Result<DetectionStatsInput> {
+    let file_metadata = fs::metadata(input)
+        .with_context(|| format!("failed to read input video metadata {}", input.display()))?;
+    let path = input
+        .canonicalize()
+        .with_context(|| format!("failed to canonicalize input video {}", input.display()))?;
+    Ok(DetectionStatsInput {
+        path: path.display().to_string(),
+        byte_len: file_metadata.len(),
+        modified_unix_nanos: modified_unix_nanos(&file_metadata)?,
+        width: metadata.width,
+        height: metadata.height,
+        frame_rate: metadata.frame_rate.0,
+        total_frames,
+    })
+}
+
+fn detector_row_semantics(
+    detector: &DetectorConfig,
+    metrics: &BTreeMap<String, f64>,
+) -> (f64, f64, bool) {
+    match detector {
+        DetectorConfig::Content(config) => {
+            let score = metric_value(metrics, "content_val");
+            (score, config.threshold, score >= config.threshold)
+        }
+        DetectorConfig::Adaptive(config) => {
+            let score = metric_value(metrics, "adaptive_ratio");
+            let content = metric_value(metrics, "content_val");
+            (
+                score,
+                config.threshold,
+                content >= config.min_content_val && score >= config.threshold,
+            )
+        }
+        DetectorConfig::Threshold(config) => {
+            let score = metric_value(metrics, "average_rgb");
+            (score, config.threshold, false)
+        }
+        DetectorConfig::Histogram(config) => {
+            let correlation = metric_value_prefix(metrics, "hist_diff");
+            let score = 1.0 - correlation;
+            (score, config.threshold, score >= config.threshold)
+        }
+        DetectorConfig::Hash(config) => {
+            let score = metric_value_prefix(metrics, "hash_dist");
+            (score, config.threshold, score >= config.threshold)
+        }
+    }
+}
+
+fn metric_value(metrics: &BTreeMap<String, f64>, name: &str) -> f64 {
+    metrics.get(name).copied().unwrap_or(0.0)
+}
+
+fn metric_value_prefix(metrics: &BTreeMap<String, f64>, prefix: &str) -> f64 {
+    metrics
+        .iter()
+        .find(|(name, _)| name.starts_with(prefix))
+        .map(|(_, value)| *value)
+        .unwrap_or(0.0)
 }
 
 fn stem_path(input: &Path, suffix: &str) -> Result<PathBuf> {
@@ -297,5 +460,64 @@ mod tests {
             let restored: DetectionStatsDetector = serde_json::from_value(value).unwrap();
             assert_eq!(restored, config);
         }
+    }
+
+    #[test]
+    fn generalized_rows_reconstruct_scene_list_and_stats() {
+        let document = DetectionStatsDocument {
+            schema_version: 2,
+            kind: "detection_stats".to_owned(),
+            input: DetectionStatsInput {
+                path: "/tmp/example.mp4".to_owned(),
+                byte_len: 1,
+                modified_unix_nanos: 2,
+                width: 16,
+                height: 16,
+                frame_rate: 10.0,
+                total_frames: 4,
+            },
+            detector: DetectionStatsDetector::Adaptive(AdaptiveDetectorConfig::default()),
+            options: DetectionOptions {
+                min_scene_len: 1,
+                ..Default::default()
+            },
+            metric_names: vec!["adaptive_ratio".to_owned(), "content_val".to_owned()],
+            rows: vec![
+                DetectionStatsRowDocument {
+                    frame: 0,
+                    timecode: "00:00:00.000".to_owned(),
+                    score: 0.0,
+                    threshold: 3.0,
+                    decision: DetectionStatsDecision::NotEvaluated,
+                    metrics: BTreeMap::new(),
+                },
+                DetectionStatsRowDocument {
+                    frame: 2,
+                    timecode: "00:00:00.200".to_owned(),
+                    score: 4.0,
+                    threshold: 3.0,
+                    decision: DetectionStatsDecision::Accepted,
+                    metrics: BTreeMap::from([("adaptive_ratio".to_owned(), 4.0)]),
+                },
+            ],
+        };
+
+        let scene_list = document.scene_list().unwrap();
+        assert_eq!(
+            scene_list.scenes,
+            vec![
+                SceneSpan {
+                    start: FrameIndex(0),
+                    end: FrameIndex(2),
+                },
+                SceneSpan {
+                    start: FrameIndex(2),
+                    end: FrameIndex(4),
+                },
+            ]
+        );
+        let stats = document.detection_stats().unwrap();
+        assert_eq!(stats.metric_names.len(), 2);
+        assert_eq!(stats.rows.len(), 2);
     }
 }

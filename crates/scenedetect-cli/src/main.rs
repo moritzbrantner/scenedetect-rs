@@ -10,11 +10,11 @@ use anyhow::{anyhow, Context, Result};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use scenedetect_core::{
     boundary_review_from_content_detection_stats, detect_boundary_review_streaming,
-    detect_content_stats, detection_stats_from_content_detection_stats,
-    scene_list_from_content_detection_stats, write_boundary_review_csv, write_boundary_review_json,
-    write_scene_events_ndjson, write_scene_list_csv, write_scene_list_html, write_scene_list_json,
-    write_stats_csv, AdaptiveDetectorConfig, BoundaryReviewOptions, ContentDetectorConfig,
-    ContentWeights, CsvStatsSink, DetectionOptions, DetectorConfig, FrameRate, HashDetectorConfig,
+    detect_content_stats, detect_scenes, scene_list_from_content_detection_stats,
+    write_boundary_review_csv, write_boundary_review_json, write_scene_events_ndjson,
+    write_scene_list_csv, write_scene_list_html, write_scene_list_json, write_stats_csv,
+    AdaptiveDetectorConfig, BoundaryReviewOptions, ContentDetectorConfig, ContentWeights,
+    CsvStatsSink, DetectionOptions, DetectorConfig, FrameRate, HashDetectorConfig,
     HistogramDetectorConfig, MinSceneLenPolicy, NoopStatsSink, ThresholdDetectorConfig, Timecode,
 };
 use scenedetect_ffmpeg::{probe_video, FfmpegFrameSource};
@@ -97,6 +97,7 @@ struct NativeDetectArgs {
 #[derive(Debug, Subcommand)]
 enum NativeDetectorCommand {
     Content(NativeContentArgs),
+    Adaptive(NativeAdaptiveArgs),
 }
 
 #[derive(Debug, Args)]
@@ -105,6 +106,30 @@ struct NativeContentArgs {
     input: PathBuf,
     #[arg(short = 't', long = "threshold", default_value_t = 27.0)]
     threshold: f64,
+    #[arg(short = 'w', long = "weights", num_args = 4)]
+    weights: Option<Vec<f64>>,
+    #[arg(short = 'l', long = "luma-only")]
+    luma_only: bool,
+    #[arg(short = 'm', long = "min-scene-len", default_value = "15")]
+    min_scene_len: String,
+    #[arg(long = "progress", default_value = "auto")]
+    progress: ProgressMode,
+    #[arg(long = "force")]
+    force: bool,
+    #[arg(short = 'q', long = "quiet")]
+    quiet: bool,
+}
+
+#[derive(Debug, Args)]
+struct NativeAdaptiveArgs {
+    #[arg(short = 'i', long = "input")]
+    input: PathBuf,
+    #[arg(short = 't', long = "threshold", default_value_t = 3.0)]
+    threshold: f64,
+    #[arg(short = 'c', long = "min-content-val", default_value_t = 15.0)]
+    min_content_val: f64,
+    #[arg(short = 'f', long = "frame-window", default_value_t = 2)]
+    frame_window: usize,
     #[arg(short = 'w', long = "weights", num_args = 4)]
     weights: Option<Vec<f64>>,
     #[arg(short = 'l', long = "luma-only")]
@@ -439,6 +464,7 @@ fn main() -> Result<()> {
 fn handle_native_detect(cli: &Cli, args: &NativeDetectArgs) -> Result<()> {
     match &args.detector {
         NativeDetectorCommand::Content(args) => handle_native_detect_content(cli, args),
+        NativeDetectorCommand::Adaptive(args) => handle_native_detect_adaptive(cli, args),
     }
 }
 
@@ -484,6 +510,59 @@ fn handle_native_detect_content(cli: &Cli, args: &NativeContentArgs) -> Result<(
     Ok(())
 }
 
+fn handle_native_detect_adaptive(cli: &Cli, args: &NativeAdaptiveArgs) -> Result<()> {
+    let quiet = cli.quiet || args.quiet;
+    let metadata = probe_video(&args.input)
+        .with_context(|| format!("failed to open input video {}", args.input.display()))?;
+    let min_scene_len = Timecode::parse_at_rate(&args.min_scene_len, metadata.frame_rate)?.frames();
+    let options = DetectionOptions {
+        min_scene_len,
+        min_scene_len_policy: MinSceneLenPolicy::Suppress,
+    };
+    let detector = DetectorConfig::Adaptive(AdaptiveDetectorConfig {
+        threshold: args.threshold,
+        min_content_val: args.min_content_val,
+        frame_window: args.frame_window,
+        weights: parse_weights(args.weights.as_deref()),
+        luma_only: args.luma_only,
+    });
+
+    let progress_enabled = progress_enabled(args.progress) && !quiet;
+    if progress_enabled {
+        eprintln!("detecting adaptive  0 frames  00:00:00.000  boundaries: 0");
+    }
+
+    let source = FfmpegFrameSource::open(&args.input, None)
+        .with_context(|| format!("failed to open input video {}", args.input.display()))?;
+    let result = detect_scenes(detector.clone(), source, options.clone())?;
+    let boundary_count = result.scene_list.scenes.len().saturating_sub(1);
+    let total_frames = result
+        .scene_list
+        .scenes
+        .last()
+        .map(|scene| scene.end.0)
+        .unwrap_or(0);
+    let stats_path = native_stats::detection_stats_path_for_input(&args.input)?;
+    let document = native_stats::DetectionStatsDocument::from_detection_result(
+        &args.input,
+        &metadata,
+        detector,
+        options,
+        result,
+    )?;
+    native_stats::write_detection_stats(&stats_path, &document)?;
+
+    if progress_enabled {
+        let timecode = Timecode::from_frames(total_frames).display_at_rate(metadata.frame_rate);
+        eprintln!(
+            "detecting adaptive  {total_frames} frames  {timecode}  100%  boundaries: {boundary_count}"
+        );
+        eprintln!("wrote Detection Stats: {}", stats_path.display());
+    }
+
+    Ok(())
+}
+
 fn handle_native_render(args: &NativeRenderArgs) -> Result<()> {
     match &args.output {
         NativeRenderCommand::Scenes(args) => handle_native_render_scenes(args),
@@ -494,8 +573,8 @@ fn handle_native_render(args: &NativeRenderArgs) -> Result<()> {
 }
 
 fn handle_native_render_scenes(args: &NativeRenderScenesArgs) -> Result<()> {
-    let stats = native_stats::read_detection_stats_for_input(&args.input)?;
-    let scene_list = scene_list_from_content_detection_stats(&stats);
+    let document = native_stats::read_detection_stats_document_for_input(&args.input)?;
+    let scene_list = document.scene_list()?;
     let output_path = args
         .output
         .clone()
@@ -518,7 +597,8 @@ fn handle_native_render_stats(args: &NativeRenderStatsArgs) -> Result<()> {
     if !args.csv {
         return Err(anyhow!("native stats rendering currently requires --csv"));
     }
-    let stats = native_stats::read_detection_stats_for_input(&args.input)?;
+    let document = native_stats::read_detection_stats_document_for_input(&args.input)?;
+    let stats = document.detection_stats()?;
     let output_path = args
         .output
         .clone()
@@ -532,14 +612,23 @@ fn handle_native_render_stats(args: &NativeRenderStatsArgs) -> Result<()> {
             output_path.display()
         )
     })?;
-    let legacy_stats = detection_stats_from_content_detection_stats(&stats);
-    write_stats_csv(&legacy_stats, file)?;
+    write_stats_csv(&stats, file)?;
     println!("{}", output_path.display());
     Ok(())
 }
 
 fn handle_native_render_boundaries(args: &NativeRenderBoundariesArgs) -> Result<()> {
-    let stats = native_stats::read_detection_stats_for_input(&args.input)?;
+    let document = native_stats::read_detection_stats_document_for_input(&args.input)?;
+    if !matches!(
+        document.detector,
+        native_stats::DetectionStatsDetector::Content(_)
+    ) {
+        return Err(anyhow!(
+            "native Boundary Candidate review is not available for {} Detection Stats",
+            document.detector.name()
+        ));
+    }
+    let stats = document.into_content_stats()?;
     let output_path = args
         .output
         .clone()
@@ -568,8 +657,8 @@ fn handle_native_render_boundaries(args: &NativeRenderBoundariesArgs) -> Result<
 }
 
 fn handle_native_render_html(args: &NativeRenderHtmlArgs) -> Result<()> {
-    let stats = native_stats::read_detection_stats_for_input(&args.input)?;
-    let scene_list = scene_list_from_content_detection_stats(&stats);
+    let document = native_stats::read_detection_stats_document_for_input(&args.input)?;
+    let scene_list = document.scene_list()?;
     let output_path = args
         .output
         .clone()
