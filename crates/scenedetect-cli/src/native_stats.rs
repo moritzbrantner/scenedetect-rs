@@ -57,16 +57,6 @@ impl DetectionStatsDetector {
             Self::Hash(_) => "hash",
         }
     }
-
-    pub fn detector_config(&self) -> DetectorConfig {
-        match self {
-            Self::Content(config) => DetectorConfig::Content(config.clone()),
-            Self::Adaptive(config) => DetectorConfig::Adaptive(config.clone()),
-            Self::Threshold(config) => DetectorConfig::Threshold(config.clone()),
-            Self::Histogram(config) => DetectorConfig::Histogram(config.clone()),
-            Self::Hash(config) => DetectorConfig::Hash(config.clone()),
-        }
-    }
 }
 
 impl From<DetectorConfig> for DetectionStatsDetector {
