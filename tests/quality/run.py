@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import argparse
-import csv
 import json
 import os
 import re
@@ -20,16 +19,9 @@ QUALITY_DIR = ROOT_DIR / "tests" / "quality"
 DEFAULT_MANIFEST = QUALITY_DIR / "corpus.local.toml"
 DEFAULT_OUTPUT_DIR = QUALITY_DIR / "output"
 DEFAULT_REPORT = DEFAULT_OUTPUT_DIR / "report.json"
-SCENES_FILENAME = "scenes.csv"
 DETECTORS = {"content", "adaptive", "threshold", "hist", "hash"}
 SAFE_CASE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
-ORACLE_DETECTORS = {
-    "content": "detect-content",
-    "adaptive": "detect-adaptive",
-    "threshold": "detect-threshold",
-    "hist": "detect-hist",
-    "hash": "detect-hash",
-}
+REFERENCE_ORACLE = QUALITY_DIR / "reference_oracle.py"
 
 
 class ConfigError(Exception):
@@ -154,31 +146,15 @@ def case_args(case: dict[str, Any], key: str) -> list[str]:
     return list(case.get("args", []))
 
 
-def normalized_oracle_scenes(csv_path: Path) -> list[dict[str, int]]:
-    lines = csv_path.read_text().splitlines()
-    header_index = next(
-        (
-            index
-            for index, line in enumerate(lines)
-            if "scene number" in line.lower() and "start frame" in line.lower()
-        ),
-        None,
-    )
-    if header_index is None:
-        raise AssertionError(f"could not find Scene List header in {csv_path}")
-    reader = csv.DictReader(lines[header_index:])
-    scenes: list[dict[str, int]] = []
-    for row in reader:
-        normalized = {
-            key.strip().lower().replace(" ", "_"): value for key, value in row.items()
-        }
-        try:
-            start = int(normalized["start_frame"]) - 1
-            end = int(normalized["end_frame"])
-        except (KeyError, TypeError, ValueError):
-            continue
-        scenes.append({"start": start, "end": end})
-    return scenes
+def reference_scenes(path: Path) -> list[dict[str, int]]:
+    payload = json.loads(path.read_text())
+    scenes = payload.get("scenes") if isinstance(payload, dict) else None
+    if not isinstance(scenes, list):
+        raise AssertionError(f"Reference Oracle Scene List is invalid: {path}")
+    return [
+        {"start": int(scene["start"]), "end": int(scene["end"])}
+        for scene in scenes
+    ]
 
 
 def native_scenes(path: Path) -> list[dict[str, int]]:
@@ -345,8 +321,8 @@ def run_case(
 
     case_dir = output_dir / "cases" / case_id
     shutil.rmtree(case_dir, ignore_errors=True)
-    reference_dir = case_dir / "reference"
-    reference_dir.mkdir(parents=True)
+    case_dir.mkdir(parents=True)
+    reference_json = case_dir / "reference-scenes.json"
     link = case_dir / f"source{video.suffix or '.video'}"
     link.symlink_to(video)
 
@@ -358,20 +334,19 @@ def run_case(
         "--with",
         oracle["package"],
         "--",
-        "scenedetect",
-        "-i",
+        "python",
+        str(REFERENCE_ORACLE),
+        "--input",
         str(link),
-        ORACLE_DETECTORS[case["detector"]],
+        "--output",
+        str(reference_json),
+        "--detector",
+        case["detector"],
         "--threshold",
         str(case["threshold"]),
-        *case_args(case, "oracle_args"),
         "--min-scene-len",
         case["min_scene_len"],
-        "list-scenes",
-        "--output",
-        str(reference_dir),
-        "--filename",
-        SCENES_FILENAME,
+        *case_args(case, "oracle_args"),
     ]
     started = time.perf_counter()
     run(oracle_cmd)
@@ -415,7 +390,7 @@ def run_case(
     stats_path = case_dir / "source.scenedetect.json"
     stats = json.loads(stats_path.read_text())
     frame_rate = float(stats["input"]["frame_rate"])
-    reference = boundaries(normalized_oracle_scenes(reference_dir / SCENES_FILENAME))
+    reference = boundaries(reference_scenes(reference_json))
     candidate = boundaries(native_scenes(candidate_json))
     matches, false_positives, false_negatives = match_boundaries(
         reference, candidate, case["tolerance_frames"]
