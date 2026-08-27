@@ -1,0 +1,49 @@
+name: Patch issue 89 recovery quoting
+
+on:
+  push:
+    branches:
+      - agent-loop/issue-84-native-ergonomics
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-verify:
+    if: github.event.head_commit.message != 'Fix recovery command apostrophe quoting'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: agent-loop/issue-84-native-ergonomics
+      - name: Fix POSIX apostrophe escaping
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('crates/scenedetect-cli/src/native_stats.rs')
+          lines = path.read_text().splitlines()
+          matches = [i for i, line in enumerate(lines) if 'format!("\'{}\'", value.replace' in line]
+          if len(matches) != 1:
+              raise SystemExit(f'expected one shell_quote format line, found {len(matches)}')
+          lines[matches[0]] = r'''    format!("'{}'", value.replace('\'', "'\\''"))'''
+          path.write_text('\n'.join(lines) + '\n')
+          PY
+      - name: Install Rust and FFmpeg
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt --component clippy
+          rustup default stable
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+      - name: Verify
+        run: |
+          cargo fmt --all -- --check
+          cargo clippy --workspace --all-targets -- -D warnings
+          cargo test -p scenedetect-cli --test native_inspect
+          cargo test -p scenedetect-cli --test cli
+      - name: Commit quoting fix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add crates/scenedetect-cli/src/native_stats.rs
+          git commit -m "Fix recovery command apostrophe quoting"
+          git push origin HEAD:agent-loop/issue-84-native-ergonomics
