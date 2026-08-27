@@ -51,7 +51,10 @@ fn native_help_exposes_inspect_and_all_detectors() {
     assert!(detect_help.status.success());
     let detect_help = String::from_utf8(detect_help.stdout).unwrap();
     for detector in ["content", "adaptive", "threshold", "hist", "hash"] {
-        assert!(detect_help.contains(detector), "missing {detector} in detect help");
+        assert!(
+            detect_help.contains(detector),
+            "missing {detector} in detect help"
+        );
     }
 }
 
@@ -71,7 +74,14 @@ fn inspect_reads_video_or_stats_without_decoding() {
         .args(["detect", "content"])
         .arg("-i")
         .arg(&video)
-        .args(["--threshold", "20", "--min-scene-len", "1", "--progress", "never"])
+        .args([
+            "--threshold",
+            "20",
+            "--min-scene-len",
+            "1",
+            "--progress",
+            "never",
+        ])
         .assert()
         .success();
 
@@ -121,7 +131,9 @@ fn native_artifact_errors_name_artifact_and_recovery_command() {
         .arg(&missing_video)
         .assert()
         .failure()
-        .stderr(predicate::str::contains(missing_stats.display().to_string()))
+        .stderr(predicate::str::contains(
+            missing_stats.display().to_string(),
+        ))
         .stderr(predicate::str::contains("Recovery:"))
         .stderr(predicate::str::contains("scenedetect-rs detect content"));
 
@@ -156,7 +168,14 @@ fn changed_input_marks_detection_stats_stale_before_rendering() {
         .args(["detect", "content"])
         .arg("-i")
         .arg(&video)
-        .args(["--threshold", "20", "--min-scene-len", "1", "--progress", "never"])
+        .args([
+            "--threshold",
+            "20",
+            "--min-scene-len",
+            "1",
+            "--progress",
+            "never",
+        ])
         .assert()
         .success();
 
