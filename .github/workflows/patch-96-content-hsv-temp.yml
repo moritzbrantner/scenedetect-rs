@@ -20,6 +20,7 @@ jobs:
         run: |
           python3 .github/patch-96-temp.py
           python3 .github/patch-96-review-tests-temp.py
+          python3 .github/patch-96-core-tests-temp.py
       - name: Install tools
         run: |
           rustup toolchain install stable --profile minimal --component rustfmt --component clippy
