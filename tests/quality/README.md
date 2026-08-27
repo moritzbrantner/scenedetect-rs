@@ -7,6 +7,12 @@ There are two corpus modes:
 - `corpus.generated.toml`: committed deterministic stress cases. Use this when an agent needs an always-available next quality problem.
 - `corpus.local.toml`: ignored developer-owned real videos. Use this to extend the same loop with private material without committing media or machine-specific paths.
 
+## Reference semantics
+
+Quality comparison uses the locked PySceneDetect v0.7 **detector API**, not the PySceneDetect command-line parser. `reference_oracle.py` maps the five canonical Detector configurations explicitly and writes zero-based JSON Scene spans for the quality runner.
+
+This boundary is intentional. `tests/parity/` remains responsible for PySceneDetect-compatible CLI behavior, including CLI-specific units and quirks. `tests/quality/` compares the detector algorithms using semantic configuration values. For example, Threshold `fade_bias = 0.25` means the API value `0.25` on both Reference and Candidate rather than routing the Reference through the v0.7 CLI percentage seam.
+
 ## Generated discovery corpus
 
 Run the full deterministic discovery corpus:
