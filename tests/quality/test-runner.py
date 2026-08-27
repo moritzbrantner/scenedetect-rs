@@ -25,6 +25,17 @@ class QualityRunnerTests(unittest.TestCase):
         self.assertEqual(false_positives, [40])
         self.assertEqual(false_negatives, [30])
 
+    def test_matching_maximizes_cardinality_before_delta(self) -> None:
+        matches, false_positives, false_negatives = quality.match_boundaries(
+            [10, 11], [9, 10], 1
+        )
+        self.assertEqual(
+            [(item["reference_frame"], item["candidate_frame"]) for item in matches],
+            [(10, 9), (11, 10)],
+        )
+        self.assertEqual(false_positives, [])
+        self.assertEqual(false_negatives, [])
+
     def test_aggregate_ranks_false_boundaries_before_frame_delta(self) -> None:
         case = {
             "id": "sample",
@@ -53,7 +64,9 @@ class QualityRunnerTests(unittest.TestCase):
         report = quality.aggregate([case], 10)
         self.assertEqual(report["totals"]["false_positives"], 1)
         self.assertEqual(report["totals"]["false_negatives"], 1)
-        self.assertIn(report["worst_divergences"][0]["kind"], {"false_positive", "false_negative"})
+        self.assertIn(
+            report["worst_divergences"][0]["kind"], {"false_positive", "false_negative"}
+        )
         self.assertEqual(report["worst_divergences"][-1]["kind"], "frame_delta")
 
     def test_manifest_defaults_and_incremental_selection(self) -> None:
@@ -80,6 +93,24 @@ class QualityRunnerTests(unittest.TestCase):
             self.assertEqual(config["cases"][0]["tolerance_frames"], 1)
             selected = quality.select_cases(config["cases"], {"one"}, {"content"})
             self.assertEqual([case["id"] for case in selected], ["one"])
+
+    def test_manifest_rejects_case_ids_that_can_escape_work_directory(self) -> None:
+        for case_id in ["/tmp/project", "../project", "nested/case", r"nested\case"]:
+            with self.subTest(case_id=case_id), tempfile.TemporaryDirectory() as directory:
+                manifest = Path(directory) / "corpus.toml"
+                manifest.write_text(
+                    f"""
+                    [[cases]]
+                    id = {case_id!r}
+                    video = "video.mp4"
+                    detector = "content"
+                    threshold = 27.0
+                    """
+                )
+                with self.assertRaisesRegex(
+                    quality.ConfigError, "single safe path component"
+                ):
+                    quality.load_config(manifest)
 
 
 if __name__ == "__main__":
