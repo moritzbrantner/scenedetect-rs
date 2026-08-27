@@ -1,0 +1,106 @@
+name: Patch issue 93 quality oracle temp
+
+on:
+  push:
+    branches:
+      - agent-loop/issue-93-quality-oracle-api
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-verify:
+    if: github.event.head_commit.message != 'Use PySceneDetect API quality oracle'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: agent-loop/issue-93-quality-oracle-api
+      - name: Route quality reference through detector API
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path('tests/quality/run.py')
+          text = path.read_text()
+
+          def replace_once(old, new, label):
+              global text
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected one match, found {count}')
+              text = text.replace(old, new, 1)
+
+          replace_once('import csv\n', '', 'csv import')
+          replace_once('SCENES_FILENAME = "scenes.csv"\n', '', 'scene filename constant')
+          oracle_map = '''ORACLE_DETECTORS = {\n    "content": "detect-content",\n    "adaptive": "detect-adaptive",\n    "threshold": "detect-threshold",\n    "hist": "detect-hist",\n    "hash": "detect-hash",\n}\n'''
+          replace_once(oracle_map, 'REFERENCE_ORACLE = QUALITY_DIR / "reference_oracle.py"\n', 'oracle map')
+
+          pattern = re.compile(
+              r'def normalized_oracle_scenes\(csv_path: Path\) -> list\[dict\[str, int\]\]:.*?\n\n\ndef native_scenes',
+              re.S,
+          )
+          match = pattern.search(text)
+          if match is None:
+              raise SystemExit('reference parser: no match')
+          replacement = '''def reference_scenes(path: Path) -> list[dict[str, int]]:\n    payload = json.loads(path.read_text())\n    scenes = payload.get("scenes") if isinstance(payload, dict) else None\n    if not isinstance(scenes, list):\n        raise AssertionError(f"Reference Oracle Scene List is invalid: {path}")\n    return [\n        {"start": int(scene["start"]), "end": int(scene["end"])}\n        for scene in scenes\n    ]\n\n\ndef native_scenes'''
+          text = text[:match.start()] + replacement + text[match.end():]
+
+          replace_once(
+              '''    reference_dir = case_dir / "reference"\n    reference_dir.mkdir(parents=True)\n    link = case_dir / f"source{video.suffix or '.video'}"\n''',
+              '''    case_dir.mkdir(parents=True)\n    reference_json = case_dir / "reference-scenes.json"\n    link = case_dir / f"source{video.suffix or '.video'}"\n''',
+              'reference directory setup',
+          )
+
+          oracle_pattern = re.compile(
+              r'    oracle_cmd = \[\n.*?    oracle_seconds = time\.perf_counter\(\) - started\n',
+              re.S,
+          )
+          match = oracle_pattern.search(text)
+          if match is None:
+              raise SystemExit('oracle command: no match')
+          oracle_block = '''    oracle_cmd = [\n        uv_bin,\n        "run",\n        "--python",\n        oracle["python"],\n        "--with",\n        oracle["package"],\n        "--",\n        "python",\n        str(REFERENCE_ORACLE),\n        "--input",\n        str(link),\n        "--output",\n        str(reference_json),\n        "--detector",\n        case["detector"],\n        "--threshold",\n        str(case["threshold"]),\n        "--min-scene-len",\n        case["min_scene_len"],\n        *case_args(case, "oracle_args"),\n    ]\n    started = time.perf_counter()\n    run(oracle_cmd)\n    oracle_seconds = time.perf_counter() - started\n'''
+          text = text[:match.start()] + oracle_block + text[match.end():]
+
+          replace_once(
+              '    reference = boundaries(normalized_oracle_scenes(reference_dir / SCENES_FILENAME))\n',
+              '    reference = boundaries(reference_scenes(reference_json))\n',
+              'reference scene consumption',
+          )
+          path.write_text(text)
+          PY
+      - name: Install tools
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg curl
+      - name: Verify adapter and quality contracts
+        run: |
+          python3 tests/quality/reference_oracle.py --help >/dev/null
+          python3 tests/quality/test-runner.py
+          python3 tests/quality/run.py --manifest tests/quality/corpus.generated.toml --validate-only
+          bash -n scripts/generate-fixtures.sh scripts/run-generated-quality.sh
+      - name: Verify semantic threshold case
+        run: |
+          bash scripts/run-generated-quality.sh --case generated-threshold-gradual-fade
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path('tests/quality/output/report.json').read_text())
+          assert report['totals']['false_positives'] == 0, report
+          assert report['totals']['false_negatives'] == 0, report
+          reference = json.loads(Path('tests/quality/output/cases/generated-threshold-gradual-fade/reference-scenes.json').read_text())
+          total = max(scene['end'] for scene in reference['scenes'])
+          assert all(0 <= scene['start'] <= scene['end'] <= total for scene in reference['scenes'])
+          PY
+      - name: Run full generated discovery
+        run: bash scripts/run-generated-quality.sh
+      - name: Commit runner transport
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tests/quality/run.py
+          git commit -m "Use PySceneDetect API quality oracle"
+          git push origin HEAD:agent-loop/issue-93-quality-oracle-api
