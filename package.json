@@ -19,7 +19,7 @@
     "oracle:verify": "tests/local-oracle/run.py verify",
     "quality:validate": "python3 tests/quality/run.py --validate-only",
     "quality:run": "python3 tests/quality/run.py",
-    "quality:generated": "scripts/run-generated-quality.sh",
+    "quality:generated": "bash scripts/run-generated-quality.sh",
     "benchmark:validate": "python3 tests/benchmarks/validate.py",
     "benchmark:generated": "tests/benchmarks/run-hyperfine.sh --generated-only",
     "benchmark:real": "tests/benchmarks/run-hyperfine.sh --include-real",
