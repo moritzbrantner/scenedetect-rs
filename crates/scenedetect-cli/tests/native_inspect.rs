@@ -153,6 +153,39 @@ fn native_artifact_errors_name_artifact_and_recovery_command() {
 }
 
 #[test]
+fn recovery_command_shell_quotes_apostrophe_paths() {
+    let temp = tempfile::tempdir().unwrap();
+    let missing_video = temp.path().join("user's clip.mp4");
+    let output = Command::cargo_bin("scenedetect-rs")
+        .unwrap()
+        .arg("inspect")
+        .arg("-i")
+        .arg(&missing_video)
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    let recovery = stderr
+        .split("Recovery: `")
+        .nth(1)
+        .and_then(|rest| rest.split('`').next())
+        .expect("diagnostic should contain a recovery command");
+    assert!(
+        recovery.contains("'\\''"),
+        "apostrophe should use POSIX single-quote escaping: {recovery}"
+    );
+    let syntax = Command::new("sh")
+        .args(["-n", "-c", recovery])
+        .status()
+        .unwrap();
+    assert!(
+        syntax.success(),
+        "recovery command should be valid shell syntax: {recovery}"
+    );
+}
+
+#[test]
 fn changed_input_marks_detection_stats_stale_before_rendering() {
     if !ffmpeg_available() {
         eprintln!("skipping stale-input integration test because ffmpeg is unavailable");
