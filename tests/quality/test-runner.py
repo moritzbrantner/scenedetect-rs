@@ -94,6 +94,22 @@ class QualityRunnerTests(unittest.TestCase):
             selected = quality.select_cases(config["cases"], {"one"}, {"content"})
             self.assertEqual([case["id"] for case in selected], ["one"])
 
+    def test_generated_manifest_covers_all_detectors(self) -> None:
+        manifest = MODULE_PATH.with_name("corpus.generated.toml")
+        config = quality.load_config(manifest)
+        self.assertEqual(
+            {case["detector"] for case in config["cases"]},
+            quality.DETECTORS,
+        )
+        self.assertTrue(all(case.get("enabled", True) for case in config["cases"]))
+        self.assertTrue(all(case["id"].startswith("generated-") for case in config["cases"]))
+        self.assertTrue(
+            all(
+                case["video"].startswith("../fixtures/generated/")
+                for case in config["cases"]
+            )
+        )
+
     def test_manifest_rejects_case_ids_that_can_escape_work_directory(self) -> None:
         for case_id in ["/tmp/project", "../project", "nested/case", r"nested\case"]:
             with self.subTest(case_id=case_id), tempfile.TemporaryDirectory() as directory:
