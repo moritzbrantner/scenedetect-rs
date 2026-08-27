@@ -1,0 +1,50 @@
+[oracle]
+package = "scenedetect-headless==0.7"
+python = "3.12"
+
+[quality]
+tolerance_frames = 1
+
+# Deterministic discovery corpus. Videos are created by scripts/generate-fixtures.sh.
+# Keep this corpus report-only: findings graduate into normal parity/regression tests
+# one divergence at a time.
+
+[[cases]]
+id = "generated-content-color-only"
+video = "../fixtures/generated/content-color-only-cut.mkv"
+detector = "content"
+threshold = 20.0
+min_scene_len = "1"
+
+[[cases]]
+id = "generated-adaptive-single-flash"
+video = "../fixtures/generated/adaptive-single-flash.mkv"
+detector = "adaptive"
+threshold = 3.0
+min_scene_len = "1"
+args = ["--min-content-val", "5", "--frame-window", "1"]
+
+[[cases]]
+id = "generated-threshold-gradual-fade"
+video = "../fixtures/generated/threshold-gradual-fade.mkv"
+detector = "threshold"
+threshold = 12.0
+min_scene_len = "1"
+# PySceneDetect v0.7 CLI has a non-zero fade-bias unit mismatch. Keep this
+# discovery case neutral until #93 moves quality comparison to detector API semantics.
+
+[[cases]]
+id = "generated-hist-color-only"
+video = "../fixtures/generated/content-color-only-cut.mkv"
+detector = "hist"
+threshold = 0.05
+min_scene_len = "1"
+args = ["--bins", "32"]
+
+[[cases]]
+id = "generated-hash-pattern-mirror"
+video = "../fixtures/generated/hash-pattern-mirror.mkv"
+detector = "hash"
+threshold = 0.395
+min_scene_len = "1"
+args = ["--size", "16", "--lowpass", "2"]
