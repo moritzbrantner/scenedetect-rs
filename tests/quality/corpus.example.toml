@@ -1,0 +1,53 @@
+[oracle]
+package = "scenedetect-headless==0.7"
+python = "3.12"
+
+[quality]
+tolerance_frames = 1
+
+# Copy this file to corpus.local.toml, point cases at developer-owned media,
+# and enable only the cases you want to run. Relative video paths are resolved
+# from the manifest directory; absolute paths and ~/ paths are also supported.
+
+[[cases]]
+id = "example-content"
+video = "../../path/to/video.mp4"
+detector = "content"
+threshold = 27.0
+min_scene_len = "15"
+enabled = false
+
+[[cases]]
+id = "example-adaptive"
+video = "../../path/to/video.mp4"
+detector = "adaptive"
+threshold = 3.0
+min_scene_len = "15"
+args = ["--min-content-val", "15", "--frame-window", "2"]
+enabled = false
+
+[[cases]]
+id = "example-threshold"
+video = "../../path/to/video.mp4"
+detector = "threshold"
+threshold = 12.0
+min_scene_len = "15"
+enabled = false
+
+[[cases]]
+id = "example-hist"
+video = "../../path/to/video.mp4"
+detector = "hist"
+threshold = 0.05
+min_scene_len = "15"
+args = ["--bins", "256"]
+enabled = false
+
+[[cases]]
+id = "example-hash"
+video = "../../path/to/video.mp4"
+detector = "hash"
+threshold = 0.395
+min_scene_len = "15"
+args = ["--size", "16", "--lowpass", "2"]
+enabled = false
