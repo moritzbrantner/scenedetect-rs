@@ -7,20 +7,32 @@ ignored by git. Create them with:
 scripts/generate-fixtures.sh
 ```
 
-The fixtures are tiny deterministic videos produced by `ffmpeg` filters.
-They cover hard Scene Boundaries, adaptive fast-motion-like changes, threshold
-fade-return behavior, content threshold sensitivity, and close cuts for
-min-scene-len work. `hash-pattern-cut.mkv` uses a structural pattern change
-because uniform luma changes do not reliably trigger perceptual hash detection.
+The fixtures are tiny deterministic videos produced by `ffmpeg` filters. The
+basic cases back normal parity tests; the stress cases give the report-only
+quality loop an always-available discovery corpus.
 
 Generated fixtures:
 
 - `content-hard-cut.mkv`: black-to-white hard Scene Boundary.
 - `content-threshold-gray-cut.mkv`: black-to-gray content change that appears
   at a lower content threshold and is suppressed at a higher threshold.
-- `threshold-fade-return.mkv`: threshold/fade-oriented luminance transition.
-- `adaptive-fast-motion.mkv`: rapid contrast changes for adaptive detector work.
-- `min-scene-len-close-cuts.mkv`: close content Scene Boundaries for
+- `content-color-only-cut.mkv`: similar-luma red-to-green structural color
+  change that stresses Content hue/saturation behavior and Histogram luma
+  stability.
+- `adaptive-fast-motion.mkv`: rapid contrast changes for Adaptive Detector work.
+- `adaptive-single-flash.mkv`: one-frame white flash surrounded by black Frames
+  for Adaptive windowing stress.
+- `threshold-fade-return.mkv`: step-wise threshold/fade-oriented luminance
+  transition.
+- `threshold-gradual-fade.mkv`: gradual white-to-black fade, short black hold,
+  and fade-in for Threshold midpoint/fade-bias stress.
+- `min-scene-len-close-cuts.mkv`: close Content Scene Boundaries for
   min-scene-len work.
 - `hash-pattern-cut.mkv`: black-to-testsrc structural Scene Boundary for
-  perceptual hash detection.
+  Perceptual Hash detection.
+- `hash-pattern-mirror.mkv`: test pattern to mirrored test pattern, a subtler
+  structural Perceptual Hash change.
+
+Do not commit the generated media. Once a quality finding becomes a fixed
+behavioral contract, keep the generating recipe and normal parity/regression
+test rather than checking in the video artifact.
