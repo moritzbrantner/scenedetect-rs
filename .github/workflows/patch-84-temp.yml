@@ -1,0 +1,45 @@
+name: Apply issue 84 source patch
+
+on:
+  push:
+    branches:
+      - agent-loop/issue-84-native-ergonomics
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-verify:
+    if: github.event.head_commit.message != 'Apply issue 84 source patch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: agent-loop/issue-84-native-ergonomics
+      - name: Apply source patch
+        run: python3 scripts/patch-84-temp.py
+      - name: Install Rust
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt --component clippy
+          rustup default stable
+      - name: Install FFmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+      - name: Format
+        run: cargo fmt --all
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Inspect CLI tests
+        run: cargo test -p scenedetect-cli --test native_inspect
+      - name: Existing native detector tests
+        run: |
+          cargo test -p scenedetect-cli --test native_adaptive
+          cargo test -p scenedetect-cli --test native_detectors
+      - name: Commit verified patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add crates/scenedetect-cli/src/main.rs crates/scenedetect-cli/src/native_stats.rs
+          git commit -m "Apply issue 84 source patch"
+          git push origin HEAD:agent-loop/issue-84-native-ergonomics
