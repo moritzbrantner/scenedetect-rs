@@ -17,7 +17,9 @@ jobs:
         with:
           ref: agent-loop/issue-96-content-hsv
       - name: Apply HSV scoring patch
-        run: python3 .github/patch-96-temp.py
+        run: |
+          python3 .github/patch-96-temp.py
+          python3 .github/patch-96-review-tests-temp.py
       - name: Install tools
         run: |
           rustup toolchain install stable --profile minimal --component rustfmt --component clippy
@@ -58,6 +60,6 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add crates/scenedetect-core/src/lib.rs
+          git add crates/scenedetect-core/src/lib.rs crates/scenedetect-cli/tests/cli.rs
           git commit -m "Match Content scoring to HSV components"
           git push origin HEAD:agent-loop/issue-96-content-hsv
