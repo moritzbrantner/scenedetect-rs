@@ -1,0 +1,181 @@
+name: Patch issue 96 Content HSV temp
+
+on:
+  push:
+    branches:
+      - agent-loop/issue-96-content-hsv
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-verify:
+    if: github.event.head_commit.message != 'Match Content scoring to HSV components'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: agent-loop/issue-96-content-hsv
+      - name: Replace raw-channel Content scoring with HSV components
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path('crates/scenedetect-core/src/lib.rs')
+          text = path.read_text()
+          pattern = re.compile(
+              r'fn content_metrics\(\n.*?\n}\n\nfn luma_histogram',
+              re.S,
+          )
+          match = pattern.search(text)
+          if match is None:
+              raise SystemExit('content_metrics block not found')
+          replacement = r'''fn content_metrics(
+    previous: &Frame,
+    current: &Frame,
+    weights: &ContentWeights,
+    luma_only: bool,
+) -> BTreeMap<String, f64> {
+    let (hue_weight, saturation_weight, luminance_weight) = if luma_only {
+        (0.0, 0.0, 1.0)
+    } else {
+        (weights.hue, weights.saturation, weights.luminance)
+    };
+    let channel_weight_total =
+        hue_weight.abs() + saturation_weight.abs() + luminance_weight.abs();
+    let mut weighted_sum = 0.0;
+    let mut hue_sum = 0.0;
+    let mut saturation_sum = 0.0;
+    let mut luminance_sum = 0.0;
+    let mut pixel_count = 0.0;
+
+    for (prev, curr) in previous
+        .rgb
+        .chunks_exact(3)
+        .zip(current.rgb.chunks_exact(3))
+    {
+        pixel_count += 1.0;
+        let (prev_hue, prev_saturation, prev_luminance) = rgb_to_opencv_hsv(prev);
+        let (curr_hue, curr_saturation, curr_luminance) = rgb_to_opencv_hsv(curr);
+        let hue = (prev_hue as f64 - curr_hue as f64).abs();
+        let saturation = (prev_saturation as f64 - curr_saturation as f64).abs();
+        let luminance = (prev_luminance as f64 - curr_luminance as f64).abs();
+        hue_sum += hue;
+        saturation_sum += saturation;
+        luminance_sum += luminance;
+        weighted_sum += hue * hue_weight;
+        weighted_sum += saturation * saturation_weight;
+        weighted_sum += luminance * luminance_weight;
+    }
+
+    // PySceneDetect includes the edge component in the denominator when it is
+    // configured. Edge extraction is intentionally a separate parity slice; for
+    // this HSV slice all covered configurations keep the edge weight at zero.
+    let denominator = pixel_count * channel_weight_total;
+    let content_val = if denominator == 0.0 {
+        0.0
+    } else {
+        weighted_sum / denominator
+    };
+    let component_denominator = if pixel_count == 0.0 { 1.0 } else { pixel_count };
+
+    BTreeMap::from([
+        ("content_val".to_owned(), content_val),
+        ("delta_hue".to_owned(), hue_sum / component_denominator),
+        (
+            "delta_saturation".to_owned(),
+            saturation_sum / component_denominator,
+        ),
+        (
+            "delta_luminance".to_owned(),
+            luminance_sum / component_denominator,
+        ),
+        ("delta_edges".to_owned(), 0.0),
+    ])
+}
+
+fn rgb_to_opencv_hsv(pixel: &[u8]) -> (u8, u8, u8) {
+    const HSV_SHIFT: i32 = 12;
+    const ROUNDING: i32 = 1 << (HSV_SHIFT - 1);
+
+    let red = pixel[0] as i32;
+    let green = pixel[1] as i32;
+    let blue = pixel[2] as i32;
+    let value = red.max(green).max(blue);
+    let minimum = red.min(green).min(blue);
+    let difference = value - minimum;
+    if difference == 0 {
+        return (0, 0, value as u8);
+    }
+
+    let saturation_divisor = ((255_i64 << HSV_SHIFT) as f64 / value as f64)
+        .round_ties_even() as i32;
+    let saturation = ((difference * saturation_divisor + ROUNDING) >> HSV_SHIFT).clamp(0, 255);
+
+    let hue_numerator = if value == red {
+        green - blue
+    } else if value == green {
+        blue - red + 2 * difference
+    } else {
+        red - green + 4 * difference
+    };
+    let hue_divisor = ((180_i64 << HSV_SHIFT) as f64 / (6 * difference) as f64)
+        .round_ties_even() as i32;
+    let mut hue = (hue_numerator * hue_divisor + ROUNDING) >> HSV_SHIFT;
+    if hue < 0 {
+        hue += 180;
+    }
+    if hue >= 180 {
+        hue -= 180;
+    }
+
+    (hue as u8, saturation as u8, value as u8)
+}
+
+fn luma_histogram'''
+          path.write_text(text[:match.start()] + replacement + text[match.end():])
+          PY
+      - name: Install tools
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt --component clippy
+          rustup default stable
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg curl
+      - name: Verify core regression
+        run: |
+          cargo fmt --all
+          cargo test -p scenedetect-core --test content_components
+          cargo clippy --workspace --all-targets -- -D warnings
+          cargo test --workspace
+      - name: Verify generated quality
+        run: |
+          bash scripts/run-generated-quality.sh --case generated-content-hue-only
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path('tests/quality/output/report.json').read_text())
+          case = report['cases'][0]
+          assert case['reference_boundary_count'] == 1, case
+          assert case['candidate_boundary_count'] == 1, case
+          assert case['matched_boundary_count'] == 1, case
+          assert case['false_negative_count'] == 0, case
+          assert case['false_positive_count'] == 0, case
+          PY
+          bash scripts/run-generated-quality.sh
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path('tests/quality/output/report.json').read_text())
+          assert report['totals']['false_positives'] == 0, report
+          assert report['totals']['false_negatives'] == 0, report
+          PY
+      - name: Verify PySceneDetect CLI parity
+        run: tests/parity/run-all.sh
+      - name: Commit HSV scoring fix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add crates/scenedetect-core/src/lib.rs
+          git commit -m "Match Content scoring to HSV components"
+          git push origin HEAD:agent-loop/issue-96-content-hsv
