@@ -5,6 +5,7 @@ import argparse
 import csv
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -21,6 +22,7 @@ DEFAULT_OUTPUT_DIR = QUALITY_DIR / "output"
 DEFAULT_REPORT = DEFAULT_OUTPUT_DIR / "report.json"
 SCENES_FILENAME = "scenes.csv"
 DETECTORS = {"content", "adaptive", "threshold", "hist", "hash"}
+SAFE_CASE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 ORACLE_DETECTORS = {
     "content": "detect-content",
     "adaptive": "detect-adaptive",
@@ -67,6 +69,11 @@ def load_config(path: Path) -> dict[str, Any]:
         if not isinstance(case, dict):
             raise ConfigError(f"case {index} must be a table")
         case_id = require_string(case, "id", index)
+        if not SAFE_CASE_ID.fullmatch(case_id):
+            raise ConfigError(
+                f"case id {case_id!r} must be a single safe path component "
+                "using only letters, digits, dot, underscore, and hyphen"
+            )
         if case_id in seen_ids:
             raise ConfigError(f"duplicate case id: {case_id}")
         seen_ids.add(case_id)
@@ -192,29 +199,97 @@ def boundaries(scenes: list[dict[str, int]]) -> list[int]:
 def match_boundaries(
     reference: list[int], candidate: list[int], tolerance: int
 ) -> tuple[list[dict[str, int]], list[int], list[int]]:
-    unmatched = set(range(len(candidate)))
-    matches: list[dict[str, int]] = []
-    false_negatives: list[int] = []
-    for reference_frame in reference:
-        choices = [
-            (abs(candidate[index] - reference_frame), candidate[index], index)
-            for index in unmatched
-            if abs(candidate[index] - reference_frame) <= tolerance
-        ]
-        if not choices:
-            false_negatives.append(reference_frame)
-            continue
-        delta_abs, candidate_frame, index = min(choices)
-        unmatched.remove(index)
+    # Boundaries are ordered by frame. Dynamic programming over ordered
+    # prefixes maximizes one-to-one match cardinality first, then minimizes
+    # total absolute frame delta.
+    match_action = 1
+    skip_reference_action = 2
+    skip_candidate_action = 3
+    action_priority = {
+        match_action: 2,
+        skip_reference_action: 1,
+        skip_candidate_action: 0,
+    }
+
+    def better(
+        score: tuple[int, int],
+        action: int,
+        best_score: tuple[int, int],
+        best_action: int,
+    ) -> bool:
+        if score[0] != best_score[0]:
+            return score[0] > best_score[0]
+        if score[1] != best_score[1]:
+            return score[1] < best_score[1]
+        return action_priority[action] > action_priority[best_action]
+
+    width = len(candidate) + 1
+    back = bytearray((len(reference) + 1) * width)
+    for column in range(1, width):
+        back[column] = skip_candidate_action
+
+    previous = [(0, 0)] * width
+    for row, reference_frame in enumerate(reference, start=1):
+        current = [(0, 0)] * width
+        back[row * width] = skip_reference_action
+        for column, candidate_frame in enumerate(candidate, start=1):
+            best_score = previous[column]
+            best_action = skip_reference_action
+
+            left_score = current[column - 1]
+            if better(left_score, skip_candidate_action, best_score, best_action):
+                best_score = left_score
+                best_action = skip_candidate_action
+
+            delta = abs(candidate_frame - reference_frame)
+            if delta <= tolerance:
+                diagonal = previous[column - 1]
+                match_score = (diagonal[0] + 1, diagonal[1] + delta)
+                if better(match_score, match_action, best_score, best_action):
+                    best_score = match_score
+                    best_action = match_action
+
+            current[column] = best_score
+            back[row * width + column] = best_action
+        previous = current
+
+    matched_pairs: list[tuple[int, int]] = []
+    row = len(reference)
+    column = len(candidate)
+    while row > 0 or column > 0:
+        action = back[row * width + column]
+        if action == match_action:
+            matched_pairs.append((row - 1, column - 1))
+            row -= 1
+            column -= 1
+        elif action == skip_reference_action:
+            row -= 1
+        elif action == skip_candidate_action:
+            column -= 1
+        else:
+            raise AssertionError("invalid boundary matching backpointer")
+    matched_pairs.reverse()
+
+    matched_reference = {reference_index for reference_index, _ in matched_pairs}
+    matched_candidate = {candidate_index for _, candidate_index in matched_pairs}
+    matches = []
+    for reference_index, candidate_index in matched_pairs:
+        reference_frame = reference[reference_index]
+        candidate_frame = candidate[candidate_index]
         matches.append(
             {
                 "reference_frame": reference_frame,
                 "candidate_frame": candidate_frame,
                 "delta_frames": candidate_frame - reference_frame,
-                "absolute_delta_frames": delta_abs,
+                "absolute_delta_frames": abs(candidate_frame - reference_frame),
             }
         )
-    false_positives = [candidate[index] for index in sorted(unmatched)]
+    false_positives = [
+        frame for index, frame in enumerate(candidate) if index not in matched_candidate
+    ]
+    false_negatives = [
+        frame for index, frame in enumerate(reference) if index not in matched_reference
+    ]
     return matches, false_positives, false_negatives
 
 
