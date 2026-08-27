@@ -1,0 +1,60 @@
+name: Verify issue 85 quality loop
+
+on:
+  push:
+    branches:
+      - agent-loop/issue-85-real-video-quality
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+      - name: Install system tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg curl
+      - name: Unit and manifest checks
+        run: |
+          python3 tests/quality/test-runner.py
+          python3 tests/quality/run.py --manifest tests/quality/corpus.example.toml --validate-only
+      - name: Generate canary video
+        run: |
+          mkdir -p tests/quality/local-media
+          ffmpeg -v error \
+            -f lavfi -i color=c=black:s=16x16:d=0.3:r=10 \
+            -f lavfi -i color=c=white:s=16x16:d=0.3:r=10 \
+            -filter_complex '[0:v][1:v]concat=n=2:v=1:a=0' \
+            -pix_fmt yuv420p tests/quality/local-media/canary.mp4
+          cat > tests/quality/corpus.local.toml <<'EOF'
+          [quality]
+          tolerance_frames = 1
+
+          [[cases]]
+          id = "canary-content"
+          video = "local-media/canary.mp4"
+          detector = "content"
+          threshold = 20.0
+          min_scene_len = "1"
+          EOF
+      - name: Run quality loop
+        run: python3 tests/quality/run.py --report tests/quality/output/canary.json
+      - name: Check quality report
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path('tests/quality/output/canary.json').read_text())
+          assert report['totals']['cases'] == 1
+          assert report['totals']['false_positives'] == 0
+          assert report['totals']['false_negatives'] == 0
+          assert report['cases'][0]['detection_stats'].endswith('source.scenedetect.json')
+          assert report['cases'][0]['reproduction_command'].startswith('scenedetect-rs detect content')
+          PY
