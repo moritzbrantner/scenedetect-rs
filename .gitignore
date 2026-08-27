@@ -11,5 +11,8 @@
 /tests/local-oracle/output/
 /tests/benchmarks/generated/
 /tests/benchmarks/results/
+/tests/quality/corpus.local.toml
+/tests/quality/local-media/
+/tests/quality/output/
 *.pyc
 __pycache__/
