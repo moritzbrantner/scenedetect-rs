@@ -103,7 +103,7 @@ def main() -> int:
     payload = {
         "frame_rate": float(video.frame_rate),
         "scenes": [
-            {"start": start.get_frames(), "end": end.get_frames()} for start, end in scenes
+            {"start": start.frame_num, "end": end.frame_num} for start, end in scenes
         ],
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
