@@ -98,6 +98,10 @@ struct NativeDetectArgs {
 enum NativeDetectorCommand {
     Content(NativeContentArgs),
     Adaptive(NativeAdaptiveArgs),
+    Threshold(NativeThresholdArgs),
+    #[command(name = "hist")]
+    Histogram(NativeHistogramArgs),
+    Hash(NativeHashArgs),
 }
 
 #[derive(Debug, Args)]
@@ -134,6 +138,64 @@ struct NativeAdaptiveArgs {
     weights: Option<Vec<f64>>,
     #[arg(short = 'l', long = "luma-only")]
     luma_only: bool,
+    #[arg(short = 'm', long = "min-scene-len", default_value = "15")]
+    min_scene_len: String,
+    #[arg(long = "progress", default_value = "auto")]
+    progress: ProgressMode,
+    #[arg(long = "force")]
+    force: bool,
+    #[arg(short = 'q', long = "quiet")]
+    quiet: bool,
+}
+
+#[derive(Debug, Args)]
+struct NativeThresholdArgs {
+    #[arg(short = 'i', long = "input")]
+    input: PathBuf,
+    #[arg(short = 't', long = "threshold", default_value_t = 12.0)]
+    threshold: f64,
+    #[arg(short = 'f', long = "fade-bias", default_value_t = 0.0)]
+    fade_bias: f64,
+    #[arg(short = 'l', long = "add-last-scene", default_value_t = true)]
+    add_last_scene: bool,
+    #[arg(short = 'm', long = "min-scene-len", default_value = "15")]
+    min_scene_len: String,
+    #[arg(long = "progress", default_value = "auto")]
+    progress: ProgressMode,
+    #[arg(long = "force")]
+    force: bool,
+    #[arg(short = 'q', long = "quiet")]
+    quiet: bool,
+}
+
+#[derive(Debug, Args)]
+struct NativeHistogramArgs {
+    #[arg(short = 'i', long = "input")]
+    input: PathBuf,
+    #[arg(short = 't', long = "threshold", default_value_t = 0.05, value_parser = parse_unit_interval)]
+    threshold: f64,
+    #[arg(short = 'b', long = "bins", default_value_t = 256, value_parser = parse_1_to_256)]
+    bins: usize,
+    #[arg(short = 'm', long = "min-scene-len", default_value = "15")]
+    min_scene_len: String,
+    #[arg(long = "progress", default_value = "auto")]
+    progress: ProgressMode,
+    #[arg(long = "force")]
+    force: bool,
+    #[arg(short = 'q', long = "quiet")]
+    quiet: bool,
+}
+
+#[derive(Debug, Args)]
+struct NativeHashArgs {
+    #[arg(short = 'i', long = "input")]
+    input: PathBuf,
+    #[arg(short = 't', long = "threshold", default_value_t = 0.395, value_parser = parse_unit_interval)]
+    threshold: f64,
+    #[arg(short = 's', long = "size", default_value_t = 16, value_parser = parse_1_to_256)]
+    size: usize,
+    #[arg(short = 'l', long = "lowpass", default_value_t = 2, value_parser = parse_1_to_256)]
+    lowpass: usize,
     #[arg(short = 'm', long = "min-scene-len", default_value = "15")]
     min_scene_len: String,
     #[arg(long = "progress", default_value = "auto")]
@@ -465,6 +527,9 @@ fn handle_native_detect(cli: &Cli, args: &NativeDetectArgs) -> Result<()> {
     match &args.detector {
         NativeDetectorCommand::Content(args) => handle_native_detect_content(cli, args),
         NativeDetectorCommand::Adaptive(args) => handle_native_detect_adaptive(cli, args),
+        NativeDetectorCommand::Threshold(args) => handle_native_detect_threshold(cli, args),
+        NativeDetectorCommand::Histogram(args) => handle_native_detect_histogram(cli, args),
+        NativeDetectorCommand::Hash(args) => handle_native_detect_hash(cli, args),
     }
 }
 
@@ -560,6 +625,104 @@ fn handle_native_detect_adaptive(cli: &Cli, args: &NativeAdaptiveArgs) -> Result
         eprintln!("wrote Detection Stats: {}", stats_path.display());
     }
 
+    Ok(())
+}
+
+fn handle_native_detect_threshold(cli: &Cli, args: &NativeThresholdArgs) -> Result<()> {
+    handle_native_detect_generic(
+        cli,
+        &args.input,
+        &args.min_scene_len,
+        DetectorConfig::Threshold(ThresholdDetectorConfig {
+            threshold: args.threshold,
+            fade_bias: args.fade_bias,
+            add_last_scene: args.add_last_scene,
+        }),
+        args.progress,
+        args.quiet,
+        "threshold",
+    )
+}
+
+fn handle_native_detect_histogram(cli: &Cli, args: &NativeHistogramArgs) -> Result<()> {
+    handle_native_detect_generic(
+        cli,
+        &args.input,
+        &args.min_scene_len,
+        DetectorConfig::Histogram(HistogramDetectorConfig {
+            threshold: args.threshold,
+            bins: args.bins,
+        }),
+        args.progress,
+        args.quiet,
+        "hist",
+    )
+}
+
+fn handle_native_detect_hash(cli: &Cli, args: &NativeHashArgs) -> Result<()> {
+    if args.lowpass > args.size {
+        return Err(anyhow!("--lowpass must be less than or equal to --size"));
+    }
+    handle_native_detect_generic(
+        cli,
+        &args.input,
+        &args.min_scene_len,
+        DetectorConfig::Hash(HashDetectorConfig {
+            threshold: args.threshold,
+            size: args.size,
+            lowpass: args.lowpass,
+        }),
+        args.progress,
+        args.quiet,
+        "hash",
+    )
+}
+
+fn handle_native_detect_generic(
+    cli: &Cli,
+    input: &std::path::Path,
+    min_scene_len: &str,
+    detector: DetectorConfig,
+    progress: ProgressMode,
+    detector_quiet: bool,
+    detector_name: &str,
+) -> Result<()> {
+    let quiet = cli.quiet || detector_quiet;
+    let metadata = probe_video(input)
+        .with_context(|| format!("failed to open input video {}", input.display()))?;
+    let min_scene_len = Timecode::parse_at_rate(min_scene_len, metadata.frame_rate)?.frames();
+    let options = DetectionOptions {
+        min_scene_len,
+        min_scene_len_policy: MinSceneLenPolicy::Suppress,
+    };
+    let progress_enabled = progress_enabled(progress) && !quiet;
+    if progress_enabled {
+        eprintln!("detecting {detector_name}  0 frames  00:00:00.000  boundaries: 0");
+    }
+
+    let source = FfmpegFrameSource::open(input, None)
+        .with_context(|| format!("failed to open input video {}", input.display()))?;
+    let result = detect_scenes(detector.clone(), source, options.clone())?;
+    let boundary_count = result.scene_list.scenes.len().saturating_sub(1);
+    let total_frames = result
+        .scene_list
+        .scenes
+        .last()
+        .map(|scene| scene.end.0)
+        .unwrap_or(0);
+    let stats_path = native_stats::detection_stats_path_for_input(input)?;
+    let document = native_stats::DetectionStatsDocument::from_detection_result(
+        input, &metadata, detector, options, result,
+    )?;
+    native_stats::write_detection_stats(&stats_path, &document)?;
+
+    if progress_enabled {
+        let timecode = Timecode::from_frames(total_frames).display_at_rate(metadata.frame_rate);
+        eprintln!(
+            "detecting {detector_name}  {total_frames} frames  {timecode}  100%  boundaries: {boundary_count}"
+        );
+        eprintln!("wrote Detection Stats: {}", stats_path.display());
+    }
     Ok(())
 }
 
