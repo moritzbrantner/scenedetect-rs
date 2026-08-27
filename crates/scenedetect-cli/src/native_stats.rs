@@ -299,7 +299,7 @@ pub fn read_detection_stats_document(
     let file = File::open(&path).map_err(|error| {
         if error.kind() == std::io::ErrorKind::NotFound {
             anyhow!(
-                "Detection Stats artifact {} is missing. Recovery: `{}`",
+                "Detection Stats are missing: artifact {}. Recovery: `{}`",
                 path.display(),
                 default_recovery
             )
@@ -314,7 +314,7 @@ pub fn read_detection_stats_document(
     })?;
     let document: DetectionStatsDocument = serde_json::from_reader(file).map_err(|error| {
         anyhow!(
-            "Detection Stats artifact {} is malformed: {}. Recovery: `{}`",
+            "failed to parse Detection Stats artifact {} (malformed): {}. Recovery: `{}`",
             path.display(),
             error,
             default_recovery
