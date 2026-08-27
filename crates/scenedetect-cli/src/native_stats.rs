@@ -456,7 +456,7 @@ fn recovery_command_for_document(document: &DetectionStatsDocument) -> String {
 
 fn shell_quote(path: &Path) -> String {
     let value = path.display().to_string();
-    format!("'{}'", value.replace('\'', "'\''"))
+    format!("'{}'", value.replace('\'', "'\\''"))
 }
 
 fn detection_stats_input(
