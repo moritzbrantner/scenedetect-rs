@@ -1,0 +1,41 @@
+name: Generated quality discovery temp
+
+on:
+  push:
+    branches:
+      - agent-loop/issue-92-generated-quality
+
+permissions:
+  contents: read
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: agent-loop/issue-92-generated-quality
+      - name: Install tools
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg curl
+      - name: Validate quality contracts
+        run: |
+          python3 tests/quality/test-runner.py
+          python3 tests/quality/run.py --manifest tests/quality/corpus.generated.toml --validate-only
+          bash -n scripts/generate-fixtures.sh scripts/run-generated-quality.sh
+      - name: Run generated discovery corpus
+        run: bash scripts/run-generated-quality.sh
+      - name: Show ranked findings
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path('tests/quality/output/report.json').read_text())
+          print(json.dumps({
+              'totals': report['totals'],
+              'worst_divergences': report['worst_divergences'][:10],
+          }, indent=2))
+          PY
