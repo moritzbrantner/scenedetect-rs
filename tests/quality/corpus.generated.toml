@@ -30,8 +30,7 @@ video = "../fixtures/generated/threshold-gradual-fade.mkv"
 detector = "threshold"
 threshold = 12.0
 min_scene_len = "1"
-# PySceneDetect v0.7 CLI has a non-zero fade-bias unit mismatch. Keep this
-# discovery case neutral until #93 moves quality comparison to detector API semantics.
+args = ["--fade-bias", "0.25"]
 
 [[cases]]
 id = "generated-hist-color-only"
