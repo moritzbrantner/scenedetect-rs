@@ -1,4 +1,5 @@
 mod artifacts;
+mod inspect_command;
 mod native_stats;
 mod scene_list_command;
 
@@ -76,6 +77,7 @@ enum DetectorCommand {
 enum Command {
     Detect(NativeDetectArgs),
     Render(NativeRenderArgs),
+    Inspect(inspect_command::InspectArgs),
     #[command(name = "detect-content")]
     Content(ContentArgs),
     #[command(name = "detect-adaptive")]
@@ -422,6 +424,7 @@ fn main() -> Result<()> {
     match &cli.command {
         Command::Detect(args) => return handle_native_detect(&cli, args),
         Command::Render(args) => return handle_native_render(args),
+        Command::Inspect(args) => return inspect_command::run(args),
         Command::Content(_)
         | Command::Adaptive(_)
         | Command::Threshold(_)
@@ -864,7 +867,7 @@ fn legacy_detector_command(command: &Command) -> Option<DetectorCommand> {
         Command::Threshold(args) => Some(DetectorCommand::Threshold(args.clone())),
         Command::Histogram(args) => Some(DetectorCommand::Histogram(args.clone())),
         Command::Hash(args) => Some(DetectorCommand::Hash(args.clone())),
-        Command::Detect(_) | Command::Render(_) => None,
+        Command::Detect(_) | Command::Render(_) | Command::Inspect(_) => None,
     }
 }
 
