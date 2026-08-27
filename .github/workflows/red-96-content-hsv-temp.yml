@@ -1,0 +1,37 @@
+name: RED issue 96 content HSV temp
+
+on:
+  push:
+    branches:
+      - agent-loop/issue-96-content-hsv
+
+permissions:
+  contents: read
+
+jobs:
+  prove-red:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: agent-loop/issue-96-content-hsv
+      - name: Install tools
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg curl
+      - name: Run hue-only quality case
+        run: |
+          bash scripts/run-generated-quality.sh --case generated-content-hue-only
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path('tests/quality/output/report.json').read_text())
+          case = report['cases'][0]
+          print(json.dumps(case, indent=2))
+          assert case['reference_boundary_count'] == 1, case
+          assert case['candidate_boundary_count'] == 0, case
+          assert case['false_negative_count'] == 1, case
+          assert case['false_positive_count'] == 0, case
+          PY
