@@ -298,7 +298,11 @@ fn probe_video_details_with_binaries(
 fn parse_showinfo_time_base(line: &str) -> Option<TimeBase> {
     let marker = "config in time_base:";
     let start = line.find(marker)? + marker.len();
-    let value = line[start..].trim_start().split_whitespace().next()?;
+    let value = line[start..]
+        .trim_start()
+        .split_whitespace()
+        .next()?
+        .trim_end_matches(',');
     parse_time_base_components(value)
 }
 
