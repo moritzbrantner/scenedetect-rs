@@ -1,6 +1,6 @@
 use scenedetect_core::{
-    ContentDetectorConfig, ContentWeights, DetectionOptions, Frame, FrameRate, FrameSource,
-    SceneDetectError, detect_content_stats,
+    detect_content_stats, ContentDetectorConfig, ContentWeights, DetectionOptions, Frame,
+    FrameRate, FrameSource, SceneDetectError,
 };
 
 struct Frames {

@@ -1524,12 +1524,23 @@ fn content_metrics(
     weights: &ContentWeights,
     luma_only: bool,
 ) -> BTreeMap<String, f64> {
+    let (hue_weight, saturation_weight, luminance_weight, edge_weight) = if luma_only {
+        (0.0, 0.0, 1.0, 0.0)
+    } else {
+        (
+            weights.hue,
+            weights.saturation,
+            weights.luminance,
+            weights.edges,
+        )
+    };
+    let channel_weight_total =
+        hue_weight.abs() + saturation_weight.abs() + luminance_weight.abs() + edge_weight.abs();
     let mut weighted_sum = 0.0;
     let mut hue_sum = 0.0;
     let mut saturation_sum = 0.0;
     let mut luminance_sum = 0.0;
     let mut pixel_count = 0.0;
-    let channel_weight_total = weights.hue + weights.saturation + weights.luminance;
 
     for (prev, curr) in previous
         .rgb
@@ -1537,33 +1548,23 @@ fn content_metrics(
         .zip(current.rgb.chunks_exact(3))
     {
         pixel_count += 1.0;
-        if luma_only {
-            let prev_luma =
-                0.299 * prev[0] as f64 + 0.587 * prev[1] as f64 + 0.114 * prev[2] as f64;
-            let curr_luma =
-                0.299 * curr[0] as f64 + 0.587 * curr[1] as f64 + 0.114 * curr[2] as f64;
-            let luminance = (prev_luma - curr_luma).abs();
-            luminance_sum += luminance;
-            weighted_sum += luminance;
-        } else {
-            let hue = (prev[0] as f64 - curr[0] as f64).abs();
-            let saturation = (prev[1] as f64 - curr[1] as f64).abs();
-            let luminance = (prev[2] as f64 - curr[2] as f64).abs();
-            hue_sum += hue;
-            saturation_sum += saturation;
-            luminance_sum += luminance;
-            weighted_sum += hue * weights.hue;
-            weighted_sum += saturation * weights.saturation;
-            weighted_sum += luminance * weights.luminance;
-        }
+        let (prev_hue, prev_saturation, prev_luminance) = rgb_to_opencv_hsv(prev);
+        let (curr_hue, curr_saturation, curr_luminance) = rgb_to_opencv_hsv(curr);
+        let hue = (prev_hue as f64 - curr_hue as f64).abs();
+        let saturation = (prev_saturation as f64 - curr_saturation as f64).abs();
+        let luminance = (prev_luminance as f64 - curr_luminance as f64).abs();
+        hue_sum += hue;
+        saturation_sum += saturation;
+        luminance_sum += luminance;
+        weighted_sum += hue * hue_weight;
+        weighted_sum += saturation * saturation_weight;
+        weighted_sum += luminance * luminance_weight;
     }
 
-    let denominator = if luma_only {
-        pixel_count
-    } else {
-        pixel_count * channel_weight_total
-    };
-
+    // PySceneDetect normalizes over all configured component weights. Edge
+    // extraction itself remains a separate parity slice, so delta_edges stays
+    // zero here until that behavior is implemented explicitly.
+    let denominator = pixel_count * channel_weight_total;
     let content_val = if denominator == 0.0 {
         0.0
     } else {
@@ -1584,6 +1585,44 @@ fn content_metrics(
         ),
         ("delta_edges".to_owned(), 0.0),
     ])
+}
+
+fn rgb_to_opencv_hsv(pixel: &[u8]) -> (u8, u8, u8) {
+    const HSV_SHIFT: i32 = 12;
+    const ROUNDING: i32 = 1 << (HSV_SHIFT - 1);
+
+    let red = pixel[0] as i32;
+    let green = pixel[1] as i32;
+    let blue = pixel[2] as i32;
+    let value = red.max(green).max(blue);
+    let minimum = red.min(green).min(blue);
+    let difference = value - minimum;
+    if difference == 0 {
+        return (0, 0, value as u8);
+    }
+
+    let saturation_divisor =
+        ((255_i64 << HSV_SHIFT) as f64 / value as f64).round_ties_even() as i32;
+    let saturation = ((difference * saturation_divisor + ROUNDING) >> HSV_SHIFT).clamp(0, 255);
+
+    let hue_numerator = if value == red {
+        green - blue
+    } else if value == green {
+        blue - red + 2 * difference
+    } else {
+        red - green + 4 * difference
+    };
+    let hue_divisor =
+        ((180_i64 << HSV_SHIFT) as f64 / (6 * difference) as f64).round_ties_even() as i32;
+    let mut hue = (hue_numerator * hue_divisor + ROUNDING) >> HSV_SHIFT;
+    if hue < 0 {
+        hue += 180;
+    }
+    if hue >= 180 {
+        hue -= 180;
+    }
+
+    (hue as u8, saturation as u8, value as u8)
 }
 
 fn luma_histogram(frame: &Frame, bins: usize) -> Vec<f64> {
@@ -2291,7 +2330,7 @@ mod tests {
 
         let lower_threshold = detect_frames(
             DetectorConfig::Content(ContentDetectorConfig {
-                threshold: 20.0,
+                threshold: 10.0,
                 ..Default::default()
             }),
             FrameRate(10.0),
@@ -2304,7 +2343,7 @@ mod tests {
         .unwrap();
         let higher_threshold = detect_frames(
             DetectorConfig::Content(ContentDetectorConfig {
-                threshold: 80.0,
+                threshold: 20.0,
                 ..Default::default()
             }),
             FrameRate(10.0),
@@ -2389,7 +2428,7 @@ mod tests {
         let mut stats_sink = NoopStatsSink;
         let review = detect_boundary_review_streaming(
             DetectorConfig::Content(ContentDetectorConfig {
-                threshold: 100.0,
+                threshold: 33.0,
                 ..Default::default()
             }),
             VecFrameSource::new(frames),
@@ -2398,7 +2437,7 @@ mod tests {
                 ..Default::default()
             },
             BoundaryReviewOptions {
-                review_threshold: Some(50.0),
+                review_threshold: Some(16.0),
             },
             &mut stats_sink,
         )
@@ -2437,7 +2476,7 @@ mod tests {
         let mut stats_sink = NoopStatsSink;
         let review = detect_boundary_review_streaming(
             DetectorConfig::Content(ContentDetectorConfig {
-                threshold: 100.0,
+                threshold: 40.0,
                 ..Default::default()
             }),
             VecFrameSource::new(frames),
@@ -2450,7 +2489,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(review.review_threshold, 80.0);
+        assert_eq!(review.review_threshold, 32.0);
         assert_eq!(review.candidates.len(), 1);
         assert_eq!(review.candidates[0].frame, FrameIndex(2));
     }
@@ -2461,7 +2500,7 @@ mod tests {
         let mut stats_sink = NoopStatsSink;
         let review = detect_boundary_review_streaming(
             DetectorConfig::Content(ContentDetectorConfig {
-                threshold: 100.0,
+                threshold: 33.0,
                 ..Default::default()
             }),
             VecFrameSource::new(frames),
@@ -2500,7 +2539,7 @@ mod tests {
         let strict_review = detect_boundary_review_streaming(
             DetectorConfig::Adaptive(AdaptiveDetectorConfig {
                 threshold: 100.0,
-                min_content_val: 100.0,
+                min_content_val: 34.0,
                 frame_window: 1,
                 ..Default::default()
             }),
@@ -2520,7 +2559,7 @@ mod tests {
         let relaxed_review = detect_boundary_review_streaming(
             DetectorConfig::Adaptive(AdaptiveDetectorConfig {
                 threshold: 100.0,
-                min_content_val: 90.0,
+                min_content_val: 30.0,
                 frame_window: 1,
                 ..Default::default()
             }),
@@ -2546,7 +2585,7 @@ mod tests {
 
     #[test]
     fn content_detector_luma_only_ignores_chroma_only_scene_boundary() {
-        let frames = frames(&[[255, 0, 0], [255, 0, 0], [0, 130, 0], [0, 130, 0]]);
+        let frames = frames(&[[255, 0, 0], [255, 0, 0], [255, 255, 0], [255, 255, 0]]);
         let result = detect_frames(
             DetectorConfig::Content(ContentDetectorConfig {
                 threshold: 20.0,
@@ -2620,7 +2659,7 @@ mod tests {
         let sensitive = detect_scenes(
             DetectorConfig::Adaptive(AdaptiveDetectorConfig {
                 threshold: 3.0,
-                min_content_val: 90.0,
+                min_content_val: 30.0,
                 frame_window: 1,
                 ..Default::default()
             }),
@@ -2634,7 +2673,7 @@ mod tests {
         let higher_ratio_threshold = detect_scenes(
             DetectorConfig::Adaptive(AdaptiveDetectorConfig {
                 threshold: 6.0,
-                min_content_val: 90.0,
+                min_content_val: 30.0,
                 frame_window: 1,
                 ..Default::default()
             }),
@@ -2648,7 +2687,7 @@ mod tests {
         let higher_min_content_val = detect_scenes(
             DetectorConfig::Adaptive(AdaptiveDetectorConfig {
                 threshold: 3.0,
-                min_content_val: 101.0,
+                min_content_val: 34.0,
                 frame_window: 1,
                 ..Default::default()
             }),
@@ -2662,7 +2701,7 @@ mod tests {
         let wider_frame_window = detect_scenes(
             DetectorConfig::Adaptive(AdaptiveDetectorConfig {
                 threshold: 3.0,
-                min_content_val: 90.0,
+                min_content_val: 30.0,
                 frame_window: 2,
                 ..Default::default()
             }),
