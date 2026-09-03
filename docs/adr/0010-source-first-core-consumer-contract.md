@@ -12,11 +12,23 @@ instead of depending on CLI orchestration:
 4. derive Scene Lists and Boundary Candidate review from those Detection Stats.
 
 This contract deliberately keeps decoding and application-specific media
-metadata outside the core crate. It also lets a consumer stream decoded frames
-through the detector once rather than retaining a video and repeatedly rerunning
-prefix detection.
+metadata outside the core crate. Transport-neutral timing attached to an
+individual decoded Frame is part of the Frame Source seam: timing-aware sources
+may provide presentation time and duration as integer ticks plus a rational time
+base, while legacy sources may continue to provide plain Frames with timing left
+unknown. Core detection consumes the richer seam but keeps Scene Boundary
+semantics frame-index based in this compatibility slice.
+
+This also lets a consumer stream decoded frames through the detector once rather
+than retaining a video and repeatedly rerunning prefix detection.
 
 ## Compatibility
+
+`FrameSource::next_frame` remains the required legacy method. The richer
+timing-aware method has a default implementation that wraps a plain Frame, so
+existing custom Frame Sources remain source-compatible. New backend adapters may
+override the richer method without forcing presentation timing into the `Frame`
+struct itself.
 
 `ContentDetectionStats` and its nested public serde types are part of the Rust
 consumer contract. A committed prior-shape JSON fixture must continue to
@@ -29,6 +41,9 @@ That document owns file/source provenance such as path, byte length, modified
 time, dimensions, detector identity, and its explicit `schema_version`. Its
 versioning and file lifecycle stay in `scenedetect-cli`; Rust consumers do not
 need to reconstruct CLI-owned source metadata merely to call `scenedetect-core`.
+Frame presentation timing is not added to that persisted document by the initial
+Frame Source timing slice; persisting a richer Scene Timeline requires a separate
+versioned compatibility decision.
 
 ## Development and distribution
 
