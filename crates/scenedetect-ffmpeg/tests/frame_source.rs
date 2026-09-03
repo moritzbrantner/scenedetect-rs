@@ -8,10 +8,13 @@ fn missing_binary(name: &str) -> std::path::PathBuf {
     std::env::temp_dir().join(format!("scenedetect-rs-missing-{name}"))
 }
 
+fn ffmpeg_available() -> bool {
+    Command::new("ffmpeg").arg("-version").output().is_ok()
+        && Command::new("ffprobe").arg("-version").output().is_ok()
+}
+
 fn generated_fixture(name: &str) -> Option<PathBuf> {
-    if Command::new("ffmpeg").arg("-version").output().is_err()
-        || Command::new("ffprobe").arg("-version").output().is_err()
-    {
+    if !ffmpeg_available() {
         eprintln!("skipping ffmpeg integration test because ffmpeg or ffprobe is unavailable");
         return None;
     }
@@ -29,6 +32,37 @@ fn generated_fixture(name: &str) -> Option<PathBuf> {
     assert!(status.success());
 
     Some(repo_root.join("tests/fixtures/generated").join(name))
+}
+
+fn generated_vfr_fixture() -> Option<(tempfile::TempDir, PathBuf)> {
+    if !ffmpeg_available() {
+        eprintln!("skipping VFR timing test because ffmpeg or ffprobe is unavailable");
+        return None;
+    }
+
+    let temp = tempfile::tempdir().unwrap();
+    let video = temp.path().join("vfr.mkv");
+    let status = Command::new("ffmpeg")
+        .args([
+            "-y",
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc=size=16x16:rate=10:duration=0.4",
+            "-vf",
+            "setpts=N*N/(10*TB)",
+            "-fps_mode",
+            "vfr",
+            "-c:v",
+            "ffv1",
+        ])
+        .arg(&video)
+        .status()
+        .unwrap();
+    assert!(status.success());
+    Some((temp, video))
 }
 
 #[test]
@@ -119,4 +153,36 @@ fn ffmpeg_frame_source_decodes_generated_hard_cut_and_fade_fixtures() {
         }
         assert_eq!(frames, 10, "{fixture} should decode all generated frames");
     }
+}
+
+#[test]
+fn ffmpeg_frame_source_streams_non_uniform_vfr_presentation_times() {
+    let Some((_temp, video)) = generated_vfr_fixture() else {
+        return;
+    };
+
+    let mut source = FfmpegFrameSource::open(&video, None).unwrap();
+    let mut presentation_seconds = Vec::new();
+    while let Some(frame) = source.next_frame_with_timing().unwrap() {
+        let presentation = frame
+            .timing
+            .presentation_time
+            .expect("ffprobe should provide a presentation timestamp");
+        presentation_seconds.push(presentation.seconds());
+    }
+
+    assert_eq!(presentation_seconds.len(), 4);
+    let expected = [0.0, 0.1, 0.4, 0.9];
+    for (actual, expected) in presentation_seconds.iter().zip(expected) {
+        assert!(
+            (actual - expected).abs() < 0.001,
+            "expected VFR presentation time {expected}, got {actual}"
+        );
+    }
+
+    let deltas: Vec<_> = presentation_seconds
+        .windows(2)
+        .map(|pair| pair[1] - pair[0])
+        .collect();
+    assert!(deltas[2] > deltas[0] * 4.0, "timing must not collapse to CFR");
 }
