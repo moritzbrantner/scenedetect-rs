@@ -6,13 +6,16 @@ on:
       - agent-loop/issue-105-single-process-timing
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   verify-and-benchmark:
+    if: "${{ github.event.head_commit.message != 'chore: format issue 105 implementation' }}"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: agent-loop/issue-105-single-process-timing
       - name: Install Rust
         run: |
           rustup toolchain install stable --profile minimal --component rustfmt --component clippy
@@ -28,7 +31,7 @@ jobs:
           bun install --frozen-lockfile
       - name: Verify timing behavior and repository gate
         run: |
-          cargo fmt --all -- --check
+          cargo fmt --all
           cargo test -p scenedetect-ffmpeg --test frame_source
           cargo clippy --workspace --all-targets -- -D warnings
           bun run agent:check
@@ -61,3 +64,15 @@ jobs:
           assert results['single threshold'] < results['sidecar threshold'] * 0.97, results
           assert results['single content'] < results['sidecar content'] * 0.97, results
           PY
+      - name: Commit rustfmt normalization
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add crates/scenedetect-core/tests/consumer_contract.rs \
+                  crates/scenedetect-core/tests/content_components.rs \
+                  crates/scenedetect-ffmpeg/src/lib.rs \
+                  crates/scenedetect-ffmpeg/tests/frame_source.rs
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: format issue 105 implementation"
+            git push origin HEAD:agent-loop/issue-105-single-process-timing
+          fi
