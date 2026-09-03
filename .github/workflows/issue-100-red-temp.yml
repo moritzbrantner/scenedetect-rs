@@ -1,0 +1,47 @@
+name: Issue 100 edge RED temp
+
+on:
+  push:
+    branches:
+      - agent-loop/issue-100-content-edges
+
+permissions:
+  contents: read
+
+jobs:
+  prove-red:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+      - name: Install system tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg curl
+      - name: Prove core regression is RED
+        run: |
+          set +e
+          cargo test -p scenedetect-core --test content_components > /tmp/core-red.log 2>&1
+          status=$?
+          set -e
+          cat /tmp/core-red.log
+          if [ "$status" -eq 0 ]; then
+            echo "expected edge component regression to fail before implementation" >&2
+            exit 1
+          fi
+      - name: Prove quality case is RED
+        run: |
+          bash scripts/run-generated-quality.sh --case generated-content-edge-only
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path('tests/quality/output/report.json').read_text())
+          case = report['cases'][0]
+          print(json.dumps(case, indent=2, sort_keys=True))
+          assert case['reference_boundary_count'] == 1, case
+          assert case['candidate_boundary_count'] == 0, case
+          assert case['false_negative_count'] == 1, case
+          PY
