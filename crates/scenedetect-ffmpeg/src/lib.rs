@@ -1,6 +1,8 @@
 use std::io::{BufRead, BufReader, ErrorKind, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdout, Command, Stdio};
+use std::sync::mpsc::{self, Receiver};
+use std::thread::{self, JoinHandle};
 
 use scenedetect_core::{
     Frame, FrameIndex, FrameRate, FrameSource, FrameTiming, FrameWithTiming, MediaTime, Result,
@@ -34,11 +36,10 @@ pub struct VideoMetadata {
 
 pub struct FfmpegFrameSource {
     metadata: VideoMetadata,
-    time_base: TimeBase,
     decoder_child: Child,
     decoder_stdout: ChildStdout,
-    timing_child: Child,
-    timing_stdout: BufReader<ChildStdout>,
+    timing_receiver: Receiver<FrameTiming>,
+    timing_thread: Option<JoinHandle<()>>,
     next_index: u64,
 }
 
@@ -73,10 +74,16 @@ impl FfmpegFrameSource {
             probe.metadata.frame_rate = frame_rate;
         }
 
+        // `showinfo` is metadata-only and logs one line per decoded frame. Reading
+        // those lines from the decoder's stderr gives us PTS/duration without a
+        // second full-media ffprobe traversal. stderr is drained on a dedicated
+        // thread so frame metadata cannot back up and block rawvideo stdout.
         let mut decoder_child = Command::new(&binaries.ffmpeg)
-            .args(["-v", "error", "-i"])
+            .args(["-hide_banner", "-loglevel", "info", "-nostats", "-i"])
             .arg(path)
             .args([
+                "-vf",
+                "showinfo",
                 "-fps_mode",
                 "passthrough",
                 "-f",
@@ -98,49 +105,39 @@ impl FfmpegFrameSource {
         let decoder_stdout = decoder_child.stdout.take().ok_or_else(|| {
             SceneDetectError::FrameSource("ffmpeg stdout was unavailable".to_owned())
         })?;
-
-        let timing_spawn = Command::new(&binaries.ffprobe)
-            .args([
-                "-v",
-                "error",
-                "-select_streams",
-                "v:0",
-                "-show_frames",
-                "-show_entries",
-                "frame=best_effort_timestamp,pkt_duration",
-                "-of",
-                "compact=p=0:nk=0",
-            ])
-            .arg(path)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn();
-        let mut timing_child = match timing_spawn {
-            Ok(child) => child,
-            Err(err) => {
-                let _ = decoder_child.kill();
-                let _ = decoder_child.wait();
-                return Err(match err.kind() {
-                    ErrorKind::NotFound => SceneDetectError::FrameSource(
-                        FfmpegError::MissingFfprobe(binaries.ffprobe.clone()).to_string(),
-                    ),
-                    _ => SceneDetectError::FrameSource(err.to_string()),
-                });
-            }
-        };
-        let timing_stdout = timing_child.stdout.take().ok_or_else(|| {
+        let decoder_stderr = decoder_child.stderr.take().ok_or_else(|| {
             let _ = decoder_child.kill();
             let _ = decoder_child.wait();
-            SceneDetectError::FrameSource("ffprobe timing stdout was unavailable".to_owned())
+            SceneDetectError::FrameSource("ffmpeg stderr was unavailable".to_owned())
         })?;
+
+        let (timing_sender, timing_receiver) = mpsc::channel();
+        let fallback_time_base = probe.time_base;
+        let timing_thread = thread::spawn(move || {
+            let reader = BufReader::new(decoder_stderr);
+            let mut time_base = fallback_time_base;
+            for line in reader.lines() {
+                let Ok(line) = line else {
+                    break;
+                };
+                if let Some(configured_time_base) = parse_showinfo_time_base(&line) {
+                    time_base = configured_time_base;
+                    continue;
+                }
+                if let Some(timing) = parse_showinfo_timing(&line, time_base) {
+                    if timing_sender.send(timing).is_err() {
+                        break;
+                    }
+                }
+            }
+        });
 
         Ok(Self {
             metadata: probe.metadata,
-            time_base: probe.time_base,
             decoder_child,
             decoder_stdout,
-            timing_child,
-            timing_stdout: BufReader::new(timing_stdout),
+            timing_receiver,
+            timing_thread: Some(timing_thread),
             next_index: 0,
         })
     }
@@ -158,7 +155,7 @@ impl FfmpegFrameSource {
             match self.decoder_stdout.read(&mut rgb[read..]) {
                 Ok(0) if read == 0 => {
                     let _ = self.decoder_child.wait();
-                    let _ = self.timing_child.wait();
+                    self.join_timing_thread();
                     return Ok(None);
                 }
                 Ok(0) => {
@@ -182,23 +179,17 @@ impl FfmpegFrameSource {
         Ok(Some(FrameWithTiming { frame, timing }))
     }
 
-    fn read_frame_timing(&mut self) -> Result<FrameTiming> {
-        let mut line = String::new();
-        loop {
-            let bytes = self
-                .timing_stdout
-                .read_line(&mut line)
-                .map_err(|err| SceneDetectError::FrameSource(err.to_string()))?;
-            if bytes == 0 {
-                return Err(SceneDetectError::FrameSource(
-                    "ffprobe timing stream ended before the decoded frame stream".to_owned(),
-                ));
-            }
-            let value = line.trim();
-            if !value.is_empty() {
-                return parse_frame_timing(value, self.time_base);
-            }
-            line.clear();
+    fn read_frame_timing(&self) -> Result<FrameTiming> {
+        self.timing_receiver.recv().map_err(|_| {
+            SceneDetectError::FrameSource(
+                "ffmpeg timing stream ended before the decoded frame stream".to_owned(),
+            )
+        })
+    }
+
+    fn join_timing_thread(&mut self) {
+        if let Some(thread) = self.timing_thread.take() {
+            let _ = thread.join();
         }
     }
 }
@@ -206,9 +197,8 @@ impl FfmpegFrameSource {
 impl Drop for FfmpegFrameSource {
     fn drop(&mut self) {
         let _ = self.decoder_child.kill();
-        let _ = self.timing_child.kill();
         let _ = self.decoder_child.wait();
-        let _ = self.timing_child.wait();
+        self.join_timing_thread();
     }
 }
 
@@ -305,45 +295,45 @@ fn probe_video_details_with_binaries(
     })
 }
 
-fn parse_frame_timing(value: &str, time_base: TimeBase) -> Result<FrameTiming> {
-    let mut presentation_time = None;
-    let mut duration = None;
+fn parse_showinfo_time_base(line: &str) -> Option<TimeBase> {
+    let marker = "config in time_base:";
+    let start = line.find(marker)? + marker.len();
+    let value = line[start..].trim_start().split_whitespace().next()?;
+    parse_time_base_components(value)
+}
 
-    for field in value.split('|') {
-        let Some((name, raw_value)) = field.split_once('=') else {
-            continue;
-        };
-        let parsed = raw_value.parse::<i64>().ok();
-        match name {
-            "best_effort_timestamp" => {
-                presentation_time = parsed.map(|ticks| MediaTime::new(ticks, time_base));
-            }
-            "pkt_duration" => {
-                duration = parsed.map(|ticks| MediaTime::new(ticks, time_base));
-            }
-            _ => {}
-        }
+fn parse_showinfo_timing(line: &str, time_base: TimeBase) -> Option<FrameTiming> {
+    // showinfo also logs configuration lines. Requiring the per-frame n/pts
+    // fields keeps exactly one timing message aligned with each raw RGB frame.
+    if !line.contains("showinfo") || !line.contains(" n:") || !line.contains(" pts:") {
+        return None;
     }
 
-    Ok(FrameTiming {
-        presentation_time,
-        duration,
+    Some(FrameTiming {
+        presentation_time: parse_showinfo_integer(line, "pts:")
+            .map(|ticks| MediaTime::new(ticks, time_base)),
+        duration: parse_showinfo_integer(line, "duration:")
+            .map(|ticks| MediaTime::new(ticks, time_base)),
     })
 }
 
+fn parse_showinfo_integer(line: &str, field: &str) -> Option<i64> {
+    let start = line.find(field)? + field.len();
+    line[start..]
+        .trim_start()
+        .split_whitespace()
+        .next()?
+        .parse::<i64>()
+        .ok()
+}
+
+fn parse_time_base_components(value: &str) -> Option<TimeBase> {
+    let (numerator, denominator) = value.split_once('/')?;
+    TimeBase::new(numerator.parse().ok()?, denominator.parse().ok()?)
+}
+
 fn parse_time_base(value: &str) -> Result<TimeBase> {
-    let Some((numerator, denominator)) = value.split_once('/') else {
-        return Err(SceneDetectError::FrameSource(format!(
-            "invalid ffprobe time base: {value}"
-        )));
-    };
-    let numerator = numerator.parse::<i64>().map_err(|_| {
-        SceneDetectError::FrameSource(format!("invalid ffprobe time base: {value}"))
-    })?;
-    let denominator = denominator.parse::<i64>().map_err(|_| {
-        SceneDetectError::FrameSource(format!("invalid ffprobe time base: {value}"))
-    })?;
-    TimeBase::new(numerator, denominator).ok_or_else(|| {
+    parse_time_base_components(value).ok_or_else(|| {
         SceneDetectError::FrameSource(format!("invalid ffprobe time base: {value}"))
     })
 }
@@ -384,14 +374,13 @@ mod tests {
     }
 
     #[test]
-    fn parses_stream_time_base_and_frame_timing() {
-        let time_base = parse_time_base("1/1000").unwrap();
+    fn parses_showinfo_time_base_and_frame_timing() {
+        let configured = "[Parsed_showinfo_0 @ 0x1234] config in time_base: 1/1000, frame_rate: 0/0";
+        let time_base = parse_showinfo_time_base(configured).unwrap();
         assert_eq!(time_base, TimeBase::new(1, 1000).unwrap());
-        let timing = parse_frame_timing(
-            "best_effort_timestamp=125|pkt_duration=40",
-            time_base,
-        )
-        .unwrap();
+
+        let line = "[Parsed_showinfo_0 @ 0x1234] n:   1 pts:    125 pts_time:0.125 duration:     40 duration_time:0.04 fmt:rgb24";
+        let timing = parse_showinfo_timing(line, time_base).unwrap();
         assert_eq!(timing.presentation_time.unwrap().ticks, 125);
         assert_eq!(timing.duration.unwrap().ticks, 40);
         assert!((timing.presentation_time.unwrap().seconds() - 0.125).abs() < 1.0e-12);
