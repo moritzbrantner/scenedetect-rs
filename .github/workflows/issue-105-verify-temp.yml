@@ -1,0 +1,63 @@
+name: Issue 105 single-process timing temp
+
+on:
+  push:
+    branches:
+      - agent-loop/issue-105-single-process-timing
+
+permissions:
+  contents: read
+
+jobs:
+  verify-and-benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Rust
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt --component clippy
+          rustup default stable
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - name: Install prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg curl hyperfine
+          bun install --frozen-lockfile
+      - name: Verify timing behavior and repository gate
+        run: |
+          cargo fmt --all -- --check
+          cargo test -p scenedetect-ffmpeg --test frame_source
+          cargo clippy --workspace --all-targets -- -D warnings
+          bun run agent:check
+      - name: Build optimized candidate
+        run: |
+          cargo build -p scenedetect-cli --release
+          cp target/release/scenedetect-rs /tmp/scenedetect-single-process
+      - name: Build timing-sidecar baseline
+        run: |
+          git fetch --depth=1 origin 3ca28737690252e96efc215759e37eed5d430dfa
+          git worktree add --detach /tmp/scenedetect-sidecar 3ca28737690252e96efc215759e37eed5d430dfa
+          cargo build --manifest-path /tmp/scenedetect-sidecar/Cargo.toml -p scenedetect-cli --release --target-dir /tmp/scenedetect-sidecar-target
+          cp /tmp/scenedetect-sidecar-target/release/scenedetect-rs /tmp/scenedetect-sidecar-bin
+      - name: Compare sidecar and single-process timing
+        run: |
+          scripts/generate-benchmark-fixtures.sh --generated-only >/dev/null
+          VIDEO="$GITHUB_WORKSPACE/tests/benchmarks/generated/generated-hard-cuts.mkv"
+          hyperfine --warmup 3 --runs 12 \
+            --command-name 'sidecar threshold' "/tmp/scenedetect-sidecar-bin -i '$VIDEO' -m 1 detect-threshold --threshold 12 list-scenes --no-output-file --quiet" \
+            --command-name 'single threshold' "/tmp/scenedetect-single-process -i '$VIDEO' -m 1 detect-threshold --threshold 12 list-scenes --no-output-file --quiet" \
+            --command-name 'sidecar content' "/tmp/scenedetect-sidecar-bin -i '$VIDEO' -m 1 detect-content --threshold 20 list-scenes --no-output-file --quiet" \
+            --command-name 'single content' "/tmp/scenedetect-single-process -i '$VIDEO' -m 1 detect-content --threshold 20 list-scenes --no-output-file --quiet" \
+            --export-json /tmp/issue105.json
+          python3 - <<'PY'
+          import json
+          data = json.load(open('/tmp/issue105.json'))
+          results = {item['command']: item['mean'] for item in data['results']}
+          for name, mean in results.items():
+              print(f"ISSUE105_BENCH {name} mean={mean:.6f}s")
+          assert results['single threshold'] < results['sidecar threshold'] * 0.97, results
+          assert results['single content'] < results['sidecar content'] * 0.97, results
+          PY
