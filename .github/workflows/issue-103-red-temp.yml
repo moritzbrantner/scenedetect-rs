@@ -1,0 +1,41 @@
+name: Issue 103 frame timing RED temp
+
+on:
+  push:
+    branches:
+      - agent-loop/issue-103-frame-timing
+
+permissions:
+  contents: read
+
+jobs:
+  prove-red:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+      - name: Prove core timing contract is RED
+        run: |
+          set +e
+          cargo test -p scenedetect-core --test consumer_contract > /tmp/core.log 2>&1
+          status=$?
+          set -e
+          cat /tmp/core.log
+          if [ "$status" -eq 0 ]; then
+            echo "expected timing contract test to fail before implementation" >&2
+            exit 1
+          fi
+      - name: Prove FFmpeg timing contract is RED
+        run: |
+          set +e
+          cargo test -p scenedetect-ffmpeg --test frame_source ffmpeg_frame_source_streams_non_uniform_vfr_presentation_times > /tmp/ffmpeg.log 2>&1
+          status=$?
+          set -e
+          cat /tmp/ffmpeg.log
+          if [ "$status" -eq 0 ]; then
+            echo "expected FFmpeg timing test to fail before implementation" >&2
+            exit 1
+          fi
