@@ -39,6 +39,16 @@ ffmpeg -y -v error \
   -c:v ffv1 \
   "$OUT_DIR/content-hue-only-cut.mkv"
 
+# Both halves contain the same black/white pixel distribution, but the first
+# frame has a vertical boundary and the second a horizontal boundary. With
+# edge-only weights this isolates Canny/dilation edge-map change from HSV deltas.
+ffmpeg -y -v error \
+  -f lavfi -i color=c=black:s=64x64:d=0.5:r=10 \
+  -f lavfi -i color=c=black:s=64x64:d=0.5:r=10 \
+  -filter_complex "[0:v]drawbox=x=0:y=0:w=32:h=64:color=white:t=fill[a];[1:v]drawbox=x=0:y=0:w=64:h=32:color=white:t=fill[b];[a][b]concat=n=2:v=1:a=0,format=rgb24" \
+  -c:v ffv1 \
+  "$OUT_DIR/content-edge-only-cut.mkv"
+
 ffmpeg -y -v error \
   -f lavfi -i color=c=black:s=64x64:d=0.4:r=10 \
   -f lavfi -i color=c=white:s=64x64:d=0.2:r=10 \
