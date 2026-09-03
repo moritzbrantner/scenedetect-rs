@@ -299,7 +299,6 @@ fn parse_showinfo_time_base(line: &str) -> Option<TimeBase> {
     let marker = "config in time_base:";
     let start = line.find(marker)? + marker.len();
     let value = line[start..]
-        .trim_start()
         .split_whitespace()
         .next()?
         .trim_end_matches(',');
@@ -324,7 +323,6 @@ fn parse_showinfo_timing(line: &str, time_base: TimeBase) -> Option<FrameTiming>
 fn parse_showinfo_integer(line: &str, field: &str) -> Option<i64> {
     let start = line.find(field)? + field.len();
     line[start..]
-        .trim_start()
         .split_whitespace()
         .next()?
         .parse::<i64>()
