@@ -1,4 +1,4 @@
-name: Performance baseline temp
+name: Frame timing performance comparison temp
 
 on:
   push:
@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 jobs:
-  generated-benchmark:
+  compare-timing-overhead:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -20,16 +20,31 @@ jobs:
       - name: Install benchmark prerequisites
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg curl hyperfine
-      - name: Run generated benchmarks
-        run: tests/benchmarks/run-hyperfine.sh --generated-only
-      - name: Print benchmark report
+          sudo apt-get install -y ffmpeg hyperfine
+      - name: Generate benchmark fixture
+        run: scripts/generate-benchmark-fixtures.sh --generated-only >/dev/null
+      - name: Build current timing-aware candidate
         run: |
-          cat tests/benchmarks/results/cli.md
+          cargo build -p scenedetect-cli --release
+          cp target/release/scenedetect-rs /tmp/scenedetect-after-timing
+      - name: Build pre-timing candidate
+        run: |
+          git fetch --depth=1 origin d34cd07bbf83475f92abdc2dcb4e0eaf777d848f
+          git worktree add --detach /tmp/scenedetect-before d34cd07bbf83475f92abdc2dcb4e0eaf777d848f
+          cargo build --manifest-path /tmp/scenedetect-before/Cargo.toml -p scenedetect-cli --release --target-dir /tmp/scenedetect-before-target
+          cp /tmp/scenedetect-before-target/release/scenedetect-rs /tmp/scenedetect-before-timing
+      - name: Compare cheap and content detector paths
+        run: |
+          VIDEO="$GITHUB_WORKSPACE/tests/benchmarks/generated/generated-hard-cuts.mkv"
+          hyperfine --warmup 3 --runs 12 \
+            --command-name 'before threshold' "/tmp/scenedetect-before-timing -i '$VIDEO' -m 1 detect-threshold --threshold 12 list-scenes --no-output-file --quiet" \
+            --command-name 'after threshold' "/tmp/scenedetect-after-timing -i '$VIDEO' -m 1 detect-threshold --threshold 12 list-scenes --no-output-file --quiet" \
+            --command-name 'before content' "/tmp/scenedetect-before-timing -i '$VIDEO' -m 1 detect-content --threshold 20 list-scenes --no-output-file --quiet" \
+            --command-name 'after content' "/tmp/scenedetect-after-timing -i '$VIDEO' -m 1 detect-content --threshold 20 list-scenes --no-output-file --quiet" \
+            --export-json /tmp/timing-overhead.json
           python3 - <<'PY'
           import json
-          from pathlib import Path
-          data = json.loads(Path('tests/benchmarks/results/cli.json').read_text())
-          for result in data['results']:
-              print(f"BENCH {result['command']} mean={result['mean']:.6f}s stddev={result['stddev']:.6f}s")
+          data = json.load(open('/tmp/timing-overhead.json'))
+          for item in data['results']:
+              print(f"TIMING_BENCH {item['command']} mean={item['mean']:.6f}s stddev={item['stddev']:.6f}s")
           PY
