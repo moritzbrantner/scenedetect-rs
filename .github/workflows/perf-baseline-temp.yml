@@ -1,0 +1,35 @@
+name: Performance baseline temp
+
+on:
+  push:
+    branches:
+      - agent-loop/perf-baseline
+
+permissions:
+  contents: read
+
+jobs:
+  generated-benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+      - name: Install benchmark prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg curl hyperfine
+      - name: Run generated benchmarks
+        run: tests/benchmarks/run-hyperfine.sh --generated-only
+      - name: Print benchmark report
+        run: |
+          cat tests/benchmarks/results/cli.md
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          data = json.loads(Path('tests/benchmarks/results/cli.json').read_text())
+          for result in data['results']:
+              print(f"BENCH {result['command']} mean={result['mean']:.6f}s stddev={result['stddev']:.6f}s")
+          PY
