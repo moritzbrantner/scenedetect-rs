@@ -398,10 +398,10 @@ fn content_detector_writes_score_ranked_boundary_candidates_to_csv() {
         .args([
             "detect-content",
             "--threshold",
-            "200",
+            "80",
             "list-boundaries",
             "--review-threshold",
-            "100",
+            "40",
         ])
         .assert()
         .success();
@@ -433,10 +433,10 @@ fn content_detector_writes_boundary_candidates_as_json_to_stdout() {
         .args([
             "detect-content",
             "--threshold",
-            "200",
+            "80",
             "list-boundaries",
             "--review-threshold",
-            "100",
+            "40",
             "--format",
             "json",
             "--no-output-file",
@@ -483,7 +483,7 @@ fn content_boundary_review_threshold_controls_near_miss_inclusion() {
         .args([
             "detect-content",
             "--threshold",
-            "200",
+            "80",
             "list-boundaries",
             "--format",
             "json",
@@ -503,10 +503,10 @@ fn content_boundary_review_threshold_controls_near_miss_inclusion() {
         .args([
             "detect-content",
             "--threshold",
-            "200",
+            "80",
             "list-boundaries",
             "--review-threshold",
-            "100",
+            "40",
             "--format",
             "json",
             "--no-output-file",

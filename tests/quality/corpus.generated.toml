@@ -17,6 +17,14 @@ threshold = 20.0
 min_scene_len = "1"
 
 [[cases]]
+id = "generated-content-hue-only"
+video = "../fixtures/generated/content-hue-only-cut.mkv"
+detector = "content"
+threshold = 10.0
+min_scene_len = "1"
+args = ["--weights", "1", "0", "0", "0"]
+
+[[cases]]
 id = "generated-adaptive-single-flash"
 video = "../fixtures/generated/adaptive-single-flash.mkv"
 detector = "adaptive"
