@@ -1,0 +1,54 @@
+name: Apply issue 96 HSV patch
+
+on:
+  push:
+    branches:
+      - agent-loop/issue-96-content-hsv-v2
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-verify:
+    if: github.event.head_commit.message != 'fix: match Content scoring to HSV components'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: agent-loop/issue-96-content-hsv-v2
+      - name: Apply source patch
+        run: python3 .github/issue-96-apply-temp.py
+      - name: Install toolchain and ffmpeg
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt --component clippy
+          rustup default stable
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg curl
+      - name: Format and verify Rust behavior
+        run: |
+          cargo fmt --all
+          cargo test -p scenedetect-core --test content_components
+          cargo test -p scenedetect-core
+          cargo test -p scenedetect-cli --test cli
+          cargo clippy --workspace --all-targets -- -D warnings
+      - name: Verify focused quality divergence is fixed
+        run: |
+          bash scripts/run-generated-quality.sh --case generated-content-hue-only
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path('tests/quality/output/report.json').read_text())
+          case = report['cases'][0]
+          assert case['reference_boundary_count'] == 1, case
+          assert case['candidate_boundary_count'] == 1, case
+          assert case['matched_boundary_count'] == 1, case
+          assert case['false_negative_count'] == 0, case
+          assert case['false_positive_count'] == 0, case
+          PY
+      - name: Commit implementation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add crates/scenedetect-core/src/lib.rs crates/scenedetect-core/tests/content_components.rs crates/scenedetect-cli/tests/cli.rs
+          git commit -m "fix: match Content scoring to HSV components"
+          git push origin HEAD:agent-loop/issue-96-content-hsv-v2
