@@ -29,6 +29,16 @@ ffmpeg -y -v error \
   -c:v ffv1 \
   "$OUT_DIR/content-color-only-cut.mkv"
 
+# Red and yellow keep the RGB red channel effectively unchanged while their
+# OpenCV HSV hue values differ. This isolates semantic hue scoring from raw
+# channel differences when Content uses custom component weights.
+ffmpeg -y -v error \
+  -f lavfi -i color=c=red:s=64x64:d=0.5:r=10 \
+  -f lavfi -i color=c=yellow:s=64x64:d=0.5:r=10 \
+  -filter_complex "[0:v][1:v]concat=n=2:v=1:a=0,format=rgb24" \
+  -c:v ffv1 \
+  "$OUT_DIR/content-hue-only-cut.mkv"
+
 ffmpeg -y -v error \
   -f lavfi -i color=c=black:s=64x64:d=0.4:r=10 \
   -f lavfi -i color=c=white:s=64x64:d=0.2:r=10 \
