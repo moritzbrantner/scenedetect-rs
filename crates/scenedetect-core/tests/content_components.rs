@@ -1,6 +1,6 @@
 use scenedetect_core::{
     detect_content_stats, ContentDetectorConfig, ContentWeights, DetectionOptions, Frame,
-    FrameRate, FrameSource, SceneDetectError,
+    FrameIndex, FrameRate, FrameSource, SceneDetectError,
 };
 
 struct Frames {
@@ -29,6 +29,25 @@ impl FrameSource for Frames {
 
 fn metric(row: &scenedetect_core::RichDetectionStatsRow, name: &str) -> f64 {
     *row.metrics.get(name).expect("metric should be present")
+}
+
+fn split_frame(index: u64, vertical: bool) -> Frame {
+    let width = 64_u32;
+    let height = 64_u32;
+    let mut rgb = Vec::with_capacity(width as usize * height as usize * 3);
+    for y in 0..height {
+        for x in 0..width {
+            let white = if vertical { x < width / 2 } else { y < height / 2 };
+            let value = if white { 255 } else { 0 };
+            rgb.extend_from_slice(&[value, value, value]);
+        }
+    }
+    Frame {
+        index: FrameIndex(index),
+        width,
+        height,
+        rgb,
+    }
 }
 
 #[test]
@@ -92,4 +111,37 @@ fn luma_only_uses_hsv_value_component() {
     let red_to_yellow = &stats.rows[1];
     assert_eq!(metric(red_to_yellow, "delta_luminance"), 0.0);
     assert_eq!(metric(red_to_yellow, "content_val"), 0.0);
+}
+
+#[test]
+fn content_stats_use_canny_edge_component_for_edge_only_weights() {
+    let stats = detect_content_stats(
+        Frames::new(vec![split_frame(0, true), split_frame(1, false)]),
+        ContentDetectorConfig {
+            threshold: 20.0,
+            weights: ContentWeights {
+                hue: 0.0,
+                saturation: 0.0,
+                luminance: 0.0,
+                edges: 1.0,
+            },
+            luma_only: false,
+        },
+        DetectionOptions {
+            min_scene_len: 1,
+            ..DetectionOptions::default()
+        },
+    )
+    .unwrap();
+
+    let structural_change = &stats.rows[1];
+    let expected = 36.73095703125;
+    assert!(
+        (metric(structural_change, "delta_edges") - expected).abs() < 1.0e-9,
+        "edge delta should match PySceneDetect/OpenCV Canny+dilation semantics"
+    );
+    assert!(
+        (metric(structural_change, "content_val") - expected).abs() < 1.0e-9,
+        "edge-only content score should equal delta_edges"
+    );
 }
