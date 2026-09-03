@@ -184,7 +184,10 @@ fn ffmpeg_frame_source_streams_non_uniform_vfr_presentation_times() {
         .windows(2)
         .map(|pair| pair[1] - pair[0])
         .collect();
-    assert!(deltas[2] > deltas[0] * 4.0, "timing must not collapse to CFR");
+    assert!(
+        deltas[2] > deltas[0] * 4.0,
+        "timing must not collapse to CFR"
+    );
 }
 
 #[test]

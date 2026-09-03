@@ -599,8 +599,7 @@ where
     let mut previous = None;
     let mut total_frames = 0_u64;
 
-    while let Some(frame_with_timing) = source.next_frame_with_timing()? {
-        let frame = frame_with_timing.frame;
+    while let Some(frame) = source.next_frame()? {
         let metrics = match previous.as_ref() {
             Some(previous) => content_metrics(previous, &frame, &config.weights, config.luma_only),
             None => empty_content_metrics(),
@@ -918,8 +917,7 @@ where
     let mut previous = None;
     let mut total_frames = 0_u64;
 
-    while let Some(frame_with_timing) = source.next_frame_with_timing()? {
-        let frame = frame_with_timing.frame;
+    while let Some(frame) = source.next_frame()? {
         let content_val = match previous.as_ref() {
             Some(previous) => content_score(previous, &frame, &config.weights, config.luma_only),
             None => 0.0,
@@ -996,8 +994,7 @@ where
     let mut previous = None;
     let mut total_frames = 0_u64;
 
-    while let Some(frame_with_timing) = source.next_frame_with_timing()? {
-        let frame = frame_with_timing.frame;
+    while let Some(frame) = source.next_frame()? {
         let content_val = match previous.as_ref() {
             Some(previous) => content_score(previous, &frame, &config.weights, config.luma_only),
             None => 0.0,
@@ -1046,8 +1043,7 @@ where
     let mut total_frames = 0_usize;
     let mut next_emit = 0_usize;
 
-    while let Some(frame_with_timing) = source.next_frame_with_timing()? {
-        let frame = frame_with_timing.frame;
+    while let Some(frame) = source.next_frame()? {
         let content_val = match previous.as_ref() {
             Some(previous) => content_score(previous, &frame, &config.weights, config.luma_only),
             None => 0.0,
@@ -1115,8 +1111,7 @@ where
     let mut total_frames = 0_usize;
     let mut next_emit = 0_usize;
 
-    while let Some(frame_with_timing) = source.next_frame_with_timing()? {
-        let frame = frame_with_timing.frame;
+    while let Some(frame) = source.next_frame()? {
         let content_val = match previous.as_ref() {
             Some(previous) => content_score(previous, &frame, &config.weights, config.luma_only),
             None => 0.0,
@@ -1383,8 +1378,7 @@ where
     let mut last_fade_type = None;
     let mut total_frames = 0_u64;
 
-    while let Some(frame_with_timing) = source.next_frame_with_timing()? {
-        let frame = frame_with_timing.frame;
+    while let Some(frame) = source.next_frame()? {
         if total_frames == 0 {
             last_scene_cut = frame.index.0;
         }
@@ -1466,8 +1460,7 @@ where
     let mut total_frames = 0_u64;
     let correlation_threshold = 1.0 - config.threshold;
 
-    while let Some(frame_with_timing) = source.next_frame_with_timing()? {
-        let frame = frame_with_timing.frame;
+    while let Some(frame) = source.next_frame()? {
         let histogram = luma_histogram(&frame, bins);
         let hist_diff = previous_histogram
             .as_ref()
@@ -1517,8 +1510,7 @@ where
     let mut previous_hash: Option<Vec<bool>> = None;
     let mut total_frames = 0_u64;
 
-    while let Some(frame_with_timing) = source.next_frame_with_timing()? {
-        let frame = frame_with_timing.frame;
+    while let Some(frame) = source.next_frame()? {
         let frame_hash = perceptual_hash(&frame, size, lowpass);
         let hash_dist = previous_hash
             .as_ref()

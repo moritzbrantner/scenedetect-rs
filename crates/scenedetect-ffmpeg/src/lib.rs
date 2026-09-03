@@ -331,7 +331,10 @@ fn probe_video_details_with_binaries(
     })
 }
 
-fn read_frame_timing(reader: &mut BufReader<ChildStdout>, time_base: TimeBase) -> Result<FrameTiming> {
+fn read_frame_timing(
+    reader: &mut BufReader<ChildStdout>,
+    time_base: TimeBase,
+) -> Result<FrameTiming> {
     let mut line = String::new();
     loop {
         let bytes = reader
@@ -388,9 +391,8 @@ fn parse_time_base(value: &str) -> Result<TimeBase> {
     let denominator = denominator.parse::<i64>().map_err(|_| {
         SceneDetectError::FrameSource(format!("invalid ffprobe time base: {value}"))
     })?;
-    TimeBase::new(numerator, denominator).ok_or_else(|| {
-        SceneDetectError::FrameSource(format!("invalid ffprobe time base: {value}"))
-    })
+    TimeBase::new(numerator, denominator)
+        .ok_or_else(|| SceneDetectError::FrameSource(format!("invalid ffprobe time base: {value}")))
 }
 
 fn parse_frame_rate(value: &str) -> Result<FrameRate> {
@@ -432,10 +434,7 @@ mod tests {
     fn parses_stream_time_base_and_frame_timing() {
         let time_base = parse_time_base("1/1000").unwrap();
         assert_eq!(time_base, TimeBase::new(1, 1000).unwrap());
-        let timing = parse_frame_timing(
-            "best_effort_timestamp=125|pkt_duration=40",
-            time_base,
-        );
+        let timing = parse_frame_timing("best_effort_timestamp=125|pkt_duration=40", time_base);
         assert_eq!(timing.presentation_time.unwrap().ticks, 125);
         assert_eq!(timing.duration.unwrap().ticks, 40);
         assert!((timing.presentation_time.unwrap().seconds() - 0.125).abs() < 1.0e-12);

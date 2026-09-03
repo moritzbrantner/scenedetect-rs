@@ -115,10 +115,8 @@ fn source_consumer_detects_once_and_derives_scene_outputs_from_stats() {
 #[test]
 fn legacy_source_default_timing_adapter_wraps_plain_frames() {
     let reads = Rc::new(Cell::new(0));
-    let mut source = CountingFrameSource::new(
-        vec![Frame::solid(0, 2, 2, [1, 2, 3])],
-        Rc::clone(&reads),
-    );
+    let mut source =
+        CountingFrameSource::new(vec![Frame::solid(0, 2, 2, [1, 2, 3])], Rc::clone(&reads));
 
     let frame = source
         .next_frame_with_timing()
@@ -171,7 +169,11 @@ fn timing_aware_source_exposes_richer_frame_path_without_legacy_fallback() {
     assert_eq!(second.frame.index, FrameIndex(1));
     assert!((second.timing.presentation_time.unwrap().seconds() - 0.1).abs() < 1.0e-12);
     assert_eq!(rich_reads.get(), 3, "two frames plus one EOF read");
-    assert_eq!(legacy_reads.get(), 0, "explicit rich reads must not use legacy next_frame");
+    assert_eq!(
+        legacy_reads.get(),
+        0,
+        "explicit rich reads must not use legacy next_frame"
+    );
 }
 
 #[test]
