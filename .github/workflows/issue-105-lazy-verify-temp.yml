@@ -1,0 +1,86 @@
+name: Issue 105 lazy frame timing temp
+
+on:
+  push:
+    branches:
+      - agent-loop/issue-105-lazy-timing
+
+permissions:
+  contents: write
+
+jobs:
+  apply-verify-benchmark:
+    if: "${{ github.event.head_commit.message != 'perf: keep frame timing lazy for frame-index detectors' }}"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: agent-loop/issue-105-lazy-timing
+      - name: Apply plain-frame detector path
+        run: python3 .github/issue-105-lazy-core-temp.py
+      - name: Install Rust
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt --component clippy
+          rustup default stable
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - name: Install prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg curl hyperfine
+          bun install --frozen-lockfile
+      - name: Verify lazy timing behavior
+        run: |
+          cargo fmt --all
+          cargo test -p scenedetect-core --test consumer_contract
+          cargo test -p scenedetect-ffmpeg --test frame_source
+          cargo clippy --workspace --all-targets -- -D warnings
+          bun run agent:check
+      - name: Build lazy candidate
+        run: |
+          cargo build -p scenedetect-cli --release
+          cp target/release/scenedetect-rs /tmp/scenedetect-lazy
+      - name: Build pre-timing and eager-sidecar baselines
+        run: |
+          git fetch --depth=1 origin d34cd07bbf83475f92abdc2dcb4e0eaf777d848f 3ca28737690252e96efc215759e37eed5d430dfa
+          git worktree add --detach /tmp/scenedetect-pre d34cd07bbf83475f92abdc2dcb4e0eaf777d848f
+          cargo build --manifest-path /tmp/scenedetect-pre/Cargo.toml -p scenedetect-cli --release --target-dir /tmp/scenedetect-pre-target
+          cp /tmp/scenedetect-pre-target/release/scenedetect-rs /tmp/scenedetect-pre-bin
+          git worktree add --detach /tmp/scenedetect-eager 3ca28737690252e96efc215759e37eed5d430dfa
+          cargo build --manifest-path /tmp/scenedetect-eager/Cargo.toml -p scenedetect-cli --release --target-dir /tmp/scenedetect-eager-target
+          cp /tmp/scenedetect-eager-target/release/scenedetect-rs /tmp/scenedetect-eager-bin
+      - name: Compare default detection overhead
+        run: |
+          scripts/generate-benchmark-fixtures.sh --generated-only >/dev/null
+          VIDEO="$GITHUB_WORKSPACE/tests/benchmarks/generated/generated-hard-cuts.mkv"
+          hyperfine --warmup 3 --runs 12 \
+            --command-name 'pre threshold' "/tmp/scenedetect-pre-bin -i '$VIDEO' -m 1 detect-threshold --threshold 12 list-scenes --no-output-file --quiet" \
+            --command-name 'eager threshold' "/tmp/scenedetect-eager-bin -i '$VIDEO' -m 1 detect-threshold --threshold 12 list-scenes --no-output-file --quiet" \
+            --command-name 'lazy threshold' "/tmp/scenedetect-lazy -i '$VIDEO' -m 1 detect-threshold --threshold 12 list-scenes --no-output-file --quiet" \
+            --command-name 'pre content' "/tmp/scenedetect-pre-bin -i '$VIDEO' -m 1 detect-content --threshold 20 list-scenes --no-output-file --quiet" \
+            --command-name 'eager content' "/tmp/scenedetect-eager-bin -i '$VIDEO' -m 1 detect-content --threshold 20 list-scenes --no-output-file --quiet" \
+            --command-name 'lazy content' "/tmp/scenedetect-lazy -i '$VIDEO' -m 1 detect-content --threshold 20 list-scenes --no-output-file --quiet" \
+            --export-json /tmp/lazy-timing.json
+          python3 - <<'PY'
+          import json
+          data = json.load(open('/tmp/lazy-timing.json'))
+          results = {item['command']: item['mean'] for item in data['results']}
+          for name, mean in results.items():
+              print(f"LAZY_TIMING_BENCH {name} mean={mean:.6f}s")
+          assert results['lazy threshold'] < results['eager threshold'] * 0.97, results
+          assert results['lazy content'] < results['eager content'] * 0.97, results
+          assert results['lazy threshold'] <= results['pre threshold'] * 1.05, results
+          assert results['lazy content'] <= results['pre content'] * 1.05, results
+          PY
+      - name: Commit verified core path and formatting
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add crates/scenedetect-core/src/lib.rs \
+                  crates/scenedetect-core/tests/consumer_contract.rs \
+                  crates/scenedetect-ffmpeg/src/lib.rs \
+                  crates/scenedetect-ffmpeg/tests/frame_source.rs
+          git commit -m "perf: keep frame timing lazy for frame-index detectors"
+          git push origin HEAD:agent-loop/issue-105-lazy-timing
