@@ -113,11 +113,28 @@ fn source_consumer_detects_once_and_derives_scene_outputs_from_stats() {
 }
 
 #[test]
-fn timing_aware_source_drives_detection_through_richer_frame_path() {
+fn legacy_source_default_timing_adapter_wraps_plain_frames() {
+    let reads = Rc::new(Cell::new(0));
+    let mut source = CountingFrameSource::new(
+        vec![Frame::solid(0, 2, 2, [1, 2, 3])],
+        Rc::clone(&reads),
+    );
+
+    let frame = source
+        .next_frame_with_timing()
+        .unwrap()
+        .expect("legacy frame should be wrapped");
+    assert_eq!(frame.frame.index, FrameIndex(0));
+    assert_eq!(frame.timing, FrameTiming::default());
+    assert_eq!(reads.get(), 1);
+}
+
+#[test]
+fn timing_aware_source_exposes_richer_frame_path_without_legacy_fallback() {
     let time_base = TimeBase::new(1, 1_000).expect("valid time base");
     let rich_reads = Rc::new(Cell::new(0));
     let legacy_reads = Rc::new(Cell::new(0));
-    let source = TimingAwareFrameSource {
+    let mut source = TimingAwareFrameSource {
         frame_rate: FrameRate(10.0),
         frames: vec![
             FrameWithTiming {
@@ -140,23 +157,21 @@ fn timing_aware_source_drives_detection_through_richer_frame_path() {
         legacy_reads: Rc::clone(&legacy_reads),
     };
 
-    let stats = detect_content_stats(
-        source,
-        ContentDetectorConfig {
-            threshold: 20.0,
-            ..Default::default()
-        },
-        DetectionOptions {
-            min_scene_len: 1,
-            ..Default::default()
-        },
-    )
-    .unwrap();
+    let first = source
+        .next_frame_with_timing()
+        .unwrap()
+        .expect("first timing-aware frame");
+    let second = source
+        .next_frame_with_timing()
+        .unwrap()
+        .expect("second timing-aware frame");
+    assert!(source.next_frame_with_timing().unwrap().is_none());
 
-    assert_eq!(stats.total_frames, 2);
+    assert_eq!(first.frame.index, FrameIndex(0));
+    assert_eq!(second.frame.index, FrameIndex(1));
+    assert!((second.timing.presentation_time.unwrap().seconds() - 0.1).abs() < 1.0e-12);
     assert_eq!(rich_reads.get(), 3, "two frames plus one EOF read");
-    assert_eq!(legacy_reads.get(), 0, "core should consume the richer source seam");
-    assert!((MediaTime::new(250, time_base).seconds() - 0.25).abs() < 1.0e-12);
+    assert_eq!(legacy_reads.get(), 0, "explicit rich reads must not use legacy next_frame");
 }
 
 #[test]
