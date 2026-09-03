@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
-use scenedetect_core::{FrameRate, FrameSource, SceneDetectError};
+use scenedetect_core::{FrameIndex, FrameRate, FrameSource, SceneDetectError};
 use scenedetect_ffmpeg::{FfmpegBinaries, FfmpegFrameSource};
 
 fn missing_binary(name: &str) -> std::path::PathBuf {
@@ -185,4 +185,39 @@ fn ffmpeg_frame_source_streams_non_uniform_vfr_presentation_times() {
         .map(|pair| pair[1] - pair[0])
         .collect();
     assert!(deltas[2] > deltas[0] * 4.0, "timing must not collapse to CFR");
+}
+
+#[test]
+fn ffmpeg_frame_source_lazily_aligns_timing_after_plain_reads() {
+    let Some((_temp, video)) = generated_vfr_fixture() else {
+        return;
+    };
+
+    let mut source = FfmpegFrameSource::open(&video, None).unwrap();
+
+    let first = source.next_frame().unwrap().expect("plain frame 0");
+    assert_eq!(first.index, FrameIndex(0));
+
+    let second = source
+        .next_frame_with_timing()
+        .unwrap()
+        .expect("rich frame 1");
+    assert_eq!(second.frame.index, FrameIndex(1));
+    assert!(
+        (second.timing.presentation_time.unwrap().seconds() - 0.1).abs() < 0.001,
+        "lazy timing stream should skip the already-consumed first frame"
+    );
+
+    let third = source.next_frame().unwrap().expect("plain frame 2");
+    assert_eq!(third.index, FrameIndex(2));
+
+    let fourth = source
+        .next_frame_with_timing()
+        .unwrap()
+        .expect("rich frame 3");
+    assert_eq!(fourth.frame.index, FrameIndex(3));
+    assert!(
+        (fourth.timing.presentation_time.unwrap().seconds() - 0.9).abs() < 0.001,
+        "plain reads must discard active timing records to preserve alignment"
+    );
 }
