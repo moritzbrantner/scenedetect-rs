@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "profile": "repository-foundation-v1",
+  "tiers": {
+    "fast": ["format:check", "lint", "build", "test:unit"]
+  },
+  "requiredCapabilities": ["format:check", "lint", "build", "test:unit"],
+  "capabilityCommands": {
+    "scenedetect-rs": {
+      "format:check": ["bun", "run", "tdd:fmt"],
+      "lint": ["bun", "run", "tdd:lint"],
+      "build": ["cargo", "build", "--workspace"],
+      "test:unit": ["bun", "run", "tdd:rust"]
+    }
+  }
+}
