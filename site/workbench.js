@@ -28,7 +28,13 @@ const MAX_SAMPLES = 200_000;
 const detectorFields = {
   content: [
     { key: "threshold", label: "Content threshold", step: "0.1", min: "0" },
-    { key: "review_threshold", label: "Boundary review threshold", step: "0.1", min: "0" },
+    {
+      key: "review_threshold",
+      label: "Boundary review threshold override",
+      step: "0.1",
+      min: "0",
+      optional: true,
+    },
     { key: "luma_only", label: "Luma only", type: "checkbox" },
     { key: "weights.hue", label: "Hue weight", step: "0.1", min: "0" },
     { key: "weights.saturation", label: "Saturation weight", step: "0.1", min: "0" },
@@ -37,7 +43,13 @@ const detectorFields = {
   ],
   adaptive: [
     { key: "threshold", label: "Adaptive ratio threshold", step: "0.1", min: "0" },
-    { key: "review_threshold", label: "Boundary review threshold", step: "0.1", min: "0" },
+    {
+      key: "review_threshold",
+      label: "Boundary review threshold override",
+      step: "0.1",
+      min: "0",
+      optional: true,
+    },
     { key: "min_content_val", label: "Minimum content value", step: "0.1", min: "0" },
     { key: "frame_window", label: "Frame window", step: "1", min: "1" },
     { key: "luma_only", label: "Luma only", type: "checkbox" },
@@ -147,8 +159,14 @@ function makeDetectorField(definition, defaults) {
     label.classList.add("checkbox-field");
   } else {
     input.type = "number";
-    input.value = String(value);
     input.step = definition.step ?? "any";
+    if (definition.optional) {
+      input.dataset.optional = "true";
+      input.value = value == null ? "" : String(value);
+      input.placeholder = "Auto: 80% of detector threshold";
+    } else {
+      input.value = String(value);
+    }
     if (definition.min !== undefined) {
       input.min = definition.min;
     }
@@ -181,6 +199,15 @@ function readDetectorConfig() {
   config.min_scene_len_policy = minScenePolicy.value;
 
   for (const input of detectorControls.querySelectorAll("input[data-config-key]")) {
+    if (
+      input.type !== "checkbox" &&
+      input.dataset.optional === "true" &&
+      input.value.trim() === ""
+    ) {
+      setPath(config, input.dataset.configKey, null);
+      continue;
+    }
+
     const value = input.type === "checkbox" ? input.checked : Number(input.value);
     if (input.type !== "checkbox" && !Number.isFinite(value)) {
       throw new Error(`Invalid numeric value for ${input.dataset.configKey}.`);
