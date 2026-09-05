@@ -1,3 +1,4 @@
+use std::alloc::{alloc as allocate, dealloc as deallocate, Layout};
 use std::cell::RefCell;
 
 use scenedetect_core::{
@@ -290,6 +291,10 @@ fn default_payload(detector: &str) -> BrowserResult<serde_json::Value> {
     Ok(value)
 }
 
+fn allocation_layout(len: usize) -> Option<Layout> {
+    Layout::array::<u8>(len).ok()
+}
+
 fn copy_input(ptr: *const u8, len: usize) -> BrowserResult<Vec<u8>> {
     if len == 0 {
         return Ok(Vec::new());
@@ -367,10 +372,10 @@ pub extern "C" fn scenedetect_alloc(len: usize) -> *mut u8 {
     if len == 0 {
         return std::ptr::null_mut();
     }
-    let mut buffer = Vec::<u8>::with_capacity(len);
-    let ptr = buffer.as_mut_ptr();
-    std::mem::forget(buffer);
-    ptr
+    let Some(layout) = allocation_layout(len) else {
+        return std::ptr::null_mut();
+    };
+    unsafe { allocate(layout) }
 }
 
 /// Releases an input buffer previously returned by [`scenedetect_alloc`].
@@ -384,8 +389,11 @@ pub unsafe extern "C" fn scenedetect_dealloc(ptr: *mut u8, len: usize) {
     if ptr.is_null() || len == 0 {
         return;
     }
+    let Some(layout) = allocation_layout(len) else {
+        return;
+    };
     unsafe {
-        drop(Vec::from_raw_parts(ptr, 0, len));
+        deallocate(ptr, layout);
     }
 }
 
@@ -572,5 +580,27 @@ mod tests {
         }))
         .unwrap();
         assert!(config.detector().is_err());
+    }
+
+    #[test]
+    fn wasm_input_allocator_round_trips_exact_layout() {
+        let len = 64;
+        let ptr = scenedetect_alloc(len);
+        assert!(!ptr.is_null());
+
+        unsafe {
+            let bytes = std::slice::from_raw_parts_mut(ptr, len);
+            for (index, byte) in bytes.iter_mut().enumerate() {
+                *byte = index as u8;
+            }
+        }
+
+        let copied = copy_input(ptr, len).expect("allocated input should be readable");
+        let expected = (0..len).map(|index| index as u8).collect::<Vec<_>>();
+        assert_eq!(copied, expected);
+
+        unsafe {
+            scenedetect_dealloc(ptr, len);
+        }
     }
 }
