@@ -1,7 +1,7 @@
 use scenedetect_core::{
-    detect_frames, AdaptiveDetectorConfig, ContentDetectorConfig, DetectionOptions, DetectionSession,
-    DetectorConfig, Frame, FrameIndex, FrameRate, HashDetectorConfig, HistogramDetectorConfig,
-    ThresholdDetectorConfig,
+    detect_frames, AdaptiveDetectorConfig, ContentDetectorConfig, DetectionOptions,
+    DetectionSession, DetectorConfig, Frame, FrameIndex, FrameRate, HashDetectorConfig,
+    HistogramDetectorConfig, ThresholdDetectorConfig,
 };
 
 fn frames(colors: &[[u8; 3]]) -> Vec<Frame> {
