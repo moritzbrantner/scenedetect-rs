@@ -13,6 +13,7 @@ SITE_DIR = ROOT_DIR / "site"
 INDEX_PATH = SITE_DIR / "index.html"
 WORKBENCH_PATH = SITE_DIR / "workbench.html"
 WORKBENCH_JS_PATH = SITE_DIR / "workbench.js"
+REVIEW_OVERVIEW_PATH = SITE_DIR / "review-overview.js"
 VIDEO_FRAME_SYNC_PATH = SITE_DIR / "video-frame-sync.js"
 WASM_LOADER_PATH = SITE_DIR / "scenedetect-wasm.js"
 BENCHMARK_PATH = SITE_DIR / "data" / "benchmarks.json"
@@ -105,6 +106,7 @@ def check_pages_workflow() -> None:
         "cargo build --locked -p scenedetect-wasm --target wasm32-unknown-unknown --release",
         "site/wasm/scenedetect_wasm.wasm",
         "node --check site/video-frame-sync.js",
+        "node --check site/review-overview.js",
     ]
     for value in required:
         if value not in workflow:
@@ -162,8 +164,10 @@ def check_workbench() -> None:
 
     workbench_js = read_text(WORKBENCH_JS_PATH)
     for value in (
+        'from "./review-overview.js"',
         'from "./scenedetect-wasm.js"',
         'from "./video-frame-sync.js"',
+        "createResultsOverview",
         "seekPresentedVideoFrame",
         "presentedFrame.mediaTime",
         "createSession",
@@ -184,6 +188,30 @@ def check_workbench() -> None:
         if detector_name not in workbench_js:
             raise SiteCheckError(
                 f"site/workbench.js missing detector configuration: {detector_name}"
+            )
+
+    review_overview = read_text(REVIEW_OVERVIEW_PATH)
+    for value in (
+        'from "./video-frame-sync.js"',
+        "candidateReviewGrouping",
+        '"edge_case"',
+        '"obvious"',
+        '"accepted"',
+        '"suppressed_min_scene_len"',
+        '"near_miss"',
+        "boundary-status-filter",
+        "boundary-review-filter",
+        "boundary-sort",
+        "scene-search-filter",
+        "scene-sort",
+        "Before / after split review",
+        "seekPresentedVideoFrame",
+        "THUMBNAIL_CACHE_LIMIT",
+        "VISUAL_PAGE_SIZE",
+    ):
+        if value not in review_overview:
+            raise SiteCheckError(
+                f"site/review-overview.js missing review browser contract marker: {value}"
             )
 
     frame_sync = read_text(VIDEO_FRAME_SYNC_PATH)

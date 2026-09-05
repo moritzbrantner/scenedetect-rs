@@ -40,6 +40,7 @@ jobs:
         run: |
           node --check site/scenedetect-wasm.js
           node --check site/video-frame-sync.js
+          node --check site/review-overview.js
           node --check site/workbench.js
 
       - name: Check site
