@@ -1,5 +1,6 @@
 [package]
-name = "scenedetect-core"
+name = "scenedetect-wasm"
+publish = false
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -7,10 +8,9 @@ rust-version.workspace = true
 version.workspace = true
 
 [lib]
-path = "src/root.rs"
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-csv.workspace = true
+scenedetect-core = { path = "../scenedetect-core" }
 serde.workspace = true
 serde_json.workspace = true
-thiserror.workspace = true

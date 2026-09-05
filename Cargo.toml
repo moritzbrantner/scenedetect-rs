@@ -3,6 +3,7 @@ members = [
     "crates/scenedetect-cli",
     "crates/scenedetect-core",
     "crates/scenedetect-ffmpeg",
+    "crates/scenedetect-wasm",
 ]
 resolver = "2"
 

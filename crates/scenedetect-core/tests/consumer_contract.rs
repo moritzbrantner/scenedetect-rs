@@ -155,7 +155,11 @@ fn timing_aware_source_drives_detection_through_richer_frame_path() {
 
     assert_eq!(stats.total_frames, 2);
     assert_eq!(rich_reads.get(), 3, "two frames plus one EOF read");
-    assert_eq!(legacy_reads.get(), 0, "core should consume the richer source seam");
+    assert_eq!(
+        legacy_reads.get(),
+        0,
+        "core should consume the richer source seam"
+    );
     assert!((MediaTime::new(250, time_base).seconds() - 0.25).abs() < 1.0e-12);
 }
 

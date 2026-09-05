@@ -37,7 +37,11 @@ fn split_frame(index: u64, vertical: bool) -> Frame {
     let mut rgb = Vec::with_capacity(width as usize * height as usize * 3);
     for y in 0..height {
         for x in 0..width {
-            let white = if vertical { x < width / 2 } else { y < height / 2 };
+            let white = if vertical {
+                x < width / 2
+            } else {
+                y < height / 2
+            };
             let value = if white { 255 } else { 0 };
             rgb.extend_from_slice(&[value, value, value]);
         }

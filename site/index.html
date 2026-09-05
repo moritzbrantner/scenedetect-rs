@@ -6,7 +6,7 @@
     <title>scenedetect-rs</title>
     <meta
       name="description"
-      content="Rust scene detection CLI with PySceneDetect parity goals and published benchmark snapshots."
+      content="Rust scene detection for the CLI and browser, with PySceneDetect parity goals and published benchmark snapshots."
     />
     <link rel="stylesheet" href="styles.css" />
     <link rel="preload" as="image" href="assets/hero-scene-detection.png" />
@@ -16,6 +16,7 @@
     <header class="site-header" aria-label="Project navigation">
       <a class="brand" href="https://github.com/moritzbrantner/scenedetect-rs">scenedetect-rs</a>
       <nav aria-label="Primary navigation">
+        <a href="workbench.html">Browser workbench</a>
         <a href="#capabilities">Capabilities</a>
         <a href="#benchmarks">Benchmarks</a>
         <a href="#contribute">Contribute</a>
@@ -33,15 +34,16 @@
           />
         </div>
         <div class="hero-copy">
-          <p class="eyebrow">Rust scene detection CLI</p>
+          <p class="eyebrow">Rust scene detection · CLI + WebAssembly</p>
           <h1>scenedetect-rs</h1>
           <p class="lede">
             A Rust reimplementation and expansion of PySceneDetect, focused on
-            CLI-compatible scene detection, FFmpeg frame acquisition, and
-            parity against the PySceneDetect v0.7 Reference Oracle.
+            CLI-compatible scene detection, local browser analysis through WebAssembly,
+            FFmpeg frame acquisition, and parity against the PySceneDetect v0.7 Reference Oracle.
           </p>
           <div class="hero-actions">
-            <a class="button primary" href="https://github.com/moritzbrantner/scenedetect-rs">
+            <a class="button primary" href="workbench.html">Run in browser</a>
+            <a class="button secondary" href="https://github.com/moritzbrantner/scenedetect-rs">
               View source
             </a>
             <a class="button secondary" href="#benchmarks">See benchmarks</a>
@@ -59,7 +61,8 @@
               <code>detect-adaptive</code>, and
               <code>detect-threshold</code>, <code>detect-hist</code>,
               <code>detect-hash</code>, scene-list CSV output, and detector stats
-              CSV output.
+              CSV output. The browser workbench exposes the same five Rust detector implementations
+              over locally decoded video frames.
             </p>
           </div>
           <div class="code-stack" aria-label="CLI examples">

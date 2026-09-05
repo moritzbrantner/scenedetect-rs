@@ -11,6 +11,9 @@ from typing import Any
 ROOT_DIR = Path(__file__).resolve().parents[1]
 SITE_DIR = ROOT_DIR / "site"
 INDEX_PATH = SITE_DIR / "index.html"
+WORKBENCH_PATH = SITE_DIR / "workbench.html"
+WORKBENCH_JS_PATH = SITE_DIR / "workbench.js"
+WASM_LOADER_PATH = SITE_DIR / "scenedetect-wasm.js"
 BENCHMARK_PATH = SITE_DIR / "data" / "benchmarks.json"
 PAGES_WORKFLOW = ROOT_DIR / ".github" / "workflows" / "pages.yml"
 
@@ -25,9 +28,9 @@ def read_text(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
-def require_reference(html: str, reference: str) -> None:
+def require_reference(html: str, reference: str, owner: str) -> None:
     if reference not in html:
-        raise SiteCheckError(f"site/index.html does not reference {reference}")
+        raise SiteCheckError(f"{owner} does not reference {reference}")
     if not (SITE_DIR / reference).exists():
         raise SiteCheckError(f"referenced asset is missing: site/{reference}")
 
@@ -97,6 +100,9 @@ def check_pages_workflow() -> None:
         "pages: write",
         "id-token: write",
         "path: site",
+        "rustup target add wasm32-unknown-unknown",
+        "cargo build -p scenedetect-wasm --target wasm32-unknown-unknown --release",
+        "site/wasm/scenedetect_wasm.wasm",
     ]
     for value in required:
         if value not in workflow:
@@ -109,9 +115,10 @@ def check_pages_workflow() -> None:
 
 def check_index() -> None:
     html = read_text(INDEX_PATH)
-    require_reference(html, "styles.css")
-    require_reference(html, "app.js")
-    require_reference(html, "data/benchmarks.json")
+    require_reference(html, "styles.css", "site/index.html")
+    require_reference(html, "app.js", "site/index.html")
+    require_reference(html, "data/benchmarks.json", "site/index.html")
+    require_reference(html, "workbench.html", "site/index.html")
     if not re.search(r"<main\b", html):
         raise SiteCheckError("site/index.html must contain a main landmark")
     for text in (
@@ -128,9 +135,61 @@ def check_index() -> None:
             raise SiteCheckError(f"site/index.html missing expected content: {text}")
 
 
+def check_workbench() -> None:
+    html = read_text(WORKBENCH_PATH)
+    require_reference(html, "styles.css", "site/workbench.html")
+    require_reference(html, "workbench.css", "site/workbench.html")
+    require_reference(html, "workbench.js", "site/workbench.html")
+    if not re.search(r"<main\b", html):
+        raise SiteCheckError("site/workbench.html must contain a main landmark")
+    for text in (
+        "Run SceneDetect in your browser",
+        "Your video stays local",
+        "Content",
+        "Adaptive",
+        "Threshold / fades",
+        "Histogram",
+        "Perceptual hash",
+        "Detector stats CSV",
+    ):
+        if text not in html:
+            raise SiteCheckError(f"site/workbench.html missing expected content: {text}")
+
+    workbench_js = read_text(WORKBENCH_JS_PATH)
+    for value in (
+        'from "./scenedetect-wasm.js"',
+        "createSession",
+        "pushFrame",
+        "scene_list_csv",
+        "scene_list_json",
+        "scene_events_ndjson",
+        "stats_csv",
+        "scene_list_html",
+    ):
+        if value not in workbench_js:
+            raise SiteCheckError(f"site/workbench.js missing browser contract marker: {value}")
+    for detector_name in ("content", "adaptive", "threshold", "histogram", "hash"):
+        if detector_name not in workbench_js:
+            raise SiteCheckError(
+                f"site/workbench.js missing detector configuration: {detector_name}"
+            )
+
+    wasm_loader = read_text(WASM_LOADER_PATH)
+    for value in (
+        "wasm/scenedetect_wasm.wasm",
+        "scenedetect_abi_version",
+        "scenedetect_session_new",
+        "scenedetect_session_push",
+        "scenedetect_session_finish",
+    ):
+        if value not in wasm_loader:
+            raise SiteCheckError(f"site/scenedetect-wasm.js missing WASM contract marker: {value}")
+
+
 def main() -> int:
     try:
         check_index()
+        check_workbench()
         check_benchmark_snapshot()
         check_pages_workflow()
     except SiteCheckError as error:

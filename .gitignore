@@ -5,6 +5,7 @@
 /.tools/
 /.venv/
 /.python/
+/site/wasm/
 /tests/fixtures/generated/
 /tests/parity/output/
 /tests/local-oracle/goldens/
