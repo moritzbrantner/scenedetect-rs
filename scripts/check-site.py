@@ -101,7 +101,7 @@ def check_pages_workflow() -> None:
         "id-token: write",
         "path: site",
         "rustup target add wasm32-unknown-unknown",
-        "cargo build -p scenedetect-wasm --target wasm32-unknown-unknown --release",
+        "cargo build --locked -p scenedetect-wasm --target wasm32-unknown-unknown --release",
         "site/wasm/scenedetect_wasm.wasm",
     ]
     for value in required:
