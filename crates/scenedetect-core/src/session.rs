@@ -1,12 +1,13 @@
 use std::collections::VecDeque;
 
 use super::{
-    build_scene_list, content_score, emit_ready_adaptive_rows, hash_distance,
-    histogram_correlation, luma_histogram, perceptual_hash, round_half_to_even,
-    AdaptiveDetectorConfig, AdaptiveSample, ContentDetectorConfig, DetectionOptions,
+    build_boundary_review, build_scene_list, content_score, emit_ready_adaptive_rows,
+    hash_distance, histogram_correlation, luma_histogram, perceptual_hash, round_half_to_even,
+    AdaptiveDetectorConfig, AdaptiveSample, BoundaryCandidateSeed, BoundaryCandidateStatus,
+    BoundaryReview, BoundaryReviewOptions, ContentDetectorConfig, DetectionOptions,
     DetectionResult, DetectionStats, DetectionStatsSink, DetectorConfig, FadeType, Frame,
     FrameIndex, FrameRate, HashDetectorConfig, HistogramDetectorConfig, Result, SceneBoundary,
-    StatsRow, ThresholdDetectorConfig,
+    SceneDetectError, StatsRow, ThresholdDetectorConfig,
 };
 
 /// Incremental scene detection for consumers which already own frame decoding.
@@ -50,6 +51,32 @@ impl DetectionSession {
             stats: self.stats,
         })
     }
+
+    pub fn finish_with_boundary_review(
+        mut self,
+        review_options: BoundaryReviewOptions,
+    ) -> Result<(DetectionResult, BoundaryReview)> {
+        let review_config = self.state.review_config()?;
+        let options = self.options.clone();
+        let (boundaries, total_frames) = self
+            .state
+            .finish(self.options.min_scene_len, &mut self.stats)?;
+        let scene_list = build_scene_list(self.frame_rate, total_frames, boundaries, self.options);
+        let review = boundary_review_from_stats(
+            self.frame_rate,
+            &self.stats,
+            review_config,
+            options,
+            review_options,
+        );
+        Ok((
+            DetectionResult {
+                scene_list,
+                stats: self.stats,
+            },
+            review,
+        ))
+    }
 }
 
 fn metric_names(detector: &DetectorConfig) -> Vec<String> {
@@ -67,6 +94,127 @@ fn metric_names(detector: &DetectorConfig) -> Vec<String> {
             config.size.max(1),
             config.lowpass.max(1)
         )],
+    }
+}
+
+#[derive(Clone)]
+enum SessionReviewConfig {
+    Content(ContentDetectorConfig),
+    Adaptive(AdaptiveDetectorConfig),
+}
+
+fn boundary_review_from_stats(
+    frame_rate: FrameRate,
+    stats: &DetectionStats,
+    config: SessionReviewConfig,
+    options: DetectionOptions,
+    review_options: BoundaryReviewOptions,
+) -> BoundaryReview {
+    match config {
+        SessionReviewConfig::Content(config) => {
+            let review_threshold = review_options
+                .review_threshold
+                .unwrap_or(config.threshold * 0.8);
+            let mut boundaries = Vec::new();
+            let mut candidate_seeds = Vec::new();
+            let mut last_candidate_boundary = 0;
+
+            for row in &stats.rows {
+                let score = row.metrics.get("content_val").copied().unwrap_or(0.0);
+                if score < review_threshold {
+                    continue;
+                }
+
+                let frame_number = row.frame.0;
+                let status = if score >= config.threshold {
+                    let status = if frame_number.saturating_sub(last_candidate_boundary)
+                        >= options.min_scene_len
+                    {
+                        boundaries.push(SceneBoundary { frame: row.frame });
+                        BoundaryCandidateStatus::Accepted
+                    } else {
+                        BoundaryCandidateStatus::SuppressedMinSceneLen
+                    };
+                    last_candidate_boundary = frame_number;
+                    status
+                } else {
+                    BoundaryCandidateStatus::NearMiss
+                };
+
+                candidate_seeds.push(BoundaryCandidateSeed {
+                    status,
+                    frame: row.frame,
+                    score_metric: "content_val".to_owned(),
+                    score,
+                    detector_threshold: config.threshold,
+                    review_threshold,
+                    metrics: row.metrics.clone(),
+                });
+            }
+
+            build_boundary_review(
+                frame_rate,
+                "content",
+                "content_val",
+                config.threshold,
+                review_threshold,
+                stats.rows.len() as u64,
+                boundaries,
+                options,
+                candidate_seeds,
+            )
+        }
+        SessionReviewConfig::Adaptive(config) => {
+            let review_threshold = review_options
+                .review_threshold
+                .unwrap_or(config.threshold * 0.8);
+            let mut boundaries = Vec::new();
+            let mut candidate_seeds = Vec::new();
+            let mut last_boundary = 0;
+
+            for row in &stats.rows {
+                let score = row.metrics.get("adaptive_ratio").copied().unwrap_or(0.0);
+                let content_val = row.metrics.get("content_val").copied().unwrap_or(0.0);
+                if content_val < config.min_content_val || score < review_threshold {
+                    continue;
+                }
+
+                let frame_number = row.frame.0;
+                let status = if score >= config.threshold {
+                    if frame_number.saturating_sub(last_boundary) >= options.min_scene_len {
+                        boundaries.push(SceneBoundary { frame: row.frame });
+                        last_boundary = frame_number;
+                        BoundaryCandidateStatus::Accepted
+                    } else {
+                        BoundaryCandidateStatus::SuppressedMinSceneLen
+                    }
+                } else {
+                    BoundaryCandidateStatus::NearMiss
+                };
+
+                candidate_seeds.push(BoundaryCandidateSeed {
+                    status,
+                    frame: row.frame,
+                    score_metric: "adaptive_ratio".to_owned(),
+                    score,
+                    detector_threshold: config.threshold,
+                    review_threshold,
+                    metrics: row.metrics.clone(),
+                });
+            }
+
+            build_boundary_review(
+                frame_rate,
+                "adaptive",
+                "adaptive_ratio",
+                config.threshold,
+                review_threshold,
+                stats.rows.len() as u64,
+                boundaries,
+                options,
+                candidate_seeds,
+            )
+        }
     }
 }
 
@@ -160,6 +308,22 @@ impl SessionState {
                 boundaries: Vec::new(),
                 total_frames: 0,
             },
+        }
+    }
+
+    fn review_config(&self) -> Result<SessionReviewConfig> {
+        match self {
+            Self::Content { config, .. } => Ok(SessionReviewConfig::Content(config.clone())),
+            Self::Adaptive { config, .. } => Ok(SessionReviewConfig::Adaptive(config.clone())),
+            Self::Threshold { .. } => Err(SceneDetectError::UnsupportedBoundaryReview(
+                "detect-threshold".to_owned(),
+            )),
+            Self::Histogram { .. } => Err(SceneDetectError::UnsupportedBoundaryReview(
+                "detect-hist".to_owned(),
+            )),
+            Self::Hash { .. } => Err(SceneDetectError::UnsupportedBoundaryReview(
+                "detect-hash".to_owned(),
+            )),
         }
     }
 

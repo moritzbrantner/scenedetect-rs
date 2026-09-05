@@ -2,10 +2,11 @@ use std::alloc::{alloc as allocate, dealloc as deallocate, Layout};
 use std::cell::RefCell;
 
 use scenedetect_core::{
-    write_scene_events_ndjson, write_scene_list_csv, write_scene_list_html, write_scene_list_json,
-    write_stats_csv, AdaptiveDetectorConfig, ContentDetectorConfig, ContentWeights,
-    DetectionOptions, DetectionResult, DetectionSession, DetectorConfig, Frame, FrameIndex,
-    FrameRate, HashDetectorConfig, HistogramDetectorConfig, MinSceneLenPolicy,
+    write_boundary_review_csv, write_boundary_review_json, write_scene_events_ndjson,
+    write_scene_list_csv, write_scene_list_html, write_scene_list_json, write_stats_csv,
+    AdaptiveDetectorConfig, BoundaryReview, BoundaryReviewOptions, ContentDetectorConfig,
+    ContentWeights, DetectionOptions, DetectionResult, DetectionSession, DetectorConfig, Frame,
+    FrameIndex, FrameRate, HashDetectorConfig, HistogramDetectorConfig, MinSceneLenPolicy,
     ThresholdDetectorConfig,
 };
 use serde::{Deserialize, Serialize};
@@ -15,12 +16,17 @@ const OK: i32 = 0;
 const ERROR: i32 = -1;
 
 thread_local! {
-    static SESSIONS: RefCell<Vec<Option<DetectionSession>>> = const { RefCell::new(Vec::new()) };
+    static SESSIONS: RefCell<Vec<Option<BrowserSession>>> = const { RefCell::new(Vec::new()) };
     static LAST_RESULT: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
     static LAST_ERROR: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
 }
 
 type BrowserResult<T> = std::result::Result<T, String>;
+
+struct BrowserSession {
+    detection: DetectionSession,
+    review_options: Option<BoundaryReviewOptions>,
+}
 
 #[derive(Debug, Deserialize)]
 struct BrowserConfig {
@@ -28,6 +34,7 @@ struct BrowserConfig {
     min_scene_len: Option<u64>,
     min_scene_len_policy: Option<String>,
     threshold: Option<f64>,
+    review_threshold: Option<f64>,
     luma_only: Option<bool>,
     weights: Option<BrowserWeights>,
     min_content_val: Option<f64>,
@@ -144,6 +151,19 @@ impl BrowserConfig {
             other => Err(format!("unsupported detector: {other}")),
         }
     }
+
+    fn review_options(&self, detector: &DetectorConfig) -> Option<BoundaryReviewOptions> {
+        if matches!(
+            detector,
+            DetectorConfig::Content(_) | DetectorConfig::Adaptive(_)
+        ) {
+            Some(BoundaryReviewOptions {
+                review_threshold: self.review_threshold,
+            })
+        } else {
+            None
+        }
+    }
 }
 
 fn apply_weights(weights: &mut ContentWeights, overrides: Option<&BrowserWeights>) {
@@ -167,6 +187,7 @@ fn apply_weights(weights: &mut ContentWeights, overrides: Option<&BrowserWeights
 #[derive(Serialize)]
 struct BrowserOutput {
     detection: DetectionResult,
+    boundary_review: Option<BoundaryReview>,
     exports: BrowserExports,
 }
 
@@ -177,9 +198,14 @@ struct BrowserExports {
     scene_events_ndjson: String,
     stats_csv: String,
     scene_list_html: String,
+    boundary_review_csv: Option<String>,
+    boundary_review_json: Option<String>,
 }
 
-fn build_browser_output(detection: DetectionResult) -> BrowserResult<Vec<u8>> {
+fn build_browser_output(
+    detection: DetectionResult,
+    boundary_review: Option<BoundaryReview>,
+) -> BrowserResult<Vec<u8>> {
     let mut scene_list_csv = Vec::new();
     let mut scene_list_json = Vec::new();
     let mut scene_events_ndjson = Vec::new();
@@ -196,8 +222,23 @@ fn build_browser_output(detection: DetectionResult) -> BrowserResult<Vec<u8>> {
     write_scene_list_html(&detection.scene_list, &mut scene_list_html)
         .map_err(|error| error.to_string())?;
 
+    let (boundary_review_csv, boundary_review_json) = match boundary_review.as_ref() {
+        Some(review) => {
+            let mut csv = Vec::new();
+            let mut json = Vec::new();
+            write_boundary_review_csv(review, &mut csv).map_err(|error| error.to_string())?;
+            write_boundary_review_json(review, &mut json).map_err(|error| error.to_string())?;
+            (
+                Some(String::from_utf8(csv).map_err(|error| error.to_string())?),
+                Some(String::from_utf8(json).map_err(|error| error.to_string())?),
+            )
+        }
+        None => (None, None),
+    };
+
     let output = BrowserOutput {
         detection,
+        boundary_review,
         exports: BrowserExports {
             scene_list_csv: String::from_utf8(scene_list_csv).map_err(|error| error.to_string())?,
             scene_list_json: String::from_utf8(scene_list_json)
@@ -207,6 +248,8 @@ fn build_browser_output(detection: DetectionResult) -> BrowserResult<Vec<u8>> {
             stats_csv: String::from_utf8(stats_csv).map_err(|error| error.to_string())?,
             scene_list_html: String::from_utf8(scene_list_html)
                 .map_err(|error| error.to_string())?,
+            boundary_review_csv,
+            boundary_review_json,
         },
     };
     serde_json::to_vec(&output).map_err(|error| error.to_string())
@@ -227,6 +270,7 @@ fn default_payload(detector: &str) -> BrowserResult<serde_json::Value> {
                 "min_scene_len": common["min_scene_len"],
                 "min_scene_len_policy": common["min_scene_len_policy"],
                 "threshold": config.threshold,
+                "review_threshold": null,
                 "luma_only": config.luma_only,
                 "weights": {
                     "hue": config.weights.hue,
@@ -243,6 +287,7 @@ fn default_payload(detector: &str) -> BrowserResult<serde_json::Value> {
                 "min_scene_len": common["min_scene_len"],
                 "min_scene_len_policy": common["min_scene_len_policy"],
                 "threshold": config.threshold,
+                "review_threshold": null,
                 "min_content_val": config.min_content_val,
                 "frame_window": config.frame_window,
                 "luma_only": config.luma_only,
@@ -316,7 +361,7 @@ fn set_error(message: impl Into<String>) {
     LAST_RESULT.with(|result| result.borrow_mut().clear());
 }
 
-fn insert_session(session: DetectionSession) -> u32 {
+fn insert_session(session: BrowserSession) -> u32 {
     SESSIONS.with(|sessions| {
         let mut sessions = sessions.borrow_mut();
         if let Some((index, slot)) = sessions
@@ -334,7 +379,7 @@ fn insert_session(session: DetectionSession) -> u32 {
 
 fn mutate_session<T>(
     handle: u32,
-    operation: impl FnOnce(&mut DetectionSession) -> BrowserResult<T>,
+    operation: impl FnOnce(&mut BrowserSession) -> BrowserResult<T>,
 ) -> BrowserResult<T> {
     if handle == 0 {
         return Err("invalid session handle".to_owned());
@@ -349,7 +394,7 @@ fn mutate_session<T>(
     })
 }
 
-fn take_session(handle: u32) -> BrowserResult<DetectionSession> {
+fn take_session(handle: u32) -> BrowserResult<BrowserSession> {
     if handle == 0 {
         return Err("invalid session handle".to_owned());
     }
@@ -444,18 +489,20 @@ pub extern "C" fn scenedetect_session_new(
     config_len: usize,
     frame_rate: f64,
 ) -> u32 {
-    let result = (|| -> BrowserResult<DetectionSession> {
+    let result = (|| -> BrowserResult<BrowserSession> {
         if !frame_rate.is_finite() || frame_rate <= 0.0 {
             return Err("frame rate must be a positive finite number".to_owned());
         }
         let bytes = copy_input(config_ptr, config_len)?;
         let config: BrowserConfig =
             serde_json::from_slice(&bytes).map_err(|error| error.to_string())?;
-        Ok(DetectionSession::new(
-            config.detector()?,
-            FrameRate(frame_rate),
-            config.options()?,
-        ))
+        let detector = config.detector()?;
+        let options = config.options()?;
+        let review_options = config.review_options(&detector);
+        Ok(BrowserSession {
+            detection: DetectionSession::new(detector, FrameRate(frame_rate), options),
+            review_options,
+        })
     })();
 
     match result {
@@ -495,6 +542,7 @@ pub extern "C" fn scenedetect_session_push(
         let rgb = copy_input(rgb_ptr, rgb_len)?;
         mutate_session(handle, |session| {
             session
+                .detection
                 .push_frame(Frame {
                     index: FrameIndex(index as u64),
                     width,
@@ -521,8 +569,23 @@ pub extern "C" fn scenedetect_session_push(
 pub extern "C" fn scenedetect_session_finish(handle: u32) -> i32 {
     let result = (|| -> BrowserResult<Vec<u8>> {
         let session = take_session(handle)?;
-        let detection = session.finish().map_err(|error| error.to_string())?;
-        build_browser_output(detection)
+        let (detection, boundary_review) = match session.review_options {
+            Some(review_options) => {
+                let (detection, review) = session
+                    .detection
+                    .finish_with_boundary_review(review_options)
+                    .map_err(|error| error.to_string())?;
+                (detection, Some(review))
+            }
+            None => (
+                session
+                    .detection
+                    .finish()
+                    .map_err(|error| error.to_string())?,
+                None,
+            ),
+        };
+        build_browser_output(detection, boundary_review)
     })();
 
     match result {
@@ -562,12 +625,14 @@ mod tests {
             content["threshold"],
             ContentDetectorConfig::default().threshold
         );
+        assert!(content["review_threshold"].is_null());
         assert_eq!(
             content["min_scene_len"],
             DetectionOptions::default().min_scene_len
         );
 
         let hash = default_payload("hash").unwrap();
+        assert!(hash.get("review_threshold").is_none());
         assert_eq!(hash["size"], HashDetectorConfig::default().size);
         assert_eq!(hash["lowpass"], HashDetectorConfig::default().lowpass);
     }

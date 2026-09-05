@@ -1,8 +1,33 @@
 use scenedetect_core::{
-    detect_frames, AdaptiveDetectorConfig, ContentDetectorConfig, DetectionOptions,
-    DetectionSession, DetectorConfig, Frame, FrameIndex, FrameRate, HashDetectorConfig,
-    HistogramDetectorConfig, ThresholdDetectorConfig,
+    detect_boundary_review_streaming, detect_frames, AdaptiveDetectorConfig, BoundaryReviewOptions,
+    ContentDetectorConfig, DetectionOptions, DetectionSession, DetectorConfig, Frame, FrameIndex,
+    FrameRate, FrameSource, HashDetectorConfig, HistogramDetectorConfig, NoopStatsSink,
+    ThresholdDetectorConfig,
 };
+
+struct Frames {
+    frame_rate: FrameRate,
+    frames: std::vec::IntoIter<Frame>,
+}
+
+impl Frames {
+    fn new(frame_rate: FrameRate, frames: Vec<Frame>) -> Self {
+        Self {
+            frame_rate,
+            frames: frames.into_iter(),
+        }
+    }
+}
+
+impl FrameSource for Frames {
+    fn frame_rate(&self) -> FrameRate {
+        self.frame_rate
+    }
+
+    fn next_frame(&mut self) -> scenedetect_core::Result<Option<Frame>> {
+        Ok(self.frames.next())
+    }
+}
 
 fn frames(colors: &[[u8; 3]]) -> Vec<Frame> {
     colors
@@ -113,5 +138,83 @@ fn incremental_session_matches_batch_detection_for_every_detector() {
         let incremental = session.finish().expect("session should finish");
 
         assert_eq!(incremental, batch);
+    }
+}
+
+#[test]
+fn incremental_boundary_review_matches_streaming_review_for_content_and_adaptive() {
+    let frame_rate = FrameRate(10.0);
+    let cases = [
+        (
+            DetectorConfig::Content(ContentDetectorConfig {
+                threshold: 33.0,
+                ..Default::default()
+            }),
+            frames(&[[0, 0, 0], [50, 50, 50], [200, 200, 200], [50, 50, 50]]),
+            BoundaryReviewOptions {
+                review_threshold: Some(16.0),
+            },
+        ),
+        (
+            DetectorConfig::Adaptive(AdaptiveDetectorConfig {
+                threshold: 3.0,
+                min_content_val: 20.0,
+                frame_window: 1,
+                ..Default::default()
+            }),
+            frames(&[
+                [0, 0, 0],
+                [3, 3, 3],
+                [6, 6, 6],
+                [255, 255, 255],
+                [252, 252, 252],
+                [249, 249, 249],
+            ]),
+            BoundaryReviewOptions {
+                review_threshold: Some(2.0),
+            },
+        ),
+        (
+            DetectorConfig::Content(ContentDetectorConfig {
+                threshold: 40.0,
+                ..Default::default()
+            }),
+            frames(&[[0, 0, 0], [70, 70, 70], [200, 200, 200], [200, 200, 200]]),
+            BoundaryReviewOptions::default(),
+        ),
+    ];
+
+    for (detector, case_frames, review_options) in cases {
+        let options = DetectionOptions {
+            min_scene_len: 2,
+            ..Default::default()
+        };
+        let mut stats_sink = NoopStatsSink;
+        let streaming = detect_boundary_review_streaming(
+            detector.clone(),
+            Frames::new(frame_rate, case_frames.clone()),
+            options.clone(),
+            review_options.clone(),
+            &mut stats_sink,
+        )
+        .expect("streaming boundary review should succeed");
+
+        let mut session = DetectionSession::new(detector.clone(), frame_rate, options.clone());
+        for frame in case_frames.clone() {
+            session
+                .push_frame(frame)
+                .expect("incremental frame should be accepted");
+        }
+        let (detection, incremental) = session
+            .finish_with_boundary_review(review_options.clone())
+            .expect("incremental boundary review should succeed");
+        let batch = detect_frames(detector, frame_rate, &case_frames, options)
+            .expect("batch detection should succeed");
+
+        if review_options.review_threshold.is_none() {
+            assert_eq!(incremental.review_threshold, 32.0);
+        }
+        assert_eq!(detection, batch);
+        assert_eq!(incremental, streaming);
     }
 }

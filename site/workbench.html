@@ -80,8 +80,9 @@
             <h2 id="detector-heading">Detection configuration</h2>
             <p>
               Defaults below come from the compiled Rust detector types. Scene scoring,
-              thresholds, adaptive windows, fade handling, minimum scene length, and final scene
-              construction all execute in <code>scenedetect-core</code>.
+              thresholds, adaptive windows, fade handling, minimum scene length, final scene
+              construction, and supported boundary review all execute in
+              <code>scenedetect-core</code>.
             </p>
           </div>
 
@@ -160,6 +161,34 @@
               </thead>
               <tbody id="scene-rows"></tbody>
             </table>
+          </div>
+
+          <div id="boundary-review" hidden>
+            <div class="section-heading result-subheading">
+              <p class="eyebrow">Rust boundary review</p>
+              <h3>Ranked boundary candidates</h3>
+              <p id="boundary-review-summary"></p>
+            </div>
+            <div class="export-row" aria-label="Download Rust boundary review exports">
+              <button type="button" class="action-button" data-export="boundary_review_csv">Boundary review CSV</button>
+              <button type="button" class="action-button" data-export="boundary_review_json">Boundary review JSON</button>
+            </div>
+            <div class="table-frame result-table-frame">
+              <table class="result-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Rank</th>
+                    <th scope="col">Status</th>
+                    <th scope="col">Candidate sample</th>
+                    <th scope="col">Candidate time</th>
+                    <th scope="col">Score</th>
+                    <th scope="col">Threshold distance</th>
+                    <th scope="col">Preview</th>
+                  </tr>
+                </thead>
+                <tbody id="boundary-rows"></tbody>
+              </table>
+            </div>
           </div>
         </div>
       </section>
