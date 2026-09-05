@@ -36,6 +36,11 @@ jobs:
           cp target/wasm32-unknown-unknown/release/scenedetect_wasm.wasm site/wasm/scenedetect_wasm.wasm
           test -s site/wasm/scenedetect_wasm.wasm
 
+      - name: Check browser JavaScript syntax
+        run: |
+          node --check site/scenedetect-wasm.js
+          node --check site/workbench.js
+
       - name: Check site
         run: python3 scripts/check-site.py
 
