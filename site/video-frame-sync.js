@@ -78,6 +78,12 @@ function preparePresentedFrame(video, signal) {
     signal?.addEventListener("abort", abortListener, { once: true });
   });
 
+  // A seek error can make the media-event promise reject before this promise is
+  // awaited. Keep an attached rejection handler so aborting that orphaned frame
+  // wait never produces an unhandled rejection; awaiting `promise` still sees
+  // the original rejection when it is the active path.
+  void promise.catch(() => {});
+
   return {
     promise,
     cancel() {
