@@ -1,4 +1,5 @@
 import { createSceneDetect } from "./scenedetect-wasm.js";
+import { seekPresentedVideoFrame } from "./video-frame-sync.js";
 
 const videoFile = document.getElementById("video-file");
 const video = document.getElementById("video-preview");
@@ -239,50 +240,6 @@ function assertNotAborted(signal) {
   }
 }
 
-function waitForMediaEvent(target, eventName, signal) {
-  return new Promise((resolve, reject) => {
-    const cleanup = () => {
-      target.removeEventListener(eventName, onEvent);
-      target.removeEventListener("error", onError);
-      signal?.removeEventListener("abort", onAbort);
-    };
-    const onEvent = () => {
-      cleanup();
-      resolve();
-    };
-    const onError = () => {
-      cleanup();
-      reject(new Error("The browser could not decode this video at the requested position."));
-    };
-    const onAbort = () => {
-      cleanup();
-      reject(abortError());
-    };
-
-    target.addEventListener(eventName, onEvent, { once: true });
-    target.addEventListener("error", onError, { once: true });
-    signal?.addEventListener("abort", onAbort, { once: true });
-  });
-}
-
-async function ensureVideoData(signal) {
-  assertNotAborted(signal);
-  if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
-    return;
-  }
-  await waitForMediaEvent(video, "loadeddata", signal);
-}
-
-async function seekVideo(time, signal) {
-  assertNotAborted(signal);
-  await ensureVideoData(signal);
-  if (Math.abs(video.currentTime - time) < 0.0005) {
-    return;
-  }
-  video.currentTime = time;
-  await waitForMediaEvent(video, "seeked", signal);
-}
-
 function rgbFromCurrentFrame(width, height) {
   context.drawImage(video, 0, 0, width, height);
   const rgba = context.getImageData(0, 0, width, height).data;
@@ -465,6 +422,7 @@ async function runAnalysis() {
   activeAbortController = new AbortController();
   const { signal } = activeAbortController;
   let session = null;
+  let lastPresentedMediaTime = Number.NEGATIVE_INFINITY;
   running = true;
   currentOutput = null;
   currentResultFps = null;
@@ -480,11 +438,17 @@ async function runAnalysis() {
     for (let index = 0; index < sampleCount; index += 1) {
       assertNotAborted(signal);
       const time = Math.min(index / fps, Math.max(0, video.duration - 0.001));
-      await seekVideo(time, signal);
+      const presentedFrame = await seekPresentedVideoFrame(video, time, signal);
+      if (presentedFrame.mediaTime + Number.EPSILON < lastPresentedMediaTime) {
+        throw new Error(
+          `Browser presented video frames out of order: ${presentedFrame.mediaTime.toFixed(6)}s after ${lastPresentedMediaTime.toFixed(6)}s.`,
+        );
+      }
+      lastPresentedMediaTime = Math.max(lastPresentedMediaTime, presentedFrame.mediaTime);
       const rgb = rgbFromCurrentFrame(width, height);
       session.pushFrame(index, width, height, rgb);
       progress.value = index + 1;
-      status.textContent = `Analyzing sample ${index + 1} of ${sampleCount} · ${formatTime(time)}`;
+      status.textContent = `Analyzing sample ${index + 1} of ${sampleCount} · presented ${formatTime(presentedFrame.mediaTime)}`;
       if (index % 4 === 0) {
         await yieldToBrowser();
       }
