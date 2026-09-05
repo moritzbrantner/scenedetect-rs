@@ -270,7 +270,7 @@ fn default_payload(detector: &str) -> BrowserResult<serde_json::Value> {
                 "min_scene_len": common["min_scene_len"],
                 "min_scene_len_policy": common["min_scene_len_policy"],
                 "threshold": config.threshold,
-                "review_threshold": config.threshold * 0.8,
+                "review_threshold": null,
                 "luma_only": config.luma_only,
                 "weights": {
                     "hue": config.weights.hue,
@@ -287,7 +287,7 @@ fn default_payload(detector: &str) -> BrowserResult<serde_json::Value> {
                 "min_scene_len": common["min_scene_len"],
                 "min_scene_len_policy": common["min_scene_len_policy"],
                 "threshold": config.threshold,
-                "review_threshold": config.threshold * 0.8,
+                "review_threshold": null,
                 "min_content_val": config.min_content_val,
                 "frame_window": config.frame_window,
                 "luma_only": config.luma_only,
@@ -625,10 +625,7 @@ mod tests {
             content["threshold"],
             ContentDetectorConfig::default().threshold
         );
-        assert_eq!(
-            content["review_threshold"],
-            ContentDetectorConfig::default().threshold * 0.8
-        );
+        assert!(content["review_threshold"].is_null());
         assert_eq!(
             content["min_scene_len"],
             DetectionOptions::default().min_scene_len
