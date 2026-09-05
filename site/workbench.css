@@ -1,37 +1,12 @@
-.workbench-page {
+.workbench-page,
+.explanation-page {
   background: var(--bg);
-}
-
-.workbench-hero {
-  background: #101817;
-  border-top: 0;
-  color: #ffffff;
 }
 
 .workbench-shell {
   margin: 0 auto;
   max-width: 1160px;
-  padding: 56px 32px;
-}
-
-.workbench-hero .workbench-shell {
-  padding-bottom: 72px;
-  padding-top: 72px;
-}
-
-.workbench-hero h1 {
-  font-size: clamp(2.8rem, 7vw, 5rem);
-  max-width: 900px;
-}
-
-.workbench-lede {
-  color: rgba(255, 255, 255, 0.84);
-  font-size: 1.16rem;
-  max-width: 820px;
-}
-
-.workbench-lede code {
-  color: #ffffff;
+  padding: 52px 32px;
 }
 
 .workbench-section {
@@ -40,6 +15,42 @@
 
 .workbench-section:nth-of-type(even) {
   background: var(--surface-strong);
+}
+
+.input-section {
+  background: var(--surface) !important;
+}
+
+.workbench-intro {
+  align-items: end;
+  display: flex;
+  gap: 40px;
+  justify-content: space-between;
+}
+
+.workbench-intro > div {
+  min-width: 0;
+}
+
+.workbench-intro h1 {
+  font-size: clamp(2.2rem, 5vw, 3.8rem);
+  line-height: 1;
+  margin: 0;
+  max-width: 760px;
+}
+
+.workbench-context {
+  color: var(--muted);
+  margin: 0 0 4px;
+  max-width: 390px;
+}
+
+.input-layout {
+  align-items: start;
+  display: grid;
+  gap: 52px;
+  grid-template-columns: minmax(0, 2.15fr) minmax(260px, 0.85fr);
+  margin-top: 38px;
 }
 
 .workbench-grid,
@@ -59,6 +70,21 @@
   font-size: clamp(1.8rem, 4vw, 2.7rem);
 }
 
+.sampling-panel {
+  border-left: 1px solid var(--line);
+  padding-left: 30px;
+}
+
+.sampling-panel h2 {
+  font-size: 1.55rem;
+  margin-bottom: 10px;
+}
+
+.sampling-fields {
+  grid-template-columns: 1fr;
+  margin-top: 20px;
+}
+
 .support-text,
 .detector-section .section-heading p,
 .results-section .section-heading p {
@@ -71,18 +97,28 @@
   border-radius: 8px;
   cursor: pointer;
   display: flex;
-  justify-content: space-between;
-  margin: 20px 0 12px;
-  min-height: 62px;
-  padding: 12px 16px;
+  flex-direction: column;
+  justify-content: center;
+  margin: 0 0 12px;
+  min-height: 176px;
+  padding: 24px;
+  text-align: center;
 }
 
-.file-picker span {
+.file-picker-title {
+  font-size: 1.2rem;
   font-weight: 760;
 }
 
+.file-picker-note {
+  color: var(--muted);
+  font-size: 0.92rem;
+  margin-top: 4px;
+}
+
 .file-picker input {
-  max-width: 58%;
+  margin-top: 18px;
+  max-width: 100%;
 }
 
 #video-preview {
@@ -90,8 +126,12 @@
   border-radius: 8px;
   display: block;
   margin-top: 18px;
-  max-height: 420px;
+  max-height: 460px;
   width: 100%;
+}
+
+#video-preview:not([src]) {
+  display: none;
 }
 
 .field-grid {
@@ -460,12 +500,69 @@
   width: 2px;
 }
 
+.explanation-shell {
+  margin: 0 auto;
+  max-width: 860px;
+  padding: 56px 32px 84px;
+}
+
+.explanation-back {
+  display: inline-block;
+  font-weight: 700;
+  margin-bottom: 42px;
+  text-decoration: none;
+}
+
+.explanation-header {
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 36px;
+}
+
+.explanation-header h1 {
+  font-size: clamp(2.6rem, 6vw, 4.6rem);
+  line-height: 0.98;
+  margin-bottom: 22px;
+}
+
+.explanation-lede {
+  color: var(--muted);
+  font-size: 1.16rem;
+  max-width: 720px;
+}
+
+.explanation-content section {
+  border-top: 0;
+  padding: 38px 0 0;
+}
+
+.explanation-content h2 {
+  font-size: clamp(1.65rem, 3vw, 2.15rem);
+  margin-bottom: 12px;
+}
+
+.explanation-content p {
+  color: var(--muted);
+  max-width: 740px;
+}
+
+.explanation-content code {
+  color: var(--ink);
+}
+
 @media (max-width: 820px) {
-  .workbench-shell {
+  .workbench-shell,
+  .explanation-shell {
     padding-left: 20px;
     padding-right: 20px;
   }
 
+  .workbench-intro {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 18px;
+  }
+
+  .input-layout,
   .workbench-grid,
   .detector-layout,
   .field-grid,
@@ -475,14 +572,22 @@
     grid-template-columns: 1fr;
   }
 
+  .input-layout {
+    gap: 30px;
+  }
+
+  .sampling-panel {
+    border-left: 0;
+    border-top: 1px solid var(--line);
+    padding-left: 0;
+    padding-top: 28px;
+  }
+
   .file-picker {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 10px;
+    min-height: 150px;
   }
 
   .file-picker input {
-    max-width: 100%;
     width: 100%;
   }
 
