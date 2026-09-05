@@ -21,54 +21,54 @@
     </header>
 
     <main>
-      <section class="workbench-hero" aria-labelledby="workbench-heading">
+      <section class="workbench-section input-section" aria-labelledby="input-heading">
         <div class="workbench-shell">
-          <p class="eyebrow">Rust → WebAssembly</p>
-          <h1 id="workbench-heading">Run SceneDetect in your browser</h1>
-          <p class="workbench-lede">
-            Choose a video from your device, configure a detector, and run
-            <code>scenedetect-rs</code> without installing anything. Your video stays local:
-            this static GitHub Pages app does not upload media to a server.
-          </p>
-        </div>
-      </section>
-
-      <section class="workbench-section" aria-labelledby="input-heading">
-        <div class="workbench-shell workbench-grid">
-          <div class="workbench-panel">
-            <p class="eyebrow">1 · Video</p>
-            <h2 id="input-heading">Local input</h2>
-            <label class="file-picker" for="video-file">
-              <span>Choose a video</span>
-              <input id="video-file" type="file" accept="video/*" />
-            </label>
-            <p id="video-meta" class="support-text">No video selected.</p>
-            <video id="video-preview" controls muted playsinline></video>
-            <canvas id="analysis-canvas" hidden></canvas>
+          <div class="workbench-intro">
+            <div>
+              <p class="eyebrow">1 · Video</p>
+              <h1 id="input-heading">Run SceneDetect in your browser</h1>
+            </div>
+            <p class="workbench-context">
+              Your video stays local. The workbench runs on this device without uploading media.
+              <a href="browser-analysis.html">How browser analysis works</a>
+            </p>
           </div>
 
-          <div class="workbench-panel">
-            <p class="eyebrow">2 · Browser decode</p>
-            <h2>Sampling</h2>
-            <p class="support-text">
-              The browser decodes the local file and samples frames before passing RGB pixels to
-              Rust. Raise the sampling rate for finer boundary timing; lower it for faster analysis.
-            </p>
-            <div class="field-grid">
-              <label>
-                <span>Analysis frames / second</span>
-                <input id="analysis-fps" type="number" min="0.5" max="30" step="0.5" value="6" />
+          <div class="input-layout">
+            <div class="workbench-panel video-input-panel">
+              <label class="file-picker" for="video-file">
+                <span class="file-picker-title">Choose a video</span>
+                <span class="file-picker-note">Select a local video file to begin.</span>
+                <input id="video-file" type="file" accept="video/*" />
               </label>
-              <label>
-                <span>Maximum frame dimension</span>
-                <select id="max-dimension">
-                  <option value="160">160 px</option>
-                  <option value="320" selected>320 px</option>
-                  <option value="480">480 px</option>
-                  <option value="640">640 px</option>
-                </select>
-              </label>
+              <p id="video-meta" class="support-text">No video selected.</p>
+              <video id="video-preview" controls muted playsinline></video>
+              <canvas id="analysis-canvas" hidden></canvas>
             </div>
+
+            <aside class="workbench-panel sampling-panel" aria-labelledby="sampling-heading">
+              <p class="eyebrow">2 · Sampling</p>
+              <h2 id="sampling-heading">Browser decode</h2>
+              <p class="support-text">
+                Choose how densely the browser samples the local video before passing RGB pixels to
+                Rust. Higher rates improve boundary timing; lower rates analyze faster.
+              </p>
+              <div class="field-grid sampling-fields">
+                <label>
+                  <span>Analysis frames / second</span>
+                  <input id="analysis-fps" type="number" min="0.5" max="30" step="0.5" value="6" />
+                </label>
+                <label>
+                  <span>Maximum frame dimension</span>
+                  <select id="max-dimension">
+                    <option value="160">160 px</option>
+                    <option value="320" selected>320 px</option>
+                    <option value="480">480 px</option>
+                    <option value="640">640 px</option>
+                  </select>
+                </label>
+              </div>
+            </aside>
           </div>
         </div>
       </section>
