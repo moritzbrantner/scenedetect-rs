@@ -1,0 +1,176 @@
+.workbench-start .workbench-shell {
+  padding-bottom: 56px;
+  padding-top: 48px;
+}
+
+.entry-heading {
+  margin: 0 auto 34px;
+  max-width: 720px;
+  text-align: center;
+}
+
+.entry-heading h1 {
+  font-size: clamp(2.2rem, 5vw, 3.8rem);
+  margin-bottom: 14px;
+}
+
+.entry-heading .support-text {
+  font-size: 1rem;
+  margin-left: auto;
+  margin-right: auto;
+  max-width: 640px;
+}
+
+.entry-heading .text-link,
+.explanation-return .text-link {
+  font-weight: 760;
+}
+
+.input-layout {
+  align-items: start;
+  display: grid;
+  gap: 48px;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  margin: 0 auto;
+  max-width: 980px;
+}
+
+.upload-panel {
+  min-width: 0;
+}
+
+.upload-panel .file-picker {
+  align-items: center;
+  flex-direction: column;
+  gap: 10px;
+  justify-content: center;
+  margin: 0;
+  min-height: 190px;
+  padding: 28px;
+  text-align: center;
+}
+
+.file-picker-title {
+  font-size: 1.3rem;
+}
+
+.file-picker-copy {
+  color: var(--muted);
+  font-size: 0.92rem;
+  font-weight: 400 !important;
+  max-width: 420px;
+}
+
+.upload-panel .file-picker input {
+  margin-top: 8px;
+  max-width: 100%;
+}
+
+.upload-panel #video-meta {
+  margin: 12px 0 0;
+  text-align: center;
+}
+
+#video-preview:not([src]) {
+  display: none;
+}
+
+.sampling-panel {
+  border-left: 1px solid var(--line);
+  min-width: 0;
+  padding-left: 28px;
+}
+
+.sampling-panel .eyebrow {
+  margin-bottom: 6px;
+}
+
+.sampling-panel h2 {
+  font-size: 1.3rem;
+  margin-bottom: 10px;
+}
+
+.sampling-panel .support-text {
+  font-size: 0.9rem;
+  line-height: 1.55;
+}
+
+.sampling-fields {
+  grid-template-columns: 1fr;
+  margin-top: 18px;
+}
+
+.explanation-main {
+  background: var(--surface);
+}
+
+.explanation-shell {
+  max-width: 840px;
+}
+
+.explanation-shell > h1 {
+  font-size: clamp(2.3rem, 6vw, 4.4rem);
+  max-width: 760px;
+}
+
+.explanation-lede {
+  color: var(--muted);
+  font-size: 1.12rem;
+  line-height: 1.65;
+  margin: 20px 0 52px;
+  max-width: 760px;
+}
+
+.explanation-section {
+  border-top: 1px solid var(--line);
+  padding: 28px 0 30px;
+}
+
+.explanation-section h2 {
+  font-size: clamp(1.45rem, 3vw, 2rem);
+  margin-bottom: 10px;
+}
+
+.explanation-section p {
+  color: var(--muted);
+  margin: 0;
+  max-width: 720px;
+}
+
+.explanation-return {
+  border-top: 1px solid var(--line);
+  margin: 0;
+  padding-top: 30px;
+}
+
+@media (max-width: 820px) {
+  .workbench-start .workbench-shell {
+    padding-top: 36px;
+  }
+
+  .entry-heading {
+    text-align: left;
+  }
+
+  .input-layout {
+    gap: 30px;
+    grid-template-columns: 1fr;
+  }
+
+  .upload-panel .file-picker {
+    align-items: stretch;
+    min-height: 150px;
+    text-align: left;
+  }
+
+  .upload-panel #video-meta {
+    text-align: left;
+  }
+
+  .sampling-panel {
+    border-left: 0;
+    border-top: 1px solid var(--line);
+    padding-left: 0;
+    padding-top: 24px;
+  }
+}
