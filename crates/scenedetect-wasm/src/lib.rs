@@ -185,8 +185,10 @@ fn build_browser_output(detection: DetectionResult) -> BrowserResult<Vec<u8>> {
     let mut stats_csv = Vec::new();
     let mut scene_list_html = Vec::new();
 
-    write_scene_list_csv(&detection.scene_list, &mut scene_list_csv).map_err(|error| error.to_string())?;
-    write_scene_list_json(&detection.scene_list, &mut scene_list_json).map_err(|error| error.to_string())?;
+    write_scene_list_csv(&detection.scene_list, &mut scene_list_csv)
+        .map_err(|error| error.to_string())?;
+    write_scene_list_json(&detection.scene_list, &mut scene_list_json)
+        .map_err(|error| error.to_string())?;
     write_scene_events_ndjson(&detection.scene_list, &mut scene_events_ndjson)
         .map_err(|error| error.to_string())?;
     write_stats_csv(&detection.stats, &mut stats_csv).map_err(|error| error.to_string())?;
@@ -197,11 +199,13 @@ fn build_browser_output(detection: DetectionResult) -> BrowserResult<Vec<u8>> {
         detection,
         exports: BrowserExports {
             scene_list_csv: String::from_utf8(scene_list_csv).map_err(|error| error.to_string())?,
-            scene_list_json: String::from_utf8(scene_list_json).map_err(|error| error.to_string())?,
+            scene_list_json: String::from_utf8(scene_list_json)
+                .map_err(|error| error.to_string())?,
             scene_events_ndjson: String::from_utf8(scene_events_ndjson)
                 .map_err(|error| error.to_string())?,
             stats_csv: String::from_utf8(stats_csv).map_err(|error| error.to_string())?,
-            scene_list_html: String::from_utf8(scene_list_html).map_err(|error| error.to_string())?,
+            scene_list_html: String::from_utf8(scene_list_html)
+                .map_err(|error| error.to_string())?,
         },
     };
     serde_json::to_vec(&output).map_err(|error| error.to_string())
@@ -540,7 +544,10 @@ mod tests {
     #[test]
     fn defaults_are_derived_from_core_detector_defaults() {
         let content = default_payload("content").unwrap();
-        assert_eq!(content["threshold"], ContentDetectorConfig::default().threshold);
+        assert_eq!(
+            content["threshold"],
+            ContentDetectorConfig::default().threshold
+        );
         assert_eq!(
             content["min_scene_len"],
             DetectionOptions::default().min_scene_len
