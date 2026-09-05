@@ -1,13 +1,13 @@
 use std::collections::VecDeque;
 
 use super::{
-    build_boundary_review, build_scene_list, content_score, emit_ready_adaptive_rows, hash_distance,
-    histogram_correlation, luma_histogram, perceptual_hash, round_half_to_even,
+    build_boundary_review, build_scene_list, content_score, emit_ready_adaptive_rows,
+    hash_distance, histogram_correlation, luma_histogram, perceptual_hash, round_half_to_even,
     AdaptiveDetectorConfig, AdaptiveSample, BoundaryCandidateSeed, BoundaryCandidateStatus,
-    BoundaryReview, BoundaryReviewOptions, ContentDetectorConfig, DetectionOptions, DetectionResult,
-    DetectionStats, DetectionStatsSink, DetectorConfig, FadeType, Frame, FrameIndex, FrameRate,
-    HashDetectorConfig, HistogramDetectorConfig, Result, SceneBoundary, SceneDetectError, StatsRow,
-    ThresholdDetectorConfig,
+    BoundaryReview, BoundaryReviewOptions, ContentDetectorConfig, DetectionOptions,
+    DetectionResult, DetectionStats, DetectionStatsSink, DetectorConfig, FadeType, Frame,
+    FrameIndex, FrameRate, HashDetectorConfig, HistogramDetectorConfig, Result, SceneBoundary,
+    SceneDetectError, StatsRow, ThresholdDetectorConfig,
 };
 
 /// Incremental scene detection for consumers which already own frame decoding.
