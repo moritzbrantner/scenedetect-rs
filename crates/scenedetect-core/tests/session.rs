@@ -174,6 +174,14 @@ fn incremental_boundary_review_matches_streaming_review_for_content_and_adaptive
                 review_threshold: Some(2.0),
             },
         ),
+        (
+            DetectorConfig::Content(ContentDetectorConfig {
+                threshold: 40.0,
+                ..Default::default()
+            }),
+            frames(&[[0, 0, 0], [70, 70, 70], [200, 200, 200], [200, 200, 200]]),
+            BoundaryReviewOptions::default(),
+        ),
     ];
 
     for (detector, case_frames, review_options) in cases {
@@ -198,11 +206,14 @@ fn incremental_boundary_review_matches_streaming_review_for_content_and_adaptive
                 .expect("incremental frame should be accepted");
         }
         let (detection, incremental) = session
-            .finish_with_boundary_review(review_options)
+            .finish_with_boundary_review(review_options.clone())
             .expect("incremental boundary review should succeed");
         let batch = detect_frames(detector, frame_rate, &case_frames, options)
             .expect("batch detection should succeed");
 
+        if review_options.review_threshold.is_none() {
+            assert_eq!(incremental.review_threshold, 32.0);
+        }
         assert_eq!(detection, batch);
         assert_eq!(incremental, streaming);
     }
