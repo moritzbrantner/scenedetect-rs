@@ -13,6 +13,7 @@ SITE_DIR = ROOT_DIR / "site"
 INDEX_PATH = SITE_DIR / "index.html"
 WORKBENCH_PATH = SITE_DIR / "workbench.html"
 WORKBENCH_JS_PATH = SITE_DIR / "workbench.js"
+VIDEO_FRAME_SYNC_PATH = SITE_DIR / "video-frame-sync.js"
 WASM_LOADER_PATH = SITE_DIR / "scenedetect-wasm.js"
 BENCHMARK_PATH = SITE_DIR / "data" / "benchmarks.json"
 PAGES_WORKFLOW = ROOT_DIR / ".github" / "workflows" / "pages.yml"
@@ -103,6 +104,7 @@ def check_pages_workflow() -> None:
         "rustup target add wasm32-unknown-unknown",
         "cargo build --locked -p scenedetect-wasm --target wasm32-unknown-unknown --release",
         "site/wasm/scenedetect_wasm.wasm",
+        "node --check site/video-frame-sync.js",
     ]
     for value in required:
         if value not in workflow:
@@ -161,6 +163,9 @@ def check_workbench() -> None:
     workbench_js = read_text(WORKBENCH_JS_PATH)
     for value in (
         'from "./scenedetect-wasm.js"',
+        'from "./video-frame-sync.js"',
+        "seekPresentedVideoFrame",
+        "presentedFrame.mediaTime",
         "createSession",
         "pushFrame",
         "scene_list_csv",
@@ -179,6 +184,19 @@ def check_workbench() -> None:
         if detector_name not in workbench_js:
             raise SiteCheckError(
                 f"site/workbench.js missing detector configuration: {detector_name}"
+            )
+
+    frame_sync = read_text(VIDEO_FRAME_SYNC_PATH)
+    for value in (
+        "requestVideoFrameCallback",
+        "cancelVideoFrameCallback",
+        "metadata.mediaTime",
+        'synchronization: "video-frame-callback"',
+        'synchronization: "animation-frame-fallback"',
+    ):
+        if value not in frame_sync:
+            raise SiteCheckError(
+                f"site/video-frame-sync.js missing presentation contract marker: {value}"
             )
 
     wasm_loader = read_text(WASM_LOADER_PATH)
