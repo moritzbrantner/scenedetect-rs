@@ -59,13 +59,13 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy --locked --workspace --all-targets -- -D warnings
 
       - name: WebAssembly build
-        run: cargo build -p scenedetect-wasm --target wasm32-unknown-unknown
+        run: cargo build --locked -p scenedetect-wasm --target wasm32-unknown-unknown
 
       - name: Tests
-        run: cargo test --workspace
+        run: cargo test --locked --workspace
 
       - name: Verify PySceneDetect oracle setup
         run: scripts/setup-python-oracle.sh

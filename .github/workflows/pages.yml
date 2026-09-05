@@ -31,7 +31,7 @@ jobs:
 
       - name: Build browser WebAssembly
         run: |
-          cargo build -p scenedetect-wasm --target wasm32-unknown-unknown --release
+          cargo build --locked -p scenedetect-wasm --target wasm32-unknown-unknown --release
           mkdir -p site/wasm
           cp target/wasm32-unknown-unknown/release/scenedetect_wasm.wasm site/wasm/scenedetect_wasm.wasm
           test -s site/wasm/scenedetect_wasm.wasm
