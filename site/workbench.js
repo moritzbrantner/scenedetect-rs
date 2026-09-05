@@ -1,3 +1,4 @@
+import { createResultsOverview } from "./review-overview.js";
 import { createSceneDetect } from "./scenedetect-wasm.js";
 import { seekPresentedVideoFrame } from "./video-frame-sync.js";
 
@@ -127,6 +128,16 @@ function formatCandidateStatus(value) {
   }
   return value;
 }
+
+const resultsOverview = createResultsOverview({
+  video,
+  sceneRows,
+  boundaryRows,
+  boundaryReview,
+  boundaryReviewSummary,
+  formatTime,
+  formatCandidateStatus,
+});
 
 function updateRunState() {
   runButton.disabled = running || !sceneDetect || !videoFile.files?.[0];
@@ -268,43 +279,7 @@ function yieldToBrowser() {
 }
 
 function renderBoundaryReview(review, fps) {
-  boundaryRows.replaceChildren();
-  if (!review) {
-    boundaryReview.hidden = true;
-    return;
-  }
-
-  boundaryReview.hidden = false;
-  boundaryReviewSummary.textContent = `Rust ranked ${review.candidates.length} boundary candidate${
-    review.candidates.length === 1 ? "" : "s"
-  } by distance from the ${review.detector_threshold.toFixed(3)} detector threshold, using a ${review.review_threshold.toFixed(3)} review threshold.`;
-
-  review.candidates.forEach((candidate, index) => {
-    const row = document.createElement("tr");
-    const values = [
-      index + 1,
-      formatCandidateStatus(candidate.status),
-      candidate.frame,
-      formatTime(Math.min(video.duration, candidate.frame / fps)),
-      Number(candidate.score).toFixed(6),
-      Number(candidate.threshold_distance).toFixed(6),
-    ];
-    for (const value of values) {
-      const cell = document.createElement("td");
-      cell.textContent = String(value);
-      row.append(cell);
-    }
-
-    const previewCell = document.createElement("td");
-    const previewButton = document.createElement("button");
-    previewButton.type = "button";
-    previewButton.className = "action-button";
-    previewButton.dataset.boundaryFrame = String(candidate.frame);
-    previewButton.textContent = "Seek";
-    previewCell.append(previewButton);
-    row.append(previewCell);
-    boundaryRows.append(row);
-  });
+  resultsOverview.renderBoundaryReview(review, fps);
 }
 
 function renderResults(output, fps) {
@@ -316,25 +291,7 @@ function renderResults(output, fps) {
     scenes.length === 1 ? "" : "s"
   } from ${sampledFrames} browser-decoded samples at ${fps} fps. Boundary times below are in the sampled browser timeline.`;
 
-  sceneRows.replaceChildren();
-  scenes.forEach((scene, index) => {
-    const row = document.createElement("tr");
-    const values = [
-      index + 1,
-      scene.start,
-      formatTime(Math.min(video.duration, scene.start / fps)),
-      scene.end,
-      formatTime(Math.min(video.duration, scene.end / fps)),
-      formatTime((scene.end - scene.start) / fps),
-    ];
-    for (const value of values) {
-      const cell = document.createElement("td");
-      cell.textContent = String(value);
-      row.append(cell);
-    }
-    sceneRows.append(row);
-  });
-
+  resultsOverview.renderScenes(scenes, fps);
   renderBoundaryReview(output.boundary_review, fps);
   resultsSection.hidden = false;
   resultsSection.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -426,6 +383,7 @@ async function runAnalysis() {
   running = true;
   currentOutput = null;
   currentResultFps = null;
+  resultsOverview.reset();
   resultsSection.hidden = true;
   boundaryReview.hidden = true;
   progress.max = sampleCount;
@@ -482,6 +440,7 @@ async function runAnalysis() {
 videoFile.addEventListener("change", () => {
   currentOutput = null;
   currentResultFps = null;
+  resultsOverview.reset();
   resultsSection.hidden = true;
   boundaryReview.hidden = true;
   if (objectUrl) {
