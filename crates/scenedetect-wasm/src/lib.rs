@@ -14,9 +14,9 @@ const OK: i32 = 0;
 const ERROR: i32 = -1;
 
 thread_local! {
-    static SESSIONS: RefCell<Vec<Option<DetectionSession>>> = RefCell::new(Vec::new());
-    static LAST_RESULT: RefCell<Vec<u8>> = RefCell::new(Vec::new());
-    static LAST_ERROR: RefCell<Vec<u8>> = RefCell::new(Vec::new());
+    static SESSIONS: RefCell<Vec<Option<DetectionSession>>> = const { RefCell::new(Vec::new()) };
+    static LAST_RESULT: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
+    static LAST_ERROR: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
 }
 
 type BrowserResult<T> = std::result::Result<T, String>;
@@ -373,8 +373,14 @@ pub extern "C" fn scenedetect_alloc(len: usize) -> *mut u8 {
     ptr
 }
 
+/// Releases an input buffer previously returned by [`scenedetect_alloc`].
+///
+/// # Safety
+///
+/// `ptr` must be the live pointer returned by `scenedetect_alloc(len)` for the same `len`, and
+/// the allocation must not have been released already.
 #[no_mangle]
-pub extern "C" fn scenedetect_dealloc(ptr: *mut u8, len: usize) {
+pub unsafe extern "C" fn scenedetect_dealloc(ptr: *mut u8, len: usize) {
     if ptr.is_null() || len == 0 {
         return;
     }
