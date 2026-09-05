@@ -151,6 +151,9 @@ def check_workbench() -> None:
         "Histogram",
         "Perceptual hash",
         "Detector stats CSV",
+        "Ranked boundary candidates",
+        "Boundary review CSV",
+        "Boundary review JSON",
     ):
         if text not in html:
             raise SiteCheckError(f"site/workbench.html missing expected content: {text}")
@@ -165,6 +168,10 @@ def check_workbench() -> None:
         "scene_events_ndjson",
         "stats_csv",
         "scene_list_html",
+        "review_threshold",
+        "boundary_review_csv",
+        "boundary_review_json",
+        "data-boundary-frame",
     ):
         if value not in workbench_js:
             raise SiteCheckError(f"site/workbench.js missing browser contract marker: {value}")
