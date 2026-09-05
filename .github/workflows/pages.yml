@@ -23,6 +23,19 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Install Rust WebAssembly target
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add wasm32-unknown-unknown
+
+      - name: Build browser WebAssembly
+        run: |
+          cargo build -p scenedetect-wasm --target wasm32-unknown-unknown --release
+          mkdir -p site/wasm
+          cp target/wasm32-unknown-unknown/release/scenedetect_wasm.wasm site/wasm/scenedetect_wasm.wasm
+          test -s site/wasm/scenedetect_wasm.wasm
+
       - name: Check site
         run: python3 scripts/check-site.py
 

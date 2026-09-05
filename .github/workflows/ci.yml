@@ -31,6 +31,7 @@ jobs:
         run: |
           rustup toolchain install stable --profile minimal --component rustfmt --component clippy
           rustup default stable
+          rustup target add wasm32-unknown-unknown
 
       - name: Install Bun
         uses: oven-sh/setup-bun@v2
@@ -59,6 +60,9 @@ jobs:
 
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: WebAssembly build
+        run: cargo build -p scenedetect-wasm --target wasm32-unknown-unknown
 
       - name: Tests
         run: cargo test --workspace

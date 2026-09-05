@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SceneDetect browser workbench</title>
+    <meta
+      name="description"
+      content="Run scenedetect-rs locally in your browser with Rust compiled to WebAssembly."
+    />
+    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="workbench.css" />
+  </head>
+  <body class="workbench-page">
+    <header class="site-header" aria-label="Project navigation">
+      <a class="brand" href="index.html">scenedetect-rs</a>
+      <nav aria-label="Primary navigation">
+        <a href="index.html">Project</a>
+        <a href="https://github.com/moritzbrantner/scenedetect-rs">Source</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="workbench-hero" aria-labelledby="workbench-heading">
+        <div class="workbench-shell">
+          <p class="eyebrow">Rust → WebAssembly</p>
+          <h1 id="workbench-heading">Run SceneDetect in your browser</h1>
+          <p class="workbench-lede">
+            Choose a video from your device, configure a detector, and run
+            <code>scenedetect-rs</code> without installing anything. Your video stays local:
+            this static GitHub Pages app does not upload media to a server.
+          </p>
+        </div>
+      </section>
+
+      <section class="workbench-section" aria-labelledby="input-heading">
+        <div class="workbench-shell workbench-grid">
+          <div class="workbench-panel">
+            <p class="eyebrow">1 · Video</p>
+            <h2 id="input-heading">Local input</h2>
+            <label class="file-picker" for="video-file">
+              <span>Choose a video</span>
+              <input id="video-file" type="file" accept="video/*" />
+            </label>
+            <p id="video-meta" class="support-text">No video selected.</p>
+            <video id="video-preview" controls muted playsinline></video>
+            <canvas id="analysis-canvas" hidden></canvas>
+          </div>
+
+          <div class="workbench-panel">
+            <p class="eyebrow">2 · Browser decode</p>
+            <h2>Sampling</h2>
+            <p class="support-text">
+              The browser decodes the local file and samples frames before passing RGB pixels to
+              Rust. Raise the sampling rate for finer boundary timing; lower it for faster analysis.
+            </p>
+            <div class="field-grid">
+              <label>
+                <span>Analysis frames / second</span>
+                <input id="analysis-fps" type="number" min="0.5" max="30" step="0.5" value="6" />
+              </label>
+              <label>
+                <span>Maximum frame dimension</span>
+                <select id="max-dimension">
+                  <option value="160">160 px</option>
+                  <option value="320" selected>320 px</option>
+                  <option value="480">480 px</option>
+                  <option value="640">640 px</option>
+                </select>
+              </label>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="workbench-section detector-section" aria-labelledby="detector-heading">
+        <div class="workbench-shell">
+          <div class="section-heading">
+            <p class="eyebrow">3 · Rust detector</p>
+            <h2 id="detector-heading">Detection configuration</h2>
+            <p>
+              Defaults below come from the compiled Rust detector types. Scene scoring,
+              thresholds, adaptive windows, fade handling, minimum scene length, and final scene
+              construction all execute in <code>scenedetect-core</code>.
+            </p>
+          </div>
+
+          <div class="detector-layout">
+            <div class="field-grid detector-primary-fields">
+              <label>
+                <span>Detector</span>
+                <select id="detector">
+                  <option value="content">Content</option>
+                  <option value="adaptive">Adaptive</option>
+                  <option value="threshold">Threshold / fades</option>
+                  <option value="histogram">Histogram</option>
+                  <option value="hash">Perceptual hash</option>
+                </select>
+              </label>
+              <label>
+                <span>Minimum scene length (sampled frames)</span>
+                <input id="min-scene-len" type="number" min="0" step="1" value="15" />
+                <small id="min-scene-time">At 6 fps: 2.50 seconds.</small>
+              </label>
+              <label>
+                <span>Short final scene policy</span>
+                <select id="min-scene-policy">
+                  <option value="suppress">Suppress close boundaries</option>
+                  <option value="merge_last">Merge short final scene</option>
+                </select>
+              </label>
+            </div>
+
+            <div id="detector-controls" class="field-grid detector-fields" aria-live="polite"></div>
+          </div>
+
+          <div class="run-row">
+            <button id="run-analysis" class="action-button primary-action" type="button" disabled>
+              Analyze video
+            </button>
+            <button id="cancel-analysis" class="action-button" type="button" disabled>
+              Cancel
+            </button>
+            <div class="progress-area">
+              <progress id="analysis-progress" max="1" value="0"></progress>
+              <p id="analysis-status" role="status">Loading SceneDetect WebAssembly…</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="results" class="workbench-section results-section" aria-labelledby="results-heading" hidden>
+        <div class="workbench-shell">
+          <div class="section-heading">
+            <p class="eyebrow">4 · Results</p>
+            <h2 id="results-heading">Scene list</h2>
+            <p id="result-summary"></p>
+          </div>
+
+          <div class="export-row" aria-label="Download Rust exports">
+            <button type="button" class="action-button" data-export="scene_list_csv">Scene list CSV</button>
+            <button type="button" class="action-button" data-export="scene_list_json">Scene list JSON</button>
+            <button type="button" class="action-button" data-export="scene_events_ndjson">Scene events NDJSON</button>
+            <button type="button" class="action-button" data-export="stats_csv">Detector stats CSV</button>
+            <button type="button" class="action-button" data-export="scene_list_html">Scene list HTML</button>
+            <button type="button" class="action-button" data-export="detection_json">Detection result JSON</button>
+          </div>
+
+          <div class="table-frame result-table-frame">
+            <table class="result-table">
+              <thead>
+                <tr>
+                  <th scope="col">Scene</th>
+                  <th scope="col">Start sample</th>
+                  <th scope="col">Start time</th>
+                  <th scope="col">End sample</th>
+                  <th scope="col">End time</th>
+                  <th scope="col">Length</th>
+                </tr>
+              </thead>
+              <tbody id="scene-rows"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <span>scenedetect-rs browser workbench</span>
+      <span>Video processing stays on this device</span>
+    </footer>
+
+    <script type="module" src="workbench.js"></script>
+  </body>
+</html>
