@@ -12,6 +12,8 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 SITE_DIR = ROOT_DIR / "site"
 INDEX_PATH = SITE_DIR / "index.html"
 WORKBENCH_PATH = SITE_DIR / "workbench.html"
+WORKBENCH_ENTRY_CSS_PATH = SITE_DIR / "workbench-entry.css"
+HOW_IT_WORKS_PATH = SITE_DIR / "how-it-works.html"
 WORKBENCH_JS_PATH = SITE_DIR / "workbench.js"
 REVIEW_OVERVIEW_PATH = SITE_DIR / "review-overview.js"
 VIDEO_FRAME_SYNC_PATH = SITE_DIR / "video-frame-sync.js"
@@ -143,12 +145,18 @@ def check_workbench() -> None:
     html = read_text(WORKBENCH_PATH)
     require_reference(html, "styles.css", "site/workbench.html")
     require_reference(html, "workbench.css", "site/workbench.html")
+    require_reference(html, "workbench-entry.css", "site/workbench.html")
+    require_reference(html, "how-it-works.html", "site/workbench.html")
     require_reference(html, "workbench.js", "site/workbench.html")
     if not re.search(r"<main\b", html):
         raise SiteCheckError("site/workbench.html must contain a main landmark")
+    if "workbench-hero" in html:
+        raise SiteCheckError("site/workbench.html must keep the workflow above explanatory hero content")
     for text in (
+        "Choose a video",
         "Run SceneDetect in your browser",
         "Your video stays local",
+        "Browser decode",
         "Content",
         "Adaptive",
         "Threshold / fades",
@@ -161,6 +169,11 @@ def check_workbench() -> None:
     ):
         if text not in html:
             raise SiteCheckError(f"site/workbench.html missing expected content: {text}")
+
+    entry_css = read_text(WORKBENCH_ENTRY_CSS_PATH)
+    for value in (".input-layout", ".sampling-panel", "#video-preview:not([src])"):
+        if value not in entry_css:
+            raise SiteCheckError(f"site/workbench-entry.css missing entry layout marker: {value}")
 
     workbench_js = read_text(WORKBENCH_JS_PATH)
     for value in (
@@ -239,10 +252,30 @@ def check_workbench() -> None:
             raise SiteCheckError(f"site/scenedetect-wasm.js missing WASM contract marker: {value}")
 
 
+def check_how_it_works() -> None:
+    html = read_text(HOW_IT_WORKS_PATH)
+    require_reference(html, "styles.css", "site/how-it-works.html")
+    require_reference(html, "workbench.css", "site/how-it-works.html")
+    require_reference(html, "workbench-entry.css", "site/how-it-works.html")
+    require_reference(html, "workbench.html", "site/how-it-works.html")
+    if not re.search(r"<main\b", html):
+        raise SiteCheckError("site/how-it-works.html must contain a main landmark")
+    for text in (
+        "How local SceneDetect analysis works",
+        "Your video stays on this device",
+        "Rust owns detection semantics",
+        "requestVideoFrameCallback",
+        "native FFmpeg",
+    ):
+        if text not in html:
+            raise SiteCheckError(f"site/how-it-works.html missing expected content: {text}")
+
+
 def main() -> int:
     try:
         check_index()
         check_workbench()
+        check_how_it_works()
         check_benchmark_snapshot()
         check_pages_workflow()
     except SiteCheckError as error:
