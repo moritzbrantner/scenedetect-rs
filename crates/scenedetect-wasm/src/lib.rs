@@ -153,7 +153,10 @@ impl BrowserConfig {
     }
 
     fn review_options(&self, detector: &DetectorConfig) -> Option<BoundaryReviewOptions> {
-        if matches!(detector, DetectorConfig::Content(_) | DetectorConfig::Adaptive(_)) {
+        if matches!(
+            detector,
+            DetectorConfig::Content(_) | DetectorConfig::Adaptive(_)
+        ) {
             Some(BoundaryReviewOptions {
                 review_threshold: self.review_threshold,
             })
