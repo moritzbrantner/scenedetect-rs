@@ -12,6 +12,7 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 SITE_DIR = ROOT_DIR / "site"
 INDEX_PATH = SITE_DIR / "index.html"
 WORKBENCH_PATH = SITE_DIR / "workbench.html"
+BROWSER_ANALYSIS_PATH = SITE_DIR / "browser-analysis.html"
 WORKBENCH_JS_PATH = SITE_DIR / "workbench.js"
 REVIEW_OVERVIEW_PATH = SITE_DIR / "review-overview.js"
 VIDEO_FRAME_SYNC_PATH = SITE_DIR / "video-frame-sync.js"
@@ -139,11 +140,31 @@ def check_index() -> None:
             raise SiteCheckError(f"site/index.html missing expected content: {text}")
 
 
+def check_browser_analysis() -> None:
+    html = read_text(BROWSER_ANALYSIS_PATH)
+    require_reference(html, "styles.css", "site/browser-analysis.html")
+    require_reference(html, "workbench.css", "site/browser-analysis.html")
+    require_reference(html, "workbench.html", "site/browser-analysis.html")
+    if not re.search(r"<main\b", html):
+        raise SiteCheckError("site/browser-analysis.html must contain a main landmark")
+    for text in (
+        "How SceneDetect runs locally in the browser",
+        "Local media stays local",
+        "The browser owns decode and sampling",
+        "Rust owns scene-detection semantics",
+        "requestVideoFrameCallback()",
+        "does not claim native",
+    ):
+        if text not in html:
+            raise SiteCheckError(f"site/browser-analysis.html missing expected content: {text}")
+
+
 def check_workbench() -> None:
     html = read_text(WORKBENCH_PATH)
     require_reference(html, "styles.css", "site/workbench.html")
     require_reference(html, "workbench.css", "site/workbench.html")
     require_reference(html, "workbench.js", "site/workbench.html")
+    require_reference(html, "browser-analysis.html", "site/workbench.html")
     if not re.search(r"<main\b", html):
         raise SiteCheckError("site/workbench.html must contain a main landmark")
     for text in (
@@ -243,6 +264,7 @@ def main() -> int:
     try:
         check_index()
         check_workbench()
+        check_browser_analysis()
         check_benchmark_snapshot()
         check_pages_workflow()
     except SiteCheckError as error:
