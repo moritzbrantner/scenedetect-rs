@@ -44,12 +44,7 @@ impl DetectionSession {
         let (boundaries, total_frames) = self
             .state
             .finish(self.options.min_scene_len, &mut self.stats)?;
-        let scene_list = build_scene_list(
-            self.frame_rate,
-            total_frames,
-            boundaries,
-            self.options,
-        );
+        let scene_list = build_scene_list(self.frame_rate, total_frames, boundaries, self.options);
         Ok(DetectionResult {
             scene_list,
             stats: self.stats,
@@ -182,9 +177,9 @@ impl SessionState {
                 boundaries,
                 total_frames,
             } => {
-                let content_val = previous
-                    .as_ref()
-                    .map_or(0.0, |previous| content_score(previous, &frame, &config.weights, config.luma_only));
+                let content_val = previous.as_ref().map_or(0.0, |previous| {
+                    content_score(previous, &frame, &config.weights, config.luma_only)
+                });
                 stats.rows.push(StatsRow {
                     frame: frame.index,
                     metrics: std::collections::BTreeMap::from([(
@@ -212,9 +207,9 @@ impl SessionState {
                 boundaries,
                 total_frames,
             } => {
-                let content_val = previous
-                    .as_ref()
-                    .map_or(0.0, |previous| content_score(previous, &frame, &config.weights, config.luma_only));
+                let content_val = previous.as_ref().map_or(0.0, |previous| {
+                    content_score(previous, &frame, &config.weights, config.luma_only)
+                });
                 samples.push_back(AdaptiveSample {
                     position: *total_frames,
                     frame: frame.index,
@@ -250,10 +245,7 @@ impl SessionState {
                 let luma = frame.mean_luma();
                 stats.rows.push(StatsRow {
                     frame: frame.index,
-                    metrics: std::collections::BTreeMap::from([(
-                        "average_rgb".to_owned(),
-                        luma,
-                    )]),
+                    metrics: std::collections::BTreeMap::from([("average_rgb".to_owned(), luma)]),
                 });
 
                 let frame_number = frame.index.0;
@@ -305,10 +297,7 @@ impl SessionState {
                     .map_or(0.0, |previous| histogram_correlation(previous, &histogram));
                 stats.rows.push(StatsRow {
                     frame: frame.index,
-                    metrics: std::collections::BTreeMap::from([(
-                        metric_name.clone(),
-                        hist_diff,
-                    )]),
+                    metrics: std::collections::BTreeMap::from([(metric_name.clone(), hist_diff)]),
                 });
 
                 let frame_number = frame.index.0;
@@ -338,10 +327,7 @@ impl SessionState {
                     .map_or(0.0, |previous| hash_distance(previous, &frame_hash));
                 stats.rows.push(StatsRow {
                     frame: frame.index,
-                    metrics: std::collections::BTreeMap::from([(
-                        metric_name.clone(),
-                        hash_dist,
-                    )]),
+                    metrics: std::collections::BTreeMap::from([(metric_name.clone(), hash_dist)]),
                 });
 
                 let frame_number = frame.index.0;
