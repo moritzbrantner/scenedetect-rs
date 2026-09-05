@@ -19,12 +19,16 @@ const status = document.getElementById("analysis-status");
 const resultsSection = document.getElementById("results");
 const resultSummary = document.getElementById("result-summary");
 const sceneRows = document.getElementById("scene-rows");
+const boundaryReview = document.getElementById("boundary-review");
+const boundaryReviewSummary = document.getElementById("boundary-review-summary");
+const boundaryRows = document.getElementById("boundary-rows");
 
 const MAX_SAMPLES = 200_000;
 
 const detectorFields = {
   content: [
     { key: "threshold", label: "Content threshold", step: "0.1", min: "0" },
+    { key: "review_threshold", label: "Boundary review threshold", step: "0.1", min: "0" },
     { key: "luma_only", label: "Luma only", type: "checkbox" },
     { key: "weights.hue", label: "Hue weight", step: "0.1", min: "0" },
     { key: "weights.saturation", label: "Saturation weight", step: "0.1", min: "0" },
@@ -33,6 +37,7 @@ const detectorFields = {
   ],
   adaptive: [
     { key: "threshold", label: "Adaptive ratio threshold", step: "0.1", min: "0" },
+    { key: "review_threshold", label: "Boundary review threshold", step: "0.1", min: "0" },
     { key: "min_content_val", label: "Minimum content value", step: "0.1", min: "0" },
     { key: "frame_window", label: "Frame window", step: "1", min: "1" },
     { key: "luma_only", label: "Luma only", type: "checkbox" },
@@ -62,6 +67,7 @@ let objectUrl = null;
 let activeAbortController = null;
 let running = false;
 let currentOutput = null;
+let currentResultFps = null;
 
 function getPath(object, path) {
   return path.split(".").reduce((value, part) => value?.[part], object);
@@ -94,6 +100,19 @@ function formatTime(seconds) {
   return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${secs
     .toFixed(3)
     .padStart(6, "0")}`;
+}
+
+function formatCandidateStatus(value) {
+  if (value === "accepted") {
+    return "Accepted";
+  }
+  if (value === "suppressed_min_scene_len") {
+    return "Suppressed by minimum scene length";
+  }
+  if (value === "near_miss") {
+    return "Near miss";
+  }
+  return value;
 }
 
 function updateRunState() {
@@ -264,8 +283,49 @@ function yieldToBrowser() {
   return new Promise((resolve) => requestAnimationFrame(resolve));
 }
 
+function renderBoundaryReview(review, fps) {
+  boundaryRows.replaceChildren();
+  if (!review) {
+    boundaryReview.hidden = true;
+    return;
+  }
+
+  boundaryReview.hidden = false;
+  boundaryReviewSummary.textContent = `Rust ranked ${review.candidates.length} boundary candidate${
+    review.candidates.length === 1 ? "" : "s"
+  } by distance from the ${review.detector_threshold.toFixed(3)} detector threshold, using a ${review.review_threshold.toFixed(3)} review threshold.`;
+
+  review.candidates.forEach((candidate, index) => {
+    const row = document.createElement("tr");
+    const values = [
+      index + 1,
+      formatCandidateStatus(candidate.status),
+      candidate.frame,
+      formatTime(Math.min(video.duration, candidate.frame / fps)),
+      Number(candidate.score).toFixed(6),
+      Number(candidate.threshold_distance).toFixed(6),
+    ];
+    for (const value of values) {
+      const cell = document.createElement("td");
+      cell.textContent = String(value);
+      row.append(cell);
+    }
+
+    const previewCell = document.createElement("td");
+    const previewButton = document.createElement("button");
+    previewButton.type = "button";
+    previewButton.className = "action-button";
+    previewButton.dataset.boundaryFrame = String(candidate.frame);
+    previewButton.textContent = "Seek";
+    previewCell.append(previewButton);
+    row.append(previewCell);
+    boundaryRows.append(row);
+  });
+}
+
 function renderResults(output, fps) {
   currentOutput = output;
+  currentResultFps = fps;
   const scenes = output.detection.scene_list.scenes;
   const sampledFrames = output.detection.stats.rows.length;
   resultSummary.textContent = `Rust detected ${scenes.length} scene${
@@ -291,6 +351,7 @@ function renderResults(output, fps) {
     sceneRows.append(row);
   });
 
+  renderBoundaryReview(output.boundary_review, fps);
   resultsSection.hidden = false;
   resultsSection.scrollIntoView({ behavior: "smooth", block: "start" });
 }
@@ -331,6 +392,12 @@ function downloadExport(kind) {
       JSON.stringify(currentOutput.detection, null, 2),
       "application/json",
     ],
+    boundary_review_csv: exports.boundary_review_csv
+      ? [`${stem}.boundaries.csv`, exports.boundary_review_csv, "text/csv"]
+      : null,
+    boundary_review_json: exports.boundary_review_json
+      ? [`${stem}.boundaries.json`, exports.boundary_review_json, "application/json"]
+      : null,
   };
   const definition = definitions[kind];
   if (definition) {
@@ -373,7 +440,9 @@ async function runAnalysis() {
   let session = null;
   running = true;
   currentOutput = null;
+  currentResultFps = null;
   resultsSection.hidden = true;
+  boundaryReview.hidden = true;
   progress.max = sampleCount;
   progress.value = 0;
   status.textContent = `Starting ${detector.value} detection in Rust…`;
@@ -421,7 +490,9 @@ async function runAnalysis() {
 
 videoFile.addEventListener("change", () => {
   currentOutput = null;
+  currentResultFps = null;
   resultsSection.hidden = true;
+  boundaryReview.hidden = true;
   if (objectUrl) {
     URL.revokeObjectURL(objectUrl);
     objectUrl = null;
@@ -465,11 +536,30 @@ runButton.addEventListener("click", () => {
 });
 cancelButton.addEventListener("click", () => activeAbortController?.abort());
 
-document.querySelector(".export-row").addEventListener("click", (event) => {
-  const button = event.target.closest("button[data-export]");
-  if (button) {
-    downloadExport(button.dataset.export);
+for (const exportRow of document.querySelectorAll(".export-row")) {
+  exportRow.addEventListener("click", (event) => {
+    const button = event.target.closest("button[data-export]");
+    if (button) {
+      downloadExport(button.dataset.export);
+    }
+  });
+}
+
+boundaryRows.addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-boundary-frame]");
+  if (!button || !currentResultFps || !Number.isFinite(video.duration)) {
+    return;
   }
+  const frame = Number(button.dataset.boundaryFrame);
+  if (!Number.isFinite(frame)) {
+    return;
+  }
+  video.pause();
+  video.currentTime = Math.min(
+    Math.max(0, video.duration - 0.001),
+    Math.max(0, frame / currentResultFps),
+  );
+  video.scrollIntoView({ behavior: "smooth", block: "center" });
 });
 
 createSceneDetect()
