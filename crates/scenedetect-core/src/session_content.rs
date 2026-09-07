@@ -64,8 +64,7 @@ fn hsv_content_score(
     } else {
         (weights.hue, weights.saturation, weights.luminance)
     };
-    let channel_weight_total =
-        hue_weight.abs() + saturation_weight.abs() + luminance_weight.abs();
+    let channel_weight_total = hue_weight.abs() + saturation_weight.abs() + luminance_weight.abs();
     let mut weighted_sum = 0.0;
     let mut pixel_count = 0.0;
 
@@ -134,14 +133,9 @@ mod tests {
             let previous = patterned_frame(0, 3);
             let current = patterned_frame(1, 19);
             let expected = content_score(&previous, &current, &weights, luma_only);
-            let (_, prepared_previous) =
-                score_and_prepare(None, previous, &weights, luma_only);
-            let (actual, prepared_current) = score_and_prepare(
-                Some(&prepared_previous),
-                current,
-                &weights,
-                luma_only,
-            );
+            let (_, prepared_previous) = score_and_prepare(None, previous, &weights, luma_only);
+            let (actual, prepared_current) =
+                score_and_prepare(Some(&prepared_previous), current, &weights, luma_only);
 
             assert_eq!(actual, expected);
             assert!(matches!(prepared_current, PreparedContentFrame::Hsv(_)));
