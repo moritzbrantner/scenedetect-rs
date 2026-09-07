@@ -3,6 +3,6 @@
 // root module is next reorganized without changing the public API.
 include!("lib.rs");
 
-mod session_content;
 mod session;
+mod session_content;
 pub use session::DetectionSession;
