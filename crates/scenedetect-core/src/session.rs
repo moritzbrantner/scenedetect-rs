@@ -1,8 +1,9 @@
 use std::collections::VecDeque;
 
+use super::session_content::{score_and_prepare, PreparedContentFrame};
 use super::{
-    build_boundary_review, build_scene_list, content_score, emit_ready_adaptive_rows,
-    hash_distance, histogram_correlation, luma_histogram, perceptual_hash, round_half_to_even,
+    build_boundary_review, build_scene_list, emit_ready_adaptive_rows, hash_distance,
+    histogram_correlation, luma_histogram, perceptual_hash, round_half_to_even,
     AdaptiveDetectorConfig, AdaptiveSample, BoundaryCandidateSeed, BoundaryCandidateStatus,
     BoundaryReview, BoundaryReviewOptions, ContentDetectorConfig, DetectionOptions,
     DetectionResult, DetectionStats, DetectionStatsSink, DetectorConfig, FadeType, Frame,
@@ -221,14 +222,14 @@ fn boundary_review_from_stats(
 enum SessionState {
     Content {
         config: ContentDetectorConfig,
-        previous: Option<Frame>,
+        previous: Option<PreparedContentFrame>,
         last_candidate_boundary: u64,
         boundaries: Vec<SceneBoundary>,
         total_frames: u64,
     },
     Adaptive {
         config: AdaptiveDetectorConfig,
-        previous: Option<Frame>,
+        previous: Option<PreparedContentFrame>,
         samples: VecDeque<AdaptiveSample>,
         next_emit: usize,
         last_boundary: u64,
@@ -341,25 +342,29 @@ impl SessionState {
                 boundaries,
                 total_frames,
             } => {
-                let content_val = previous.as_ref().map_or(0.0, |previous| {
-                    content_score(previous, &frame, &config.weights, config.luma_only)
-                });
+                let frame_index = frame.index;
+                let (content_val, prepared) = score_and_prepare(
+                    previous.as_ref(),
+                    frame,
+                    &config.weights,
+                    config.luma_only,
+                );
                 stats.rows.push(StatsRow {
-                    frame: frame.index,
+                    frame: frame_index,
                     metrics: std::collections::BTreeMap::from([(
                         "content_val".to_owned(),
                         content_val,
                     )]),
                 });
 
-                let frame_number = frame.index.0;
+                let frame_number = frame_index.0;
                 if content_val >= config.threshold {
                     if frame_number.saturating_sub(*last_candidate_boundary) >= min_scene_len {
-                        boundaries.push(SceneBoundary { frame: frame.index });
+                        boundaries.push(SceneBoundary { frame: frame_index });
                     }
                     *last_candidate_boundary = frame_number;
                 }
-                *previous = Some(frame);
+                *previous = Some(prepared);
                 *total_frames += 1;
             }
             Self::Adaptive {
@@ -371,15 +376,19 @@ impl SessionState {
                 boundaries,
                 total_frames,
             } => {
-                let content_val = previous.as_ref().map_or(0.0, |previous| {
-                    content_score(previous, &frame, &config.weights, config.luma_only)
-                });
+                let frame_index = frame.index;
+                let (content_val, prepared) = score_and_prepare(
+                    previous.as_ref(),
+                    frame,
+                    &config.weights,
+                    config.luma_only,
+                );
                 samples.push_back(AdaptiveSample {
                     position: *total_frames,
-                    frame: frame.index,
+                    frame: frame_index,
                     content_val,
                 });
-                *previous = Some(frame);
+                *previous = Some(prepared);
                 *total_frames += 1;
 
                 let mut sink = SessionStatsSink(stats);
