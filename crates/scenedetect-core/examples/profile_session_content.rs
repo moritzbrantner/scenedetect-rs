@@ -18,8 +18,7 @@ fn main() {
     let mut checksum = 0_usize;
 
     for _ in 0..REPEATS {
-        let mut session =
-            DetectionSession::new(detector.clone(), FrameRate(24.0), options.clone());
+        let mut session = DetectionSession::new(detector.clone(), FrameRate(24.0), options.clone());
         for frame in &frames {
             session.push_frame(frame.clone()).expect("profile frame");
         }
