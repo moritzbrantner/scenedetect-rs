@@ -343,12 +343,8 @@ impl SessionState {
                 total_frames,
             } => {
                 let frame_index = frame.index;
-                let (content_val, prepared) = score_and_prepare(
-                    previous.as_ref(),
-                    frame,
-                    &config.weights,
-                    config.luma_only,
-                );
+                let (content_val, prepared) =
+                    score_and_prepare(previous.as_ref(), frame, &config.weights, config.luma_only);
                 stats.rows.push(StatsRow {
                     frame: frame_index,
                     metrics: std::collections::BTreeMap::from([(
@@ -377,12 +373,8 @@ impl SessionState {
                 total_frames,
             } => {
                 let frame_index = frame.index;
-                let (content_val, prepared) = score_and_prepare(
-                    previous.as_ref(),
-                    frame,
-                    &config.weights,
-                    config.luma_only,
-                );
+                let (content_val, prepared) =
+                    score_and_prepare(previous.as_ref(), frame, &config.weights, config.luma_only);
                 samples.push_back(AdaptiveSample {
                     position: *total_frames,
                     frame: frame_index,
