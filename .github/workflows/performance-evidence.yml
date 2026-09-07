@@ -1,0 +1,130 @@
+name: Performance evidence
+
+on:
+  pull_request:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  RUNTIME_PROFILER_REV: 8280c95feb2a1075efa0480a9622e40c723e0b3a
+  MOONLIGHT_REV: a615843b6497cfa0e746224673592c107d969bda
+
+jobs:
+  session-content:
+    name: Session content profile and parity
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout candidate
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: candidate
+          fetch-depth: 0
+
+      - name: Checkout reference
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: reference
+          fetch-depth: 0
+
+      - name: Checkout Moonlight
+        uses: actions/checkout@v7
+        with:
+          repository: moritzbrantner/moonlight
+          ref: ${{ env.MOONLIGHT_REV }}
+          path: moonlight
+
+      - name: Install Rust
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt --component clippy
+          rustup default stable
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Install runtime-profiler
+        run: cargo install --git https://github.com/moritzbrantner/runtime-profiler --rev "$RUNTIME_PROFILER_REV" --locked
+
+      - name: Attach identical workload to reference checkout
+        run: |
+          mkdir -p reference/crates/scenedetect-core/examples reference/profiles/runtime-profiler
+          cp candidate/crates/scenedetect-core/examples/profile_session_content.rs \
+            reference/crates/scenedetect-core/examples/profile_session_content.rs
+          cp candidate/profiles/runtime-profiler/session-content.yaml \
+            reference/profiles/runtime-profiler/session-content.yaml
+          git -C reference add \
+            crates/scenedetect-core/examples/profile_session_content.rs \
+            profiles/runtime-profiler/session-content.yaml
+          git -C reference \
+            -c user.name='runtime-profiler' \
+            -c user.email='runtime-profiler@invalid' \
+            commit -m 'chore: attach deterministic profiler workload'
+
+      - name: Build reference workload
+        working-directory: reference
+        run: cargo build --locked -p scenedetect-core --example profile_session_content --release
+
+      - name: Build candidate workload
+        working-directory: candidate
+        run: cargo build --locked -p scenedetect-core --example profile_session_content --release
+
+      - name: Capture reference evidence
+        working-directory: reference
+        run: |
+          runtime-profiler capture \
+            --scenario profiles/runtime-profiler/session-content.yaml \
+            --output "$RUNNER_TEMP/reference-evidence"
+          runtime-profiler validate --bundle "$RUNNER_TEMP/reference-evidence"
+
+      - name: Capture candidate evidence
+        working-directory: candidate
+        run: |
+          runtime-profiler capture \
+            --scenario profiles/runtime-profiler/session-content.yaml \
+            --output "$RUNNER_TEMP/candidate-evidence"
+          runtime-profiler validate --bundle "$RUNNER_TEMP/candidate-evidence"
+
+      - name: Compare runtime evidence
+        run: |
+          set -o pipefail
+          runtime-profiler score \
+            --reference "$RUNNER_TEMP/reference-evidence" \
+            --candidate "$RUNNER_TEMP/candidate-evidence" \
+            --json | tee "$RUNNER_TEMP/runtime-score.json"
+          {
+            echo '### runtime-profiler comparison'
+            echo '```json'
+            cat "$RUNNER_TEMP/runtime-score.json"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Run Moonlight correctness evaluation
+        working-directory: candidate
+        run: |
+          set -o pipefail
+          git branch -f main "${{ github.event.pull_request.base.sha }}"
+          bun run agent:eval -- --candidate-ref HEAD 2>&1 | tee "$RUNNER_TEMP/moonlight.md"
+          {
+            echo '### Moonlight evaluation'
+            cat "$RUNNER_TEMP/moonlight.md"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: session-content-performance-evidence
+          path: |
+            ${{ runner.temp }}/reference-evidence
+            ${{ runner.temp }}/candidate-evidence
+            ${{ runner.temp }}/runtime-score.json
+            ${{ runner.temp }}/moonlight.md

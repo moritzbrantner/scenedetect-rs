@@ -4,4 +4,5 @@
 include!("lib.rs");
 
 mod session;
+mod session_content;
 pub use session::DetectionSession;
