@@ -26,6 +26,37 @@ function safeParse(value, fallback) {
   }
 }
 
+function readStorage(key, fallback) {
+  try {
+    return localStorage.getItem(key) ?? fallback;
+  } catch (_error) {
+    return fallback;
+  }
+}
+
+function writeStorage(key, value) {
+  try {
+    localStorage.setItem(key, value);
+    return true;
+  } catch (_error) {
+    return false;
+  }
+}
+
+function canonicalize(value) {
+  if (Array.isArray(value)) {
+    return value.map(canonicalize);
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.keys(value)
+        .sort()
+        .map((key) => [key, canonicalize(value[key])]),
+    );
+  }
+  return value;
+}
+
 export function loadWorkbenchSettings() {
   const url = new URL(window.location.href);
   const encoded = url.searchParams.get("config");
@@ -36,18 +67,23 @@ export function loadWorkbenchSettings() {
       // Fall back to local settings if an old or edited URL is malformed.
     }
   }
-  return safeParse(localStorage.getItem(SETTINGS_KEY), null);
+  return safeParse(readStorage(SETTINGS_KEY, null), null);
 }
 
 export function saveWorkbenchSettings(settings) {
-  localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
-  const url = new URL(window.location.href);
-  url.searchParams.set("config", encodeJson(settings));
-  history.replaceState(null, "", url);
+  const serialized = JSON.stringify(settings);
+  writeStorage(SETTINGS_KEY, serialized);
+  try {
+    const url = new URL(window.location.href);
+    url.searchParams.set("config", encodeJson(settings));
+    history.replaceState(null, "", url);
+  } catch (_error) {
+    // Persistence and URL sharing are conveniences; analysis must remain usable without them.
+  }
 }
 
 export function listRunSnapshots() {
-  const snapshots = safeParse(localStorage.getItem(RUNS_KEY), []);
+  const snapshots = safeParse(readStorage(RUNS_KEY, "[]"), []);
   return Array.isArray(snapshots) ? snapshots : [];
 }
 
@@ -55,7 +91,7 @@ export function saveRunSnapshot(snapshot) {
   const snapshots = listRunSnapshots().filter((entry) => entry.id !== snapshot.id);
   snapshots.unshift(snapshot);
   const bounded = snapshots.slice(0, 8);
-  localStorage.setItem(RUNS_KEY, JSON.stringify(bounded));
+  writeStorage(RUNS_KEY, JSON.stringify(bounded));
   return bounded;
 }
 
@@ -77,4 +113,11 @@ export function fingerprintsMatch(left, right) {
       left.size === right.size &&
       left.last_modified === right.last_modified,
   );
+}
+
+export function settingsMatch(left, right) {
+  if (!left || !right) {
+    return false;
+  }
+  return JSON.stringify(canonicalize(left)) === JSON.stringify(canonicalize(right));
 }
