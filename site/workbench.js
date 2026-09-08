@@ -201,6 +201,9 @@ createKeyboardController({
     previous_scene: () => reviewWorkspace.seekScene(-1),
     next_scene: () => reviewWorkspace.seekScene(1),
     play_pause: () => {
+      if (running) {
+        return;
+      }
       if (video.paused) {
         void video.play();
       } else {
@@ -221,6 +224,8 @@ function updateRunState() {
   cancelButton.disabled = !running;
   videoFile.disabled = running;
   detector.disabled = running;
+  video.controls = !running;
+  video.setAttribute("aria-busy", String(running));
   for (const element of [analysisFps, maxDimension, minSceneLen, minScenePolicy]) {
     element.disabled = running;
   }
