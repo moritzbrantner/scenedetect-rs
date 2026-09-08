@@ -1,5 +1,6 @@
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
+const SUPPORTED_ABI_VERSION = 2;
 
 async function instantiateModule() {
   const url = new URL("./wasm/scenedetect_wasm.wasm", import.meta.url);
@@ -22,9 +23,10 @@ async function instantiateModule() {
 export async function createSceneDetect() {
   const { instance } = await instantiateModule();
   const wasm = instance.exports;
+  const abiVersion = wasm.scenedetect_abi_version();
 
-  if (wasm.scenedetect_abi_version() !== 1) {
-    throw new Error("Unsupported SceneDetect WASM ABI version.");
+  if (abiVersion !== SUPPORTED_ABI_VERSION) {
+    throw new Error(`Unsupported SceneDetect WASM ABI version ${abiVersion}.`);
   }
   if (!wasm.memory) {
     throw new Error("SceneDetect WASM did not export linear memory.");
@@ -91,12 +93,23 @@ export async function createSceneDetect() {
 
     let live = true;
     return {
-      pushFrame(index, width, height, rgb) {
+      pushFrame(index, width, height, rgb, mediaTimeSeconds) {
         if (!live) {
           throw new Error("SceneDetect session is already finished.");
         }
+        if (!Number.isFinite(mediaTimeSeconds) || mediaTimeSeconds < 0) {
+          throw new Error("Presented media time must be a non-negative finite number.");
+        }
         const code = withBytes(rgb, (ptr, len) =>
-          wasm.scenedetect_session_push(handle, index, width, height, ptr, len),
+          wasm.scenedetect_session_push(
+            handle,
+            index,
+            width,
+            height,
+            mediaTimeSeconds,
+            ptr,
+            len,
+          ),
         );
         check(code);
       },
@@ -120,5 +133,5 @@ export async function createSceneDetect() {
     };
   }
 
-  return { defaults, createSession };
+  return { abiVersion, defaults, createSession };
 }
