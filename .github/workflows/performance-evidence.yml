@@ -64,10 +64,12 @@ jobs:
           git -C reference add \
             crates/scenedetect-core/examples/profile_session_content.rs \
             profiles/runtime-profiler/session-content.yaml
-          git -C reference \
-            -c user.name='runtime-profiler' \
-            -c user.email='runtime-profiler@invalid' \
-            commit -m 'chore: attach deterministic profiler workload'
+          if ! git -C reference diff --cached --quiet; then
+            git -C reference \
+              -c user.name='runtime-profiler' \
+              -c user.email='runtime-profiler@invalid' \
+              commit -m 'chore: attach deterministic profiler workload'
+          fi
 
       - name: Build reference workload
         working-directory: reference
