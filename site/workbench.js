@@ -104,6 +104,7 @@ let running = false;
 let workerReady = false;
 let currentOutput = null;
 let currentResultFps = null;
+let currentRunSettings = null;
 let currentDetectorDefaults = null;
 let renderGeneration = 0;
 let settingsHydrated = false;
@@ -220,6 +221,12 @@ function updateRunState() {
   cancelButton.disabled = !running;
   videoFile.disabled = running;
   detector.disabled = running;
+  for (const element of [analysisFps, maxDimension, minSceneLen, minScenePolicy]) {
+    element.disabled = running;
+  }
+  for (const input of detectorControls.querySelectorAll("input, select")) {
+    input.disabled = running;
+  }
 }
 
 function updateMinSceneTime() {
@@ -326,14 +333,19 @@ function samplingConfig() {
   return { fps, dimension };
 }
 
-function captureSettings() {
+function settingsForRun(config, fps, dimension) {
   return {
     schema_version: 1,
-    detector: detector.value,
-    analysis_fps: Number(analysisFps.value),
-    max_dimension: Number(maxDimension.value),
-    detector_config: readDetectorConfig(),
+    detector: config.detector,
+    analysis_fps: fps,
+    max_dimension: dimension,
+    detector_config: structuredClone(config),
   };
+}
+
+function captureSettings() {
+  const { fps, dimension } = samplingConfig();
+  return settingsForRun(readDetectorConfig(), fps, dimension);
 }
 
 function scheduleSettingsSave() {
@@ -425,12 +437,12 @@ function renderResults(output, fps) {
     pendingImportedSession &&
     fingerprintsMatch(pendingImportedSession.media, currentMediaFingerprint())
   ) {
-    if (settingsMatch(pendingImportedSession.settings, captureSettings())) {
+    if (settingsMatch(pendingImportedSession.settings, currentRunSettings)) {
       reviewWorkspace.loadReviewDecisions(pendingImportedSession.review?.decisions);
       pendingImportedSession = null;
     } else {
       reviewStatus.textContent =
-        "Imported review decisions remain detached because the current detector or sampling settings differ from the imported session.";
+        "Imported review decisions remain detached because the completed detector or sampling settings differ from the imported session.";
     }
   }
 
@@ -493,7 +505,7 @@ function downloadRustExport(kind) {
 }
 
 function downloadWorkbenchExport(kind) {
-  if (!currentOutput) {
+  if (!currentOutput || !currentRunSettings) {
     return;
   }
   const stem = fileStem();
@@ -511,7 +523,7 @@ function downloadWorkbenchExport(kind) {
       JSON.stringify(
         reviewWorkspace.sessionArtifact({
           media: currentMediaFingerprint(),
-          settings: captureSettings(),
+          settings: currentRunSettings,
         }),
         null,
         2,
@@ -544,6 +556,7 @@ async function runAnalysis() {
 
   const { fps, dimension } = samplingConfig();
   const config = readDetectorConfig();
+  const runSettings = settingsForRun(config, fps, dimension);
   if (!Number.isInteger(config.min_scene_len) || config.min_scene_len < 0) {
     throw new Error("Minimum scene length must be a non-negative whole number of sampled frames.");
   }
@@ -573,6 +586,7 @@ async function runAnalysis() {
   running = true;
   currentOutput = null;
   currentResultFps = null;
+  currentRunSettings = null;
   resultsOverview.reset();
   reviewWorkspace.reset();
   resultsSection.hidden = true;
@@ -608,8 +622,9 @@ async function runAnalysis() {
 
     const output = await analysis.finish();
     sessionStarted = false;
+    currentRunSettings = runSettings;
     renderResults(output, fps);
-    saveWorkbenchSettings(captureSettings());
+    saveWorkbenchSettings(runSettings);
     status.textContent = "Analysis complete. Timeline, review controls, and exports are ready.";
   } catch (error) {
     if (sessionStarted) {
@@ -635,6 +650,7 @@ async function runAnalysis() {
 videoFile.addEventListener("change", () => {
   currentOutput = null;
   currentResultFps = null;
+  currentRunSettings = null;
   resultsOverview.reset();
   reviewWorkspace.reset();
   resultsSection.hidden = true;
@@ -750,15 +766,15 @@ boundaryRows.addEventListener("click", (event) => {
 });
 
 saveRunButton.addEventListener("click", () => {
-  if (!currentOutput) {
+  if (!currentOutput || !currentRunSettings) {
     return;
   }
   const id = globalThis.crypto?.randomUUID?.() ?? `run-${Date.now()}`;
   const snapshot = reviewWorkspace.snapshot({
     id,
-    label: `${detector.value} · ${new Date().toLocaleString()}`,
+    label: `${currentRunSettings.detector} · ${new Date().toLocaleString()}`,
     media: currentMediaFingerprint(),
-    settings: captureSettings(),
+    settings: currentRunSettings,
   });
   saveRunSnapshot(snapshot);
   refreshSavedRuns();
@@ -784,6 +800,13 @@ importSessionFile.addEventListener("change", async () => {
     }
     await applySettings(imported.settings);
     saveWorkbenchSettings(captureSettings());
+    currentOutput = null;
+    currentResultFps = null;
+    currentRunSettings = null;
+    resultsOverview.reset();
+    reviewWorkspace.reset();
+    resultsSection.hidden = true;
+    boundaryReview.hidden = true;
     pendingImportedSession = imported;
     status.textContent =
       "Workbench session settings imported. Analyze the matching local video with these exact settings to restore review decisions against the correct detector result.";
