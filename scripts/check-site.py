@@ -12,10 +12,16 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 SITE_DIR = ROOT_DIR / "site"
 INDEX_PATH = SITE_DIR / "index.html"
 WORKBENCH_PATH = SITE_DIR / "workbench.html"
+BROWSER_ANALYSIS_PATH = SITE_DIR / "browser-analysis.html"
 WORKBENCH_JS_PATH = SITE_DIR / "workbench.js"
 REVIEW_OVERVIEW_PATH = SITE_DIR / "review-overview.js"
+REVIEW_WORKSPACE_PATH = SITE_DIR / "review-workspace.js"
 VIDEO_FRAME_SYNC_PATH = SITE_DIR / "video-frame-sync.js"
 WASM_LOADER_PATH = SITE_DIR / "scenedetect-wasm.js"
+ANALYSIS_WORKER_PATH = SITE_DIR / "analysis-worker.js"
+ANALYSIS_WORKER_CLIENT_PATH = SITE_DIR / "analysis-worker-client.js"
+SESSION_STORE_PATH = SITE_DIR / "session-store.js"
+KEYBOARD_CONTROLS_PATH = SITE_DIR / "keyboard-controls.js"
 BENCHMARK_PATH = SITE_DIR / "data" / "benchmarks.json"
 PAGES_WORKFLOW = ROOT_DIR / ".github" / "workflows" / "pages.yml"
 
@@ -35,6 +41,15 @@ def require_reference(html: str, reference: str, owner: str) -> None:
         raise SiteCheckError(f"{owner} does not reference {reference}")
     if not (SITE_DIR / reference).exists():
         raise SiteCheckError(f"referenced asset is missing: site/{reference}")
+
+
+def require_markers(path: Path, markers: tuple[str, ...]) -> None:
+    text = read_text(path)
+    for marker in markers:
+        if marker not in text:
+            raise SiteCheckError(
+                f"{path.relative_to(ROOT_DIR)} missing browser contract marker: {marker}"
+            )
 
 
 def require_number(value: Any, label: str) -> None:
@@ -107,6 +122,11 @@ def check_pages_workflow() -> None:
         "site/wasm/scenedetect_wasm.wasm",
         "node --check site/video-frame-sync.js",
         "node --check site/review-overview.js",
+        "node --check site/review-workspace.js",
+        "node --check site/analysis-worker.js",
+        "node --check site/analysis-worker-client.js",
+        "node --check site/session-store.js",
+        "node --check site/keyboard-controls.js",
     ]
     for value in required:
         if value not in workflow:
@@ -139,11 +159,32 @@ def check_index() -> None:
             raise SiteCheckError(f"site/index.html missing expected content: {text}")
 
 
+def check_browser_analysis() -> None:
+    html = read_text(BROWSER_ANALYSIS_PATH)
+    require_reference(html, "styles.css", "site/browser-analysis.html")
+    require_reference(html, "workbench.css", "site/browser-analysis.html")
+    require_reference(html, "workbench.html", "site/browser-analysis.html")
+    if not re.search(r"<main\b", html):
+        raise SiteCheckError("site/browser-analysis.html must contain a main landmark")
+    for text in (
+        "How SceneDetect runs locally in the browser",
+        "Local media stays local",
+        "The browser owns decode and sampling",
+        "Rust owns scene-detection semantics",
+        "requestVideoFrameCallback()",
+        "Human review is separate evidence",
+        "does not claim native",
+    ):
+        if text not in html:
+            raise SiteCheckError(f"site/browser-analysis.html missing expected content: {text}")
+
+
 def check_workbench() -> None:
     html = read_text(WORKBENCH_PATH)
     require_reference(html, "styles.css", "site/workbench.html")
     require_reference(html, "workbench.css", "site/workbench.html")
     require_reference(html, "workbench.js", "site/workbench.html")
+    require_reference(html, "browser-analysis.html", "site/workbench.html")
     if not re.search(r"<main\b", html):
         raise SiteCheckError("site/workbench.html must contain a main landmark")
     for text in (
@@ -154,6 +195,10 @@ def check_workbench() -> None:
         "Threshold / fades",
         "Histogram",
         "Perceptual hash",
+        "Scene timeline",
+        "Human review layer",
+        "Compare runs",
+        "Keyboard shortcuts",
         "Detector stats CSV",
         "Ranked boundary candidates",
         "Boundary review CSV",
@@ -162,33 +207,59 @@ def check_workbench() -> None:
         if text not in html:
             raise SiteCheckError(f"site/workbench.html missing expected content: {text}")
 
-    workbench_js = read_text(WORKBENCH_JS_PATH)
-    for value in (
-        'from "./review-overview.js"',
-        'from "./scenedetect-wasm.js"',
-        'from "./video-frame-sync.js"',
-        "createResultsOverview",
-        "seekPresentedVideoFrame",
-        "presentedFrame.mediaTime",
-        "createSession",
-        "pushFrame",
-        "scene_list_csv",
-        "scene_list_json",
-        "scene_events_ndjson",
-        "stats_csv",
-        "scene_list_html",
-        "review_threshold",
-        "boundary_review_csv",
-        "boundary_review_json",
-        "data-boundary-frame",
-    ):
-        if value not in workbench_js:
-            raise SiteCheckError(f"site/workbench.js missing browser contract marker: {value}")
+    require_markers(
+        WORKBENCH_JS_PATH,
+        (
+            'from "./analysis-worker-client.js"',
+            'from "./review-overview.js"',
+            'from "./review-workspace.js"',
+            'from "./session-store.js"',
+            'from "./keyboard-controls.js"',
+            'from "./video-frame-sync.js"',
+            "presentedFrame.mediaTime",
+            "analysis.pushFrame",
+            "saveWorkbenchSettings",
+            "saveRunSnapshot",
+            "sessionArtifact",
+            "scene_list_csv",
+            "boundary_review_json",
+            "data-boundary-frame",
+        ),
+    )
     for detector_name in ("content", "adaptive", "threshold", "histogram", "hash"):
-        if detector_name not in workbench_js:
+        if detector_name not in read_text(WORKBENCH_JS_PATH):
             raise SiteCheckError(
                 f"site/workbench.js missing detector configuration: {detector_name}"
             )
+
+    require_markers(
+        REVIEW_WORKSPACE_PATH,
+        (
+            "presented_samples",
+            "reviewArtifact",
+            "reviewed_scene_list",
+            "addCutAtPlayhead",
+            "mergeSelectedWithNext",
+            "compareWith",
+            "timeline-boundary",
+        ),
+    )
+    require_markers(
+        ANALYSIS_WORKER_CLIENT_PATH,
+        ("new Worker", 'type: "module"', "pushFrame", "bytes.buffer", "transfer"),
+    )
+    require_markers(
+        ANALYSIS_WORKER_PATH,
+        ('from "./scenedetect-wasm.js"', "createSession", "payload.mediaTimeSeconds", "finish"),
+    )
+    require_markers(
+        SESSION_STORE_PATH,
+        ("localStorage", "history.replaceState", "config", "saveRunSnapshot"),
+    )
+    require_markers(
+        KEYBOARD_CONTROLS_PATH,
+        ("DEFAULT_KEY_BINDINGS", "previous_boundary", "add_cut", "merge_next", "zoom_in"),
+    )
 
     review_overview = read_text(REVIEW_OVERVIEW_PATH)
     for value in (
@@ -200,14 +271,9 @@ def check_workbench() -> None:
         '"suppressed_min_scene_len"',
         '"near_miss"',
         "boundary-status-filter",
-        "boundary-review-filter",
-        "boundary-sort",
-        "scene-search-filter",
-        "scene-sort",
         "Before / after split review",
         "seekPresentedVideoFrame",
         "THUMBNAIL_CACHE_LIMIT",
-        "VISUAL_PAGE_SIZE",
     ):
         if value not in review_overview:
             raise SiteCheckError(
@@ -227,22 +293,25 @@ def check_workbench() -> None:
                 f"site/video-frame-sync.js missing presentation contract marker: {value}"
             )
 
-    wasm_loader = read_text(WASM_LOADER_PATH)
-    for value in (
-        "wasm/scenedetect_wasm.wasm",
-        "scenedetect_abi_version",
-        "scenedetect_session_new",
-        "scenedetect_session_push",
-        "scenedetect_session_finish",
-    ):
-        if value not in wasm_loader:
-            raise SiteCheckError(f"site/scenedetect-wasm.js missing WASM contract marker: {value}")
+    require_markers(
+        WASM_LOADER_PATH,
+        (
+            "wasm/scenedetect_wasm.wasm",
+            "SUPPORTED_ABI_VERSION = 2",
+            "scenedetect_abi_version",
+            "scenedetect_session_new",
+            "scenedetect_session_push",
+            "mediaTimeSeconds",
+            "scenedetect_session_finish",
+        ),
+    )
 
 
 def main() -> int:
     try:
         check_index()
         check_workbench()
+        check_browser_analysis()
         check_benchmark_snapshot()
         check_pages_workflow()
     except SiteCheckError as error:
