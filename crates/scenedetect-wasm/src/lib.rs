@@ -614,10 +614,7 @@ pub extern "C" fn scenedetect_session_finish(handle: u32) -> i32 {
                     .map_err(|error| error.to_string())?;
                 (detection, Some(review))
             }
-            None => (
-                detection.finish().map_err(|error| error.to_string())?,
-                None,
-            ),
+            None => (detection.finish().map_err(|error| error.to_string())?, None),
         };
         build_browser_output(detection, boundary_review, presented_samples)
     })();
