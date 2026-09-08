@@ -15,60 +15,62 @@
     <header class="site-header" aria-label="Project navigation">
       <a class="brand" href="index.html">scenedetect-rs</a>
       <nav aria-label="Primary navigation">
+        <a href="browser-analysis.html">How it works</a>
         <a href="index.html">Project</a>
         <a href="https://github.com/moritzbrantner/scenedetect-rs">Source</a>
       </nav>
     </header>
 
     <main>
-      <section class="workbench-hero" aria-labelledby="workbench-heading">
+      <section class="workbench-section input-section" aria-labelledby="input-heading">
         <div class="workbench-shell">
-          <p class="eyebrow">Rust → WebAssembly</p>
-          <h1 id="workbench-heading">Run SceneDetect in your browser</h1>
-          <p class="workbench-lede">
-            Choose a video from your device, configure a detector, and run
-            <code>scenedetect-rs</code> without installing anything. Your video stays local:
-            this static GitHub Pages app does not upload media to a server.
-          </p>
-        </div>
-      </section>
-
-      <section class="workbench-section" aria-labelledby="input-heading">
-        <div class="workbench-shell workbench-grid">
-          <div class="workbench-panel">
-            <p class="eyebrow">1 · Video</p>
-            <h2 id="input-heading">Local input</h2>
-            <label class="file-picker" for="video-file">
-              <span>Choose a video</span>
-              <input id="video-file" type="file" accept="video/*" />
-            </label>
-            <p id="video-meta" class="support-text">No video selected.</p>
-            <video id="video-preview" controls muted playsinline></video>
-            <canvas id="analysis-canvas" hidden></canvas>
+          <div class="workbench-intro">
+            <div>
+              <p class="eyebrow">1 · Video</p>
+              <h1 id="input-heading">Run SceneDetect in your browser</h1>
+            </div>
+            <p class="workbench-context">
+              Your video stays local. The workbench runs on this device without uploading media.
+              <a href="browser-analysis.html">How browser analysis works</a>
+            </p>
           </div>
 
-          <div class="workbench-panel">
-            <p class="eyebrow">2 · Browser decode</p>
-            <h2>Sampling</h2>
-            <p class="support-text">
-              The browser decodes the local file and samples frames before passing RGB pixels to
-              Rust. Raise the sampling rate for finer boundary timing; lower it for faster analysis.
-            </p>
-            <div class="field-grid">
-              <label>
-                <span>Analysis frames / second</span>
-                <input id="analysis-fps" type="number" min="0.5" max="30" step="0.5" value="6" />
+          <div class="input-layout">
+            <div class="workbench-panel video-input-panel">
+              <label class="file-picker" for="video-file">
+                <span class="file-picker-title">Choose a video</span>
+                <span class="file-picker-note">Select a local video file to begin.</span>
+                <input id="video-file" type="file" accept="video/*" />
               </label>
-              <label>
-                <span>Maximum frame dimension</span>
-                <select id="max-dimension">
-                  <option value="160">160 px</option>
-                  <option value="320" selected>320 px</option>
-                  <option value="480">480 px</option>
-                  <option value="640">640 px</option>
-                </select>
-              </label>
+              <p id="video-meta" class="support-text">No video selected.</p>
+              <video id="video-preview" controls muted playsinline></video>
+              <canvas id="analysis-canvas" hidden></canvas>
             </div>
+
+            <aside class="workbench-panel sampling-panel" aria-labelledby="sampling-heading">
+              <p class="eyebrow">2 · Sampling</p>
+              <h2 id="sampling-heading">Browser decode</h2>
+              <p class="support-text">
+                Choose how densely the browser samples the local video before transferring RGB
+                buffers to the Rust WebAssembly worker. Higher rates improve boundary timing; lower
+                rates analyze faster.
+              </p>
+              <div class="field-grid sampling-fields">
+                <label>
+                  <span>Analysis frames / second</span>
+                  <input id="analysis-fps" type="number" min="0.5" max="30" step="0.5" value="6" />
+                </label>
+                <label>
+                  <span>Maximum frame dimension</span>
+                  <select id="max-dimension">
+                    <option value="160">160 px</option>
+                    <option value="320" selected>320 px</option>
+                    <option value="480">480 px</option>
+                    <option value="640">640 px</option>
+                  </select>
+                </label>
+              </div>
+            </aside>
           </div>
         </div>
       </section>
@@ -79,10 +81,9 @@
             <p class="eyebrow">3 · Rust detector</p>
             <h2 id="detector-heading">Detection configuration</h2>
             <p>
-              Defaults below come from the compiled Rust detector types. Scene scoring,
-              thresholds, adaptive windows, fade handling, minimum scene length, final scene
-              construction, and supported boundary review all execute in
-              <code>scenedetect-core</code>.
+              Defaults below come from the compiled Rust detector types. Scene scoring, thresholds,
+              adaptive windows, fade handling, minimum scene length, final scene construction, and
+              supported boundary review all execute in <code>scenedetect-core</code>.
             </p>
           </div>
 
@@ -124,7 +125,7 @@
             </button>
             <div class="progress-area">
               <progress id="analysis-progress" max="1" value="0"></progress>
-              <p id="analysis-status" role="status">Loading SceneDetect WebAssembly…</p>
+              <p id="analysis-status" role="status">Loading SceneDetect WebAssembly worker…</p>
             </div>
           </div>
         </div>
@@ -133,10 +134,83 @@
       <section id="results" class="workbench-section results-section" aria-labelledby="results-heading" hidden>
         <div class="workbench-shell">
           <div class="section-heading">
-            <p class="eyebrow">4 · Results</p>
-            <h2 id="results-heading">Scene list</h2>
+            <p class="eyebrow">4 · Review</p>
+            <h2 id="results-heading">Scene timeline</h2>
             <p id="result-summary"></p>
           </div>
+
+          <section class="timeline-panel" aria-labelledby="timeline-heading">
+            <div class="result-subheading timeline-heading-row">
+              <div>
+                <h3 id="timeline-heading">Visual timeline</h3>
+                <p>
+                  Scene spans use Rust detector output. Boundary positions use the media timestamps
+                  actually presented by the browser and preserved through the WebAssembly session.
+                </p>
+              </div>
+              <label class="timeline-zoom-field">
+                <span>Timeline zoom</span>
+                <input id="timeline-zoom" type="range" min="1" max="8" step="0.5" value="1" />
+              </label>
+            </div>
+            <div class="timeline-viewport" tabindex="0" aria-label="Scene timeline">
+              <div id="scene-timeline" class="scene-timeline"></div>
+            </div>
+            <p id="timeline-status" class="support-text" aria-live="polite">
+              Run an analysis to populate the scene timeline.
+            </p>
+          </section>
+
+          <section class="review-panel" aria-labelledby="human-review-heading">
+            <div class="result-subheading">
+              <p class="eyebrow">Human review layer</p>
+              <h3 id="human-review-heading">Review without mutating Rust output</h3>
+              <p>
+                Accept or reject a selected detector candidate, add a cut at the current playhead, or
+                merge adjacent reviewed scenes. These decisions are stored separately from immutable
+                Rust detection evidence.
+              </p>
+            </div>
+            <div class="review-actions">
+              <button type="button" class="action-button" data-review-action="accept">Accept boundary</button>
+              <button type="button" class="action-button" data-review-action="reject">Reject boundary</button>
+              <button type="button" class="action-button" data-review-action="add-cut">Add cut at playhead</button>
+              <button type="button" class="action-button" data-review-action="merge-previous">Merge with previous</button>
+              <button type="button" class="action-button" data-review-action="merge-next">Merge with next</button>
+              <button type="button" class="action-button" data-review-action="reset">Reset review</button>
+            </div>
+            <p id="review-status" class="support-text" aria-live="polite">No review session is active.</p>
+            <div class="export-row" aria-label="Download reviewed scene outputs">
+              <button type="button" class="action-button" data-workbench-export="review_json">Reviewed scenes JSON</button>
+              <button type="button" class="action-button" data-workbench-export="review_csv">Reviewed scenes CSV</button>
+              <button type="button" class="action-button" data-workbench-export="session_json">Workbench session</button>
+              <button type="button" class="action-button" id="import-session-button">Import session</button>
+              <input id="import-session-file" type="file" accept="application/json,.json" hidden />
+            </div>
+          </section>
+
+          <section class="compare-panel" aria-labelledby="compare-heading">
+            <div class="result-subheading">
+              <p class="eyebrow">Repeatable tuning</p>
+              <h3 id="compare-heading">Compare runs</h3>
+              <p>
+                Save a detector run locally, tune the configuration, rerun the same media, and compare
+                where Rust detector boundaries changed.
+              </p>
+            </div>
+            <div class="compare-controls">
+              <button id="save-run" type="button" class="action-button">Save current run</button>
+              <label class="results-browser-field">
+                <span>Compare with saved run</span>
+                <select id="compare-run">
+                  <option value="">No comparison</option>
+                </select>
+              </label>
+            </div>
+            <p id="compare-status" class="support-text" aria-live="polite">
+              Choose a saved run to compare its detector boundaries.
+            </p>
+          </section>
 
           <div class="export-row" aria-label="Download Rust exports">
             <button type="button" class="action-button" data-export="scene_list_csv">Scene list CSV</button>
@@ -149,16 +223,7 @@
 
           <div class="table-frame result-table-frame">
             <table class="result-table">
-              <thead>
-                <tr>
-                  <th scope="col">Scene</th>
-                  <th scope="col">Start sample</th>
-                  <th scope="col">Start time</th>
-                  <th scope="col">End sample</th>
-                  <th scope="col">End time</th>
-                  <th scope="col">Length</th>
-                </tr>
-              </thead>
+              <thead><tr></tr></thead>
               <tbody id="scene-rows"></tbody>
             </table>
           </div>
@@ -175,21 +240,23 @@
             </div>
             <div class="table-frame result-table-frame">
               <table class="result-table">
-                <thead>
-                  <tr>
-                    <th scope="col">Rank</th>
-                    <th scope="col">Status</th>
-                    <th scope="col">Candidate sample</th>
-                    <th scope="col">Candidate time</th>
-                    <th scope="col">Score</th>
-                    <th scope="col">Threshold distance</th>
-                    <th scope="col">Preview</th>
-                  </tr>
-                </thead>
+                <thead><tr></tr></thead>
                 <tbody id="boundary-rows"></tbody>
               </table>
             </div>
           </div>
+
+          <section class="keyboard-panel" aria-labelledby="keyboard-heading">
+            <div class="result-subheading">
+              <p class="eyebrow">Keyboard-first review</p>
+              <h3 id="keyboard-heading">Keyboard shortcuts</h3>
+              <p>
+                Click a shortcut field and press a key to change it. Shortcuts are local to this
+                browser and never replace normal form controls.
+              </p>
+            </div>
+            <div id="keyboard-bindings"></div>
+          </section>
         </div>
       </section>
     </main>
