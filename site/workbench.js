@@ -9,6 +9,7 @@ import {
   mediaFingerprint,
   saveRunSnapshot,
   saveWorkbenchSettings,
+  settingsMatch,
 } from "./session-store.js";
 import { seekPresentedVideoFrame } from "./video-frame-sync.js";
 
@@ -424,8 +425,13 @@ function renderResults(output, fps) {
     pendingImportedSession &&
     fingerprintsMatch(pendingImportedSession.media, currentMediaFingerprint())
   ) {
-    reviewWorkspace.loadReviewDecisions(pendingImportedSession.review?.decisions);
-    pendingImportedSession = null;
+    if (settingsMatch(pendingImportedSession.settings, captureSettings())) {
+      reviewWorkspace.loadReviewDecisions(pendingImportedSession.review?.decisions);
+      pendingImportedSession = null;
+    } else {
+      reviewStatus.textContent =
+        "Imported review decisions remain detached because the current detector or sampling settings differ from the imported session.";
+    }
   }
 
   refreshSavedRuns();
@@ -780,7 +786,7 @@ importSessionFile.addEventListener("change", async () => {
     saveWorkbenchSettings(captureSettings());
     pendingImportedSession = imported;
     status.textContent =
-      "Workbench session settings imported. Analyze the matching local video to restore review decisions against the correct detector result.";
+      "Workbench session settings imported. Analyze the matching local video with these exact settings to restore review decisions against the correct detector result.";
   } catch (error) {
     status.textContent = `Unable to import workbench session: ${error.message}`;
   }
