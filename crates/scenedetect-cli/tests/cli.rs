@@ -2013,3 +2013,47 @@ fn native_timeline_preserves_exact_vfr_endpoints_without_mutating_detection_stat
         "rendering a Scene Timeline must not rewrite canonical Detection Stats"
     );
 }
+
+#[test]
+fn native_threshold_accepts_negative_fade_bias() {
+    if !ffmpeg_available() {
+        eprintln!("skipping CLI integration test because ffmpeg is unavailable");
+        return;
+    }
+
+    let temp = tempfile::tempdir().unwrap();
+    let video = temp.path().join("negative-fade-bias.mp4");
+    write_threshold_final_fade_video(&video);
+
+    let mut cmd = Command::cargo_bin("scenedetect-rs").unwrap();
+    cmd.args(["detect", "threshold"])
+        .arg("-i")
+        .arg(&video)
+        .args([
+            "--fade-bias",
+            "-1",
+            "--min-scene-len",
+            "1",
+            "--progress",
+            "never",
+            "--quiet",
+        ])
+        .assert()
+        .success();
+}
+
+#[test]
+fn native_threshold_rejects_fade_bias_outside_detector_range() {
+    let mut cmd = Command::cargo_bin("scenedetect-rs").unwrap();
+    cmd.args([
+        "detect",
+        "threshold",
+        "-i",
+        "missing.mp4",
+        "--fade-bias",
+        "-1.1",
+    ])
+    .assert()
+    .failure()
+    .stderr(predicate::str::contains("must be between -1.0 and 1.0"));
+}

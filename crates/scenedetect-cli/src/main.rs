@@ -157,7 +157,13 @@ struct NativeThresholdArgs {
     input: PathBuf,
     #[arg(short = 't', long = "threshold", default_value_t = 12.0)]
     threshold: f64,
-    #[arg(short = 'f', long = "fade-bias", default_value_t = 0.0)]
+    #[arg(
+    short = 'f',
+    long = "fade-bias",
+    default_value_t = 0.0,
+    allow_hyphen_values = true,
+    value_parser = parse_fade_bias
+)]
     fade_bias: f64,
     #[arg(short = 'l', long = "add-last-scene", default_value_t = true)]
     add_last_scene: bool,
@@ -1095,6 +1101,17 @@ fn parse_unit_interval(value: &str) -> std::result::Result<f64, String> {
         Ok(parsed)
     } else {
         Err(format!("{parsed} must be between 0.0 and 1.0"))
+    }
+}
+
+fn parse_fade_bias(value: &str) -> std::result::Result<f64, String> {
+    let parsed = value
+        .parse::<f64>()
+        .map_err(|_| format!("{value:?} is not a number"))?;
+    if (-1.0..=1.0).contains(&parsed) {
+        Ok(parsed)
+    } else {
+        Err(format!("{parsed} must be between -1.0 and 1.0"))
     }
 }
 
