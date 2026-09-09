@@ -105,10 +105,9 @@ fn exact_frame_end_time(timing: &FrameTiming) -> Option<MediaTime> {
     }
 
     if let Some(duration_ticks) = convert_ticks(duration, presentation.time_base) {
-        return presentation
-            .ticks
-            .checked_add(duration_ticks)
-            .map(|ticks| MediaTime::new(ticks, presentation.time_base));
+        if let Some(ticks) = presentation.ticks.checked_add(duration_ticks) {
+            return Some(MediaTime::new(ticks, presentation.time_base));
+        }
     }
 
     add_media_times_exact(presentation, duration)
