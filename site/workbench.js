@@ -3,14 +3,13 @@ import { createKeyboardController } from "./keyboard-controls.js";
 import { createResultsOverview } from "./review-overview.js";
 import { createReviewWorkspace } from "./review-workspace.js";
 import {
-  detectorSnapshotsMatch,
   fingerprintsMatch,
   listRunSnapshots,
   loadWorkbenchSettings,
   mediaFingerprint,
+  reviewRestorationResult,
   saveRunSnapshot,
   saveWorkbenchSettings,
-  settingsMatch,
 } from "./session-store.js";
 import { seekPresentedVideoFrame } from "./video-frame-sync.js";
 
@@ -440,30 +439,21 @@ function renderResults(output, fps) {
   reviewWorkspace.load({ output, fps, duration: video.duration });
 
   if (pendingImportedSession) {
-    const mediaMatches = fingerprintsMatch(
-      pendingImportedSession.media,
-      currentMediaFingerprint(),
-    );
-    const runSettingsMatch = settingsMatch(pendingImportedSession.settings, currentRunSettings);
     const currentDetectorSnapshot = reviewWorkspace.sessionArtifact({
       media: null,
       settings: null,
     }).detector_snapshot;
-    const detectorOutputMatches = detectorSnapshotsMatch(
-      pendingImportedSession.detector_snapshot,
-      currentDetectorSnapshot,
-    );
+    const restoration = reviewRestorationResult(pendingImportedSession, {
+      media: currentMediaFingerprint(),
+      settings: currentRunSettings,
+      detector_snapshot: currentDetectorSnapshot,
+    });
 
-    if (mediaMatches && runSettingsMatch && detectorOutputMatches) {
-      reviewWorkspace.loadReviewDecisions(pendingImportedSession.review?.decisions);
+    if (restoration.restore) {
+      reviewWorkspace.loadReviewDecisions(restoration.decisions);
       pendingImportedSession = null;
     } else {
-      const mismatch = !mediaMatches
-        ? "media fingerprint"
-        : !runSettingsMatch
-          ? "detector or sampling settings"
-          : "detector output";
-      reviewStatus.textContent = `Imported review decisions remain detached because the completed ${mismatch} differs from the imported session.`;
+      reviewStatus.textContent = `Imported review decisions remain detached because the ${restoration.mismatch} does not match the completed run.`;
     }
   }
 
@@ -820,7 +810,7 @@ importSessionFile.addEventListener("change", async () => {
       imported.schema_version !== 1 ||
       !imported.settings ||
       !imported.detector_snapshot ||
-      !imported.review
+      !Array.isArray(imported.review?.decisions)
     ) {
       throw new Error("Unsupported or incomplete workbench session file.");
     }
