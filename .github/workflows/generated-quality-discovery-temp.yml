@@ -29,5 +29,5 @@ jobs:
         with:
           version: 0.11.21
           enable-cache: false
-      - name: Probe close-cut min-scene semantics
-        run: bash scripts/diagnose-min-scene-quality-temp.sh
+      - name: Refine edge-only decision threshold
+        run: bash scripts/diagnose-edge-fine-quality-temp.sh
