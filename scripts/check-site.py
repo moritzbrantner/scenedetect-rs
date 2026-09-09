@@ -22,6 +22,7 @@ ANALYSIS_WORKER_PATH = SITE_DIR / "analysis-worker.js"
 ANALYSIS_WORKER_CLIENT_PATH = SITE_DIR / "analysis-worker-client.js"
 SESSION_STORE_PATH = SITE_DIR / "session-store.js"
 SESSION_STORE_TEST_PATH = SITE_DIR / "session-store.test.js"
+SITE_PACKAGE_PATH = SITE_DIR / "package.json"
 KEYBOARD_CONTROLS_PATH = SITE_DIR / "keyboard-controls.js"
 BENCHMARK_PATH = SITE_DIR / "data" / "benchmarks.json"
 PAGES_WORKFLOW = ROOT_DIR / ".github" / "workflows" / "pages.yml"
@@ -128,16 +129,21 @@ def check_pages_workflow() -> None:
         "node --check site/analysis-worker-client.js",
         "node --check site/session-store.js",
         "node --check site/session-store.test.js",
-        "node --test --experimental-default-type=module site/session-store.test.js",
+        "node --test site/session-store.test.js",
         "node --check site/keyboard-controls.js",
     ]
     for value in required:
         if value not in workflow:
             raise SiteCheckError(f"pages workflow missing {value}")
-    forbidden = ["run-hyperfine.sh", "tests/benchmarks/run.py", "hyperfine"]
+    forbidden = [
+        "--experimental-default-type",
+        "run-hyperfine.sh",
+        "tests/benchmarks/run.py",
+        "hyperfine",
+    ]
     for value in forbidden:
         if value in workflow:
-            raise SiteCheckError(f"pages workflow must not run benchmarks: found {value}")
+            raise SiteCheckError(f"pages workflow must not contain {value}")
 
 
 def check_index() -> None:
@@ -211,6 +217,10 @@ def check_workbench() -> None:
             raise SiteCheckError(f"site/workbench.html missing expected content: {text}")
 
     require_markers(
+        SITE_PACKAGE_PATH,
+        ('"type": "module"',),
+    )
+    require_markers(
         WORKBENCH_JS_PATH,
         (
             'from "./analysis-worker-client.js"',
@@ -274,12 +284,14 @@ def check_workbench() -> None:
     require_markers(
         SESSION_STORE_TEST_PATH,
         (
-            "detectorSnapshotsMatch",
-            "changed detection stats",
-            "changed non-boundary presentation timing",
-            "review restoration releases decisions only for an exact run identity",
-            "public workbench restoration path uses the tested fail-closed gate",
-            "fail closed when either snapshot is missing",
+            "createReviewWorkspace",
+            "detector snapshots reject changed detection stats",
+            "detector snapshots reject changed non-boundary presentation timing",
+            "workspace session exports complete detector and presentation identity",
+            "public workspace restores decisions only for an exact completed run",
+            "public workspace keeps decisions detached when detector stats change",
+            "public workspace keeps decisions detached when non-boundary timing changes",
+            "detector snapshots fail closed when either snapshot is missing",
         ),
     )
     require_markers(
