@@ -1,15 +1,10 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import test from "node:test";
 
+import { createReviewWorkspace } from "./review-workspace.js";
 import { detectorSnapshotsMatch, reviewRestorationResult } from "./session-store.js";
 
-const baseline = {
-  scenes: [
-    { start: 0, end: 12 },
-    { start: 12, end: 24 },
-  ],
-  boundaries: [{ sample: 12, media_time_seconds: 1.375 }],
+const baselineOutput = {
   detection: {
     scene_list: {
       scenes: [
@@ -59,125 +54,218 @@ const settings = {
   max_dimension: 640,
   detector_config: { detector: "content", threshold: 27 },
 };
-const decisions = [
-  { sample: 18, media_time_seconds: 2.05, action: "accept" },
-];
 
-function importedSession() {
-  return {
-    schema_version: 1,
-    media: structuredClone(media),
-    settings: structuredClone(settings),
-    detector_snapshot: structuredClone(baseline),
-    review: { decisions: structuredClone(decisions) },
-  };
+function fakeElement(overrides = {}) {
+  return Object.assign(
+    {
+      style: {},
+      dataset: {},
+      classList: { add() {} },
+      children: [],
+      value: "1",
+      min: "1",
+      max: "8",
+      parentElement: { clientWidth: 800 },
+      textContent: "",
+      addEventListener() {},
+      replaceChildren(...children) {
+        this.children = children;
+      },
+      append(...children) {
+        this.children.push(...children);
+      },
+      closest() {
+        return null;
+      },
+    },
+    overrides,
+  );
 }
 
-function currentIdentity() {
+globalThis.document = {
+  createElement() {
+    return fakeElement();
+  },
+};
+
+function createWorkspace(output = baselineOutput) {
+  const video = {
+    duration: 3,
+    currentTime: 0,
+    paused: true,
+    pause() {
+      this.paused = true;
+    },
+  };
+  const workspace = createReviewWorkspace({
+    video,
+    timelineTrack: fakeElement(),
+    timelineZoom: fakeElement({ value: "1" }),
+    timelineStatus: fakeElement(),
+    reviewStatus: fakeElement(),
+    compareStatus: fakeElement(),
+    formatTime: (value) => String(value),
+  });
+  workspace.load({ output: structuredClone(output), fps: 8, duration: video.duration });
+  return { workspace, video };
+}
+
+function createReviewedSession() {
+  const { workspace } = createWorkspace();
+  workspace.seekBoundary(1);
+  workspace.seekBoundary(1);
+  workspace.acceptSelectedBoundary();
+  const session = workspace.sessionArtifact({ media, settings });
+  assert.deepEqual(session.review.decisions, [
+    { sample: 18, media_time_seconds: 2.05, action: "accept" },
+  ]);
+  return session;
+}
+
+function currentIdentity(output = baselineOutput) {
+  const { workspace } = createWorkspace(output);
   return {
     media: structuredClone(media),
     settings: structuredClone(settings),
-    detector_snapshot: structuredClone(baseline),
+    detector_snapshot: workspace.sessionArtifact({ media: null, settings: null }).detector_snapshot,
   };
 }
 
 test("detector snapshots match independent of object key order", () => {
-  const equivalent = JSON.parse(JSON.stringify(baseline));
-  equivalent.boundaries = [{ media_time_seconds: 1.375, sample: 12 }];
-  equivalent.scenes = [
-    { end: 12, start: 0 },
-    { end: 24, start: 12 },
-  ];
+  const left = currentIdentity().detector_snapshot;
+  const right = {
+    presented_samples: structuredClone(left.presented_samples),
+    boundary_review: structuredClone(left.boundary_review),
+    detection: structuredClone(left.detection),
+    boundaries: left.boundaries.map(({ sample, media_time_seconds }) => ({
+      media_time_seconds,
+      sample,
+    })),
+    scenes: left.scenes.map(({ start, end }) => ({ end, start })),
+  };
 
-  assert.equal(detectorSnapshotsMatch(baseline, equivalent), true);
+  assert.equal(detectorSnapshotsMatch(left, right), true);
 });
 
 test("detector snapshots reject a changed scene boundary", () => {
-  const changed = structuredClone(baseline);
+  const left = currentIdentity().detector_snapshot;
+  const changed = structuredClone(left);
   changed.scenes[0].end = 13;
   changed.scenes[1].start = 13;
   changed.boundaries[0].sample = 13;
 
-  assert.equal(detectorSnapshotsMatch(baseline, changed), false);
+  assert.equal(detectorSnapshotsMatch(left, changed), false);
 });
 
 test("detector snapshots reject a changed boundary media time", () => {
-  const changed = structuredClone(baseline);
+  const left = currentIdentity().detector_snapshot;
+  const changed = structuredClone(left);
   changed.boundaries[0].media_time_seconds = 1.5;
 
-  assert.equal(detectorSnapshotsMatch(baseline, changed), false);
+  assert.equal(detectorSnapshotsMatch(left, changed), false);
 });
 
 test("detector snapshots reject a changed review candidate", () => {
-  const changed = structuredClone(baseline);
+  const left = currentIdentity().detector_snapshot;
+  const changed = structuredClone(left);
   changed.boundary_review.candidates[1].status = "accepted";
 
-  assert.equal(detectorSnapshotsMatch(baseline, changed), false);
+  assert.equal(detectorSnapshotsMatch(left, changed), false);
 });
 
 test("detector snapshots reject changed detection stats", () => {
-  const changed = structuredClone(baseline);
+  const left = currentIdentity().detector_snapshot;
+  const changed = structuredClone(left);
   changed.detection.stats.rows[2].score = 3.2;
 
-  assert.equal(detectorSnapshotsMatch(baseline, changed), false);
+  assert.equal(detectorSnapshotsMatch(left, changed), false);
 });
 
 test("detector snapshots reject changed non-boundary presentation timing", () => {
-  const changed = structuredClone(baseline);
+  const left = currentIdentity().detector_snapshot;
+  const changed = structuredClone(left);
   changed.presented_samples[2].media_time_seconds = 2.15;
 
-  assert.equal(detectorSnapshotsMatch(baseline, changed), false);
+  assert.equal(detectorSnapshotsMatch(left, changed), false);
 });
 
 test("detector snapshots reject missing complete-output identity", () => {
-  const incomplete = structuredClone(baseline);
+  const left = currentIdentity().detector_snapshot;
+  const incomplete = structuredClone(left);
   delete incomplete.detection;
 
-  assert.equal(detectorSnapshotsMatch(baseline, incomplete), false);
+  assert.equal(detectorSnapshotsMatch(left, incomplete), false);
 });
 
-test("review restoration releases decisions only for an exact run identity", () => {
-  assert.deepEqual(reviewRestorationResult(importedSession(), currentIdentity()), {
-    restore: true,
-    mismatch: null,
-    decisions,
-  });
+test("workspace session exports complete detector and presentation identity", () => {
+  const snapshot = currentIdentity().detector_snapshot;
+
+  assert.deepEqual(snapshot.detection, baselineOutput.detection);
+  assert.deepEqual(snapshot.boundary_review, baselineOutput.boundary_review);
+  assert.deepEqual(snapshot.presented_samples, baselineOutput.presented_samples);
 });
 
-test("review restoration fails closed for changed detector output", () => {
-  const current = currentIdentity();
-  current.detector_snapshot.detection.stats.rows[2].score = 3.2;
+test("public workspace restores decisions only for an exact completed run", () => {
+  const imported = createReviewedSession();
+  const { workspace } = createWorkspace();
+  const restoration = reviewRestorationResult(imported, currentIdentity());
 
-  assert.deepEqual(reviewRestorationResult(importedSession(), current), {
+  assert.equal(restoration.restore, true);
+  workspace.loadReviewDecisions(restoration.decisions);
+  assert.deepEqual(workspace.reviewArtifact().decisions, imported.review.decisions);
+});
+
+test("public workspace keeps decisions detached when detector stats change", () => {
+  const imported = createReviewedSession();
+  const changedOutput = structuredClone(baselineOutput);
+  changedOutput.detection.stats.rows[2].score = 3.2;
+  const { workspace } = createWorkspace(changedOutput);
+  const restoration = reviewRestorationResult(imported, currentIdentity(changedOutput));
+
+  assert.deepEqual(restoration, {
     restore: false,
     mismatch: "detector output",
     decisions: null,
   });
+  assert.deepEqual(workspace.reviewArtifact().decisions, []);
 });
 
-test("review restoration fails closed for changed presentation timing", () => {
-  const current = currentIdentity();
-  current.detector_snapshot.presented_samples[2].media_time_seconds = 2.15;
+test("public workspace keeps decisions detached when non-boundary timing changes", () => {
+  const imported = createReviewedSession();
+  const changedOutput = structuredClone(baselineOutput);
+  changedOutput.presented_samples[2].media_time_seconds = 2.15;
+  const { workspace } = createWorkspace(changedOutput);
+  const restoration = reviewRestorationResult(imported, currentIdentity(changedOutput));
 
-  assert.deepEqual(reviewRestorationResult(importedSession(), current), {
+  assert.deepEqual(restoration, {
     restore: false,
     mismatch: "detector output",
     decisions: null,
   });
+  assert.deepEqual(workspace.reviewArtifact().decisions, []);
 });
 
 test("review restoration fails closed for changed media or settings", () => {
+  const imported = createReviewedSession();
   const changedMedia = currentIdentity();
   changedMedia.media.size += 1;
-  assert.equal(reviewRestorationResult(importedSession(), changedMedia).restore, false);
+  assert.deepEqual(reviewRestorationResult(imported, changedMedia), {
+    restore: false,
+    mismatch: "media fingerprint",
+    decisions: null,
+  });
 
   const changedSettings = currentIdentity();
   changedSettings.settings.detector_config.threshold = 28;
-  assert.equal(reviewRestorationResult(importedSession(), changedSettings).restore, false);
+  assert.deepEqual(reviewRestorationResult(imported, changedSettings), {
+    restore: false,
+    mismatch: "detector or sampling settings",
+    decisions: null,
+  });
 });
 
 test("review restoration fails closed for malformed review decisions", () => {
-  const imported = importedSession();
+  const imported = createReviewedSession();
   delete imported.review.decisions;
 
   assert.deepEqual(reviewRestorationResult(imported, currentIdentity()), {
@@ -187,24 +275,8 @@ test("review restoration fails closed for malformed review decisions", () => {
   });
 });
 
-test("review workspace snapshots complete detector and presentation output", async () => {
-  const source = await readFile(new URL("./review-workspace.js", import.meta.url), "utf8");
-
-  assert.match(source, /detection:\s*output\?\.detection/u);
-  assert.match(source, /boundary_review:\s*output\?\.boundary_review/u);
-  assert.match(source, /presented_samples:\s*presentedSamples/u);
-});
-
-test("public workbench restoration path uses the tested fail-closed gate", async () => {
-  const source = await readFile(new URL("./workbench.js", import.meta.url), "utf8");
-
-  assert.match(
-    source,
-    /const restoration = reviewRestorationResult[\s\S]*if \(restoration\.restore\)[\s\S]*loadReviewDecisions\(restoration\.decisions\)/u,
-  );
-});
-
 test("detector snapshots fail closed when either snapshot is missing", () => {
-  assert.equal(detectorSnapshotsMatch(null, baseline), false);
-  assert.equal(detectorSnapshotsMatch(baseline, undefined), false);
+  const snapshot = currentIdentity().detector_snapshot;
+  assert.equal(detectorSnapshotsMatch(null, snapshot), false);
+  assert.equal(detectorSnapshotsMatch(snapshot, undefined), false);
 });
