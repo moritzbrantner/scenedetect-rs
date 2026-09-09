@@ -39,6 +39,31 @@ fn timed_frame(index: u64, pts: i64, duration: i64, time_base: TimeBase) -> Fram
     }
 }
 
+fn one_scene_timeline_end(presentation: MediaTime, duration: MediaTime) -> Option<MediaTime> {
+    let source = TimingFrameSource {
+        frame_rate: FrameRate(10.0),
+        frames: vec![FrameWithTiming {
+            frame: Frame::solid(0, 2, 2, [0, 0, 0]),
+            timing: FrameTiming {
+                presentation_time: Some(presentation),
+                duration: Some(duration),
+            },
+        }]
+        .into_iter(),
+        rich_reads: Rc::new(Cell::new(0)),
+        plain_reads: Rc::new(Cell::new(0)),
+    };
+    let scene_list = SceneList {
+        frame_rate: FrameRate(10.0),
+        scenes: vec![SceneSpan {
+            start: FrameIndex(0),
+            end: FrameIndex(1),
+        }],
+    };
+
+    scene_timeline_from_source(&scene_list, source).unwrap().scenes[0].end_time
+}
+
 #[test]
 fn timeline_preserves_exact_vfr_scene_endpoints_without_plain_frame_fallback() {
     let time_base = TimeBase::new(1, 1_000).unwrap();
@@ -136,29 +161,39 @@ fn timeline_does_not_invent_final_media_time_when_duration_is_unknown() {
 }
 
 #[test]
-fn final_media_time_adds_exact_duration_across_compatible_rational_bases() {
+fn timeline_adds_exact_duration_across_compatible_rational_bases() {
     let presentation_base = TimeBase::new(1, 10).unwrap();
     let duration_base = TimeBase::new(1, 1_000).unwrap();
-    let timing = FrameTiming {
-        presentation_time: Some(MediaTime::new(9, presentation_base)),
-        duration: Some(MediaTime::new(100, duration_base)),
-    };
 
     assert_eq!(
-        exact_frame_end_time(&timing),
+        one_scene_timeline_end(
+            MediaTime::new(9, presentation_base),
+            MediaTime::new(100, duration_base),
+        ),
         Some(MediaTime::new(10, presentation_base))
     );
 }
 
 #[test]
-fn final_media_time_uses_a_common_exact_base_when_direct_conversion_is_fractional() {
-    let timing = FrameTiming {
-        presentation_time: Some(MediaTime::new(1, TimeBase::new(1, 6).unwrap())),
-        duration: Some(MediaTime::new(1, TimeBase::new(1, 4).unwrap())),
-    };
+fn timeline_uses_a_common_exact_base_when_direct_conversion_is_fractional() {
+    assert_eq!(
+        one_scene_timeline_end(
+            MediaTime::new(1, TimeBase::new(1, 6).unwrap()),
+            MediaTime::new(1, TimeBase::new(1, 4).unwrap()),
+        ),
+        Some(MediaTime::new(5, TimeBase::new(1, 12).unwrap()))
+    );
+}
+
+#[test]
+fn timeline_uses_common_base_when_direct_tick_addition_overflows() {
+    let time_base = TimeBase::new(1, 1_000).unwrap();
 
     assert_eq!(
-        exact_frame_end_time(&timing),
-        Some(MediaTime::new(5, TimeBase::new(1, 12).unwrap()))
+        one_scene_timeline_end(
+            MediaTime::new(i64::MAX, time_base),
+            MediaTime::new(1, time_base),
+        ),
+        Some(MediaTime::new(1_i64 << 60, TimeBase::new(1, 125).unwrap()))
     );
 }
