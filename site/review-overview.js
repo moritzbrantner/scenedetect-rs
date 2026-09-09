@@ -137,11 +137,20 @@ export function createResultsOverview({
   boundaryReviewSummary,
   formatTime,
   formatCandidateStatus,
+  mediaTimeForSample,
 }) {
   const sceneTable = sceneRows.closest("table");
   const sceneTableFrame = sceneRows.closest(".result-table-frame");
   const boundaryTable = boundaryRows.closest("table");
   const boundaryTableFrame = boundaryRows.closest(".result-table-frame");
+
+  function mediaTime(sample, fps) {
+    const fallback = Number(sample) / fps;
+    const resolved = Number(mediaTimeForSample?.(Number(sample), fps));
+    const value = Number.isFinite(resolved) ? resolved : fallback;
+    const duration = Number.isFinite(video.duration) ? video.duration : Number.POSITIVE_INFINITY;
+    return Math.min(duration, Math.max(0, value));
+  }
 
   setTableHeaders(sceneTable, [
     "Scene",
@@ -282,8 +291,8 @@ export function createResultsOverview({
         if (!query) {
           return true;
         }
-        const startTime = formatTime(Math.min(video.duration, scene.start / sceneFps));
-        const endTime = formatTime(Math.min(video.duration, scene.end / sceneFps));
+        const startTime = formatTime(mediaTime(scene.start, sceneFps));
+        const endTime = formatTime(mediaTime(scene.end, sceneFps));
         const haystack = `${sceneNumber} ${scene.start} ${scene.end} ${startTime} ${endTime}`.toLowerCase();
         return haystack.includes(query);
       })
@@ -302,13 +311,15 @@ export function createResultsOverview({
     sceneCount.textContent = `Showing ${visibleScenes.length} of ${scenes.length} scenes.`;
     for (const { scene, sceneNumber } of visibleScenes) {
       const row = document.createElement("tr");
+      const startTime = mediaTime(scene.start, sceneFps);
+      const endTime = mediaTime(scene.end, sceneFps);
       appendCells(row, [
         sceneNumber,
         scene.start,
-        formatTime(Math.min(video.duration, scene.start / sceneFps)),
+        formatTime(startTime),
         scene.end,
-        formatTime(Math.min(video.duration, scene.end / sceneFps)),
-        formatTime((scene.end - scene.start) / sceneFps),
+        formatTime(endTime),
+        formatTime(Math.max(0, endTime - startTime)),
       ]);
       sceneRows.append(row);
     }
@@ -340,7 +351,7 @@ export function createResultsOverview({
         formatCandidateStatus(entry.candidate.status),
         formatReviewGrouping(entry.grouping),
         entry.candidate.frame,
-        formatTime(Math.min(video.duration, entry.candidate.frame / reviewFps)),
+        formatTime(mediaTime(entry.candidate.frame, reviewFps)),
         Number(entry.candidate.score).toFixed(6),
         Number(entry.candidate.threshold_distance).toFixed(6),
       ]);
@@ -387,7 +398,7 @@ export function createResultsOverview({
 
     const time = Math.min(
       Math.max(0, previewVideo.duration - 0.001),
-      Math.max(0, sample / fps),
+      mediaTime(sample, fps),
     );
     await seekPresentedVideoFrame(previewVideo, time, signal);
     const scale = Math.min(
@@ -429,7 +440,7 @@ export function createResultsOverview({
     disposition.textContent = splitDisposition(entry.candidate.status);
     const candidateLabel = document.createElement("span");
     candidateLabel.textContent = `Candidate sample ${entry.candidate.frame} · ${formatTime(
-      Math.min(video.duration, entry.candidate.frame / reviewFps),
+      mediaTime(entry.candidate.frame, reviewFps),
     )}`;
     title.append(disposition, candidateLabel);
 
@@ -480,7 +491,7 @@ export function createResultsOverview({
     video.pause();
     video.currentTime = Math.min(
       Math.max(0, video.duration - 0.001),
-      Math.max(0, frame / reviewFps),
+      mediaTime(frame, reviewFps),
     );
     video.scrollIntoView({ behavior: "smooth", block: "center" });
   }

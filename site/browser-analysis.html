@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>How browser analysis works · scenedetect-rs</title>
+    <meta
+      name="description"
+      content="How the scenedetect-rs browser workbench decodes local video, samples frames, and runs Rust scene detection through WebAssembly."
+    />
+    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="workbench.css" />
+  </head>
+  <body class="explanation-page">
+    <header class="site-header" aria-label="Project navigation">
+      <a class="brand" href="index.html">scenedetect-rs</a>
+      <nav aria-label="Primary navigation">
+        <a href="workbench.html">Workbench</a>
+        <a href="index.html">Project</a>
+        <a href="https://github.com/moritzbrantner/scenedetect-rs">Source</a>
+      </nav>
+    </header>
+
+    <main>
+      <article class="explanation-shell">
+        <a class="explanation-back" href="workbench.html">← Back to browser workbench</a>
+        <header class="explanation-header">
+          <p class="eyebrow">Browser analysis</p>
+          <h1>How SceneDetect runs locally in the browser</h1>
+          <p class="explanation-lede">
+            The workbench is a static GitHub Pages application. It uses the browser for media decode
+            and Rust compiled to WebAssembly for scene-detection semantics. The selected video is not
+            uploaded to a server.
+          </p>
+        </header>
+
+        <div class="explanation-content">
+          <section aria-labelledby="local-media-heading">
+            <h2 id="local-media-heading">Local media stays local</h2>
+            <p>
+              Selecting a video creates a browser-local object URL. The page reads and decodes that
+              file on the current device. No application server receives the media, and the static
+              site does not need an upload endpoint to perform detection.
+            </p>
+          </section>
+
+          <section aria-labelledby="sampling-heading">
+            <h2 id="sampling-heading">The browser owns decode and sampling</h2>
+            <p>
+              The main browser thread owns the <code>&lt;video&gt;</code> element, seek/presentation
+              synchronization, canvas reads, and sampling cadence. RGB buffers are transferred to a
+              module worker, so the WebAssembly session and Rust export generation do not run on the
+              UI thread.
+            </p>
+          </section>
+
+          <section aria-labelledby="rust-heading">
+            <h2 id="rust-heading">Rust owns scene-detection semantics</h2>
+            <p>
+              Detector defaults, scene scores, thresholds, adaptive windows, fade handling, minimum
+              scene length, scene construction, boundary-review status, and detector exports come from
+              <code>scenedetect-core</code>. The browser supplies sampled pixels and presents results;
+              it does not reimplement detector decisions.
+            </p>
+          </section>
+
+          <section aria-labelledby="presentation-heading">
+            <h2 id="presentation-heading">Sampling follows presented video frames</h2>
+            <p>
+              When available, the media adapter waits for
+              <code>requestVideoFrameCallback()</code> after a seek so canvas reads follow a frame
+              actually presented by the browser. The presented media timestamp travels with the RGB
+              sample through the WebAssembly session and returns in the result, so the timeline can
+              retain both sampled-frame indexes and browser media time.
+            </p>
+          </section>
+
+          <section aria-labelledby="review-heading">
+            <h2 id="review-heading">Human review is separate evidence</h2>
+            <p>
+              Manual cuts, rejected candidates, and scene merges are stored as browser-owned review
+              decisions. They derive a reviewed scene list without mutating the immutable Rust detector
+              result. Saved run comparisons likewise compare detector boundaries without changing them.
+            </p>
+          </section>
+
+          <section aria-labelledby="limits-heading">
+            <h2 id="limits-heading">What this browser path does not claim</h2>
+            <p>
+              Browser presentation timestamps improve timeline fidelity, but the workbench does not claim native
+              FFmpeg frame-exact decoding or complete variable-frame-rate parity. It
+              preserves the media times of the browser-presented samples it actually analyzed. Native
+              decode parity remains a separate concern from the WebAssembly detector itself.
+            </p>
+          </section>
+        </div>
+      </article>
+    </main>
+
+    <footer class="site-footer">
+      <span>scenedetect-rs browser workbench</span>
+      <span>Video processing stays on this device</span>
+    </footer>
+  </body>
+</html>

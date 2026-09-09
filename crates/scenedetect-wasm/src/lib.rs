@@ -26,6 +26,13 @@ type BrowserResult<T> = std::result::Result<T, String>;
 struct BrowserSession {
     detection: DetectionSession,
     review_options: Option<BoundaryReviewOptions>,
+    presented_samples: Vec<BrowserPresentedSample>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct BrowserPresentedSample {
+    sample: u64,
+    media_time_seconds: f64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -188,6 +195,7 @@ fn apply_weights(weights: &mut ContentWeights, overrides: Option<&BrowserWeights
 struct BrowserOutput {
     detection: DetectionResult,
     boundary_review: Option<BoundaryReview>,
+    presented_samples: Vec<BrowserPresentedSample>,
     exports: BrowserExports,
 }
 
@@ -205,6 +213,7 @@ struct BrowserExports {
 fn build_browser_output(
     detection: DetectionResult,
     boundary_review: Option<BoundaryReview>,
+    presented_samples: Vec<BrowserPresentedSample>,
 ) -> BrowserResult<Vec<u8>> {
     let mut scene_list_csv = Vec::new();
     let mut scene_list_json = Vec::new();
@@ -239,6 +248,7 @@ fn build_browser_output(
     let output = BrowserOutput {
         detection,
         boundary_review,
+        presented_samples,
         exports: BrowserExports {
             scene_list_csv: String::from_utf8(scene_list_csv).map_err(|error| error.to_string())?,
             scene_list_json: String::from_utf8(scene_list_json)
@@ -409,7 +419,7 @@ fn take_session(handle: u32) -> BrowserResult<BrowserSession> {
 
 #[no_mangle]
 pub extern "C" fn scenedetect_abi_version() -> u32 {
-    1
+    2
 }
 
 #[no_mangle]
@@ -502,6 +512,7 @@ pub extern "C" fn scenedetect_session_new(
         Ok(BrowserSession {
             detection: DetectionSession::new(detector, FrameRate(frame_rate), options),
             review_options,
+            presented_samples: Vec::new(),
         })
     })();
 
@@ -523,12 +534,16 @@ pub extern "C" fn scenedetect_session_push(
     index: u32,
     width: u32,
     height: u32,
+    media_time_seconds: f64,
     rgb_ptr: *const u8,
     rgb_len: usize,
 ) -> i32 {
     let result = (|| -> BrowserResult<()> {
         if width == 0 || height == 0 {
             return Err("frame dimensions must be non-zero".to_owned());
+        }
+        if !media_time_seconds.is_finite() || media_time_seconds < 0.0 {
+            return Err("presented media time must be a non-negative finite number".to_owned());
         }
         let expected_len = (width as usize)
             .checked_mul(height as usize)
@@ -541,6 +556,20 @@ pub extern "C" fn scenedetect_session_push(
         }
         let rgb = copy_input(rgb_ptr, rgb_len)?;
         mutate_session(handle, |session| {
+            if let Some(previous) = session.presented_samples.last() {
+                if index as u64 <= previous.sample {
+                    return Err(format!(
+                        "sample indexes must increase: received {index} after {}",
+                        previous.sample
+                    ));
+                }
+                if media_time_seconds + f64::EPSILON < previous.media_time_seconds {
+                    return Err(format!(
+                        "presented media times must not decrease: received {media_time_seconds:.6}s after {:.6}s",
+                        previous.media_time_seconds
+                    ));
+                }
+            }
             session
                 .detection
                 .push_frame(Frame {
@@ -549,7 +578,12 @@ pub extern "C" fn scenedetect_session_push(
                     height,
                     rgb,
                 })
-                .map_err(|error| error.to_string())
+                .map_err(|error| error.to_string())?;
+            session.presented_samples.push(BrowserPresentedSample {
+                sample: index as u64,
+                media_time_seconds,
+            });
+            Ok(())
         })
     })();
 
@@ -568,24 +602,21 @@ pub extern "C" fn scenedetect_session_push(
 #[no_mangle]
 pub extern "C" fn scenedetect_session_finish(handle: u32) -> i32 {
     let result = (|| -> BrowserResult<Vec<u8>> {
-        let session = take_session(handle)?;
-        let (detection, boundary_review) = match session.review_options {
+        let BrowserSession {
+            detection,
+            review_options,
+            presented_samples,
+        } = take_session(handle)?;
+        let (detection, boundary_review) = match review_options {
             Some(review_options) => {
-                let (detection, review) = session
-                    .detection
+                let (detection, review) = detection
                     .finish_with_boundary_review(review_options)
                     .map_err(|error| error.to_string())?;
                 (detection, Some(review))
             }
-            None => (
-                session
-                    .detection
-                    .finish()
-                    .map_err(|error| error.to_string())?,
-                None,
-            ),
+            None => (detection.finish().map_err(|error| error.to_string())?, None),
         };
-        build_browser_output(detection, boundary_review)
+        build_browser_output(detection, boundary_review, presented_samples)
     })();
 
     match result {
@@ -667,5 +698,31 @@ mod tests {
         unsafe {
             scenedetect_dealloc(ptr, len);
         }
+    }
+
+    #[test]
+    fn browser_output_preserves_presented_media_timestamps() {
+        let config = br#"{"detector":"content","min_scene_len":0}"#;
+        let handle = scenedetect_session_new(config.as_ptr(), config.len(), 6.0);
+        assert_ne!(handle, 0);
+
+        let first = [0_u8, 0, 0];
+        let second = [255_u8, 255, 255];
+        assert_eq!(
+            scenedetect_session_push(handle, 0, 1, 1, 0.0, first.as_ptr(), first.len()),
+            OK
+        );
+        assert_eq!(
+            scenedetect_session_push(handle, 1, 1, 1, 0.125, second.as_ptr(), second.len()),
+            OK
+        );
+        assert_eq!(scenedetect_session_finish(handle), OK);
+
+        let bytes = LAST_RESULT.with(|result| result.borrow().clone());
+        let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(value["presented_samples"][0]["sample"], 0);
+        assert_eq!(value["presented_samples"][0]["media_time_seconds"], 0.0);
+        assert_eq!(value["presented_samples"][1]["sample"], 1);
+        assert_eq!(value["presented_samples"][1]["media_time_seconds"], 0.125);
     }
 }
