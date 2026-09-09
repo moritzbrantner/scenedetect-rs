@@ -1,0 +1,89 @@
+name: Issue 105 lazy timing benchmark
+
+on:
+  push:
+    branches:
+      - perf/issue-105-lazy-timing
+
+permissions:
+  contents: read
+
+env:
+  PRE_TIMING_SHA: d34cd07bbf83475f92abdc2dcb4e0eaf777d848f
+  EAGER_TIMING_SHA: 50cd0953701ec0a2f88d08156ab9b1faab67d7f2
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+
+      - name: Install prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg hyperfine
+
+      - name: Build candidate
+        run: |
+          cargo build --locked -p scenedetect-cli --release
+          cp target/release/scenedetect-rs /tmp/scenedetect-lazy
+
+      - name: Build eager and pre-timing references
+        run: |
+          git worktree add --detach /tmp/scenedetect-eager "$EAGER_TIMING_SHA"
+          cargo build --locked --manifest-path /tmp/scenedetect-eager/Cargo.toml -p scenedetect-cli --release --target-dir /tmp/scenedetect-eager-target
+          cp /tmp/scenedetect-eager-target/release/scenedetect-rs /tmp/scenedetect-eager-bin
+
+          git worktree add --detach /tmp/scenedetect-pre "$PRE_TIMING_SHA"
+          cargo build --locked --manifest-path /tmp/scenedetect-pre/Cargo.toml -p scenedetect-cli --release --target-dir /tmp/scenedetect-pre-target
+          cp /tmp/scenedetect-pre-target/release/scenedetect-rs /tmp/scenedetect-pre-bin
+
+      - name: Generate benchmark fixture
+        run: scripts/generate-benchmark-fixtures.sh --generated-only >/dev/null
+
+      - name: Compare default detection overhead
+        run: |
+          VIDEO="$GITHUB_WORKSPACE/tests/benchmarks/generated/generated-hard-cuts.mkv"
+          hyperfine --warmup 3 --runs 12 \
+            --command-name 'pre threshold' "/tmp/scenedetect-pre-bin -i '$VIDEO' -m 1 detect-threshold --threshold 12 list-scenes --no-output-file --quiet" \
+            --command-name 'eager threshold' "/tmp/scenedetect-eager-bin -i '$VIDEO' -m 1 detect-threshold --threshold 12 list-scenes --no-output-file --quiet" \
+            --command-name 'lazy threshold' "/tmp/scenedetect-lazy -i '$VIDEO' -m 1 detect-threshold --threshold 12 list-scenes --no-output-file --quiet" \
+            --command-name 'pre content' "/tmp/scenedetect-pre-bin -i '$VIDEO' -m 1 detect-content --threshold 20 list-scenes --no-output-file --quiet" \
+            --command-name 'eager content' "/tmp/scenedetect-eager-bin -i '$VIDEO' -m 1 detect-content --threshold 20 list-scenes --no-output-file --quiet" \
+            --command-name 'lazy content' "/tmp/scenedetect-lazy -i '$VIDEO' -m 1 detect-content --threshold 20 list-scenes --no-output-file --quiet" \
+            --export-json /tmp/lazy-timing.json
+
+          python3 - <<'PY'
+          import json
+          data = json.load(open('/tmp/lazy-timing.json'))
+          means = {item['command']: item['mean'] for item in data['results']}
+          for name, mean in means.items():
+              print(f"LAZY_TIMING_BENCH {name} mean={mean:.6f}s")
+
+          for detector in ('threshold', 'content'):
+              lazy = means[f'lazy {detector}']
+              eager = means[f'eager {detector}']
+              pre = means[f'pre {detector}']
+              improvement = (eager - lazy) / eager * 100
+              pre_delta = (lazy - pre) / pre * 100
+              print(
+                  f"LAZY_TIMING_RESULT {detector} improvement_vs_eager={improvement:.2f}% "
+                  f"delta_vs_pre={pre_delta:.2f}%"
+              )
+              assert lazy < eager * 0.97, (detector, means)
+              assert lazy <= pre * 1.05, (detector, means)
+          PY
+
+      - name: Upload benchmark evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: issue-105-lazy-timing-benchmark
+          path: /tmp/lazy-timing.json
