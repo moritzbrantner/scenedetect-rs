@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { detectorSnapshotsMatch } from "./session-store.js";
@@ -75,6 +76,12 @@ test("detector snapshots reject missing review-candidate identity", () => {
   delete incomplete.boundary_review;
 
   assert.equal(detectorSnapshotsMatch(baseline, incomplete), false);
+});
+
+test("review workspace snapshots include Rust boundary-review output", async () => {
+  const source = await readFile(new URL("./review-workspace.js", import.meta.url), "utf8");
+
+  assert.match(source, /boundary_review:\s*output\.boundary_review/u);
 });
 
 test("detector snapshots fail closed when either snapshot is missing", () => {
