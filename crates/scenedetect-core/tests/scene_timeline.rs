@@ -77,12 +77,28 @@ fn timeline_preserves_exact_vfr_scene_endpoints_without_plain_frame_fallback() {
     assert_eq!(timeline.scenes.len(), 2);
     assert_eq!(timeline.scenes[0].start, FrameIndex(0));
     assert_eq!(timeline.scenes[0].end, FrameIndex(2));
-    assert_eq!(timeline.scenes[0].start_time, Some(MediaTime::new(0, time_base)));
-    assert_eq!(timeline.scenes[0].end_time, Some(MediaTime::new(400, time_base)));
-    assert_eq!(timeline.scenes[1].start_time, Some(MediaTime::new(400, time_base)));
-    assert_eq!(timeline.scenes[1].end_time, Some(MediaTime::new(1_000, time_base)));
+    assert_eq!(
+        timeline.scenes[0].start_time,
+        Some(MediaTime::new(0, time_base))
+    );
+    assert_eq!(
+        timeline.scenes[0].end_time,
+        Some(MediaTime::new(400, time_base))
+    );
+    assert_eq!(
+        timeline.scenes[1].start_time,
+        Some(MediaTime::new(400, time_base))
+    );
+    assert_eq!(
+        timeline.scenes[1].end_time,
+        Some(MediaTime::new(1_000, time_base))
+    );
     assert_eq!(rich_reads.get(), 5, "four frames plus one EOF read");
-    assert_eq!(plain_reads.get(), 0, "timeline generation must opt into rich timing");
+    assert_eq!(
+        plain_reads.get(),
+        0,
+        "timeline generation must opt into rich timing"
+    );
 }
 
 #[test]
@@ -114,6 +130,9 @@ fn timeline_does_not_invent_final_media_time_when_duration_is_unknown() {
 
     let timeline = scene_timeline_from_source(&scene_list, source).unwrap();
 
-    assert_eq!(timeline.scenes[0].start_time, Some(MediaTime::new(0, time_base)));
+    assert_eq!(
+        timeline.scenes[0].start_time,
+        Some(MediaTime::new(0, time_base))
+    );
     assert_eq!(timeline.scenes[0].end_time, None);
 }
