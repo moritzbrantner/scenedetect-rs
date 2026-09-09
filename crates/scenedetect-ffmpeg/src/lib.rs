@@ -1,5 +1,5 @@
 use std::io::{BufRead, BufReader, ErrorKind, Read};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::process::{Child, ChildStdout, Command, Stdio};
 
 use scenedetect_core::{
@@ -35,6 +35,13 @@ pub struct VideoMetadata {
 struct TimingSidecar {
     child: Child,
     stdout: BufReader<ChildStdout>,
+}
+
+impl TimingSidecar {
+    fn terminate(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
 }
 
 pub struct FfmpegFrameSource {
@@ -73,8 +80,9 @@ impl FfmpegFrameSource {
         frame_rate_override: Option<FrameRate>,
         binaries: FfmpegBinaries,
     ) -> Result<Self> {
-        let path = path.as_ref();
-        let mut probe = probe_video_details_with_binaries(path, &binaries)?;
+        let path = resolve_open_time_path(path.as_ref())?;
+        let ffprobe_path = resolve_deferred_executable_path(&binaries.ffprobe)?;
+        let mut probe = probe_video_details_with_binaries(&path, &binaries)?;
         if let Some(frame_rate) = frame_rate_override {
             probe.metadata.frame_rate = frame_rate;
         }
@@ -85,7 +93,7 @@ impl FfmpegFrameSource {
         // traversal for current frame-index-only Detector semantics.
         let mut decoder_child = Command::new(&binaries.ffmpeg)
             .args(["-v", "error", "-i"])
-            .arg(path)
+            .arg(&path)
             .args([
                 "-fps_mode",
                 "passthrough",
@@ -112,8 +120,8 @@ impl FfmpegFrameSource {
         Ok(Self {
             metadata: probe.metadata,
             time_base: probe.time_base,
-            input_path: path.to_path_buf(),
-            ffprobe_path: binaries.ffprobe,
+            input_path: path,
+            ffprobe_path,
             decoder_child,
             decoder_stdout,
             timing_sidecar: None,
@@ -198,7 +206,10 @@ impl FfmpegFrameSource {
         // discard only those prior timing records so the first rich read remains
         // aligned without materializing the full timeline.
         for _ in 0..frame_index {
-            read_frame_timing(&mut sidecar.stdout, self.time_base)?;
+            if let Err(error) = read_frame_timing(&mut sidecar.stdout, self.time_base) {
+                sidecar.terminate();
+                return Err(error);
+            }
         }
 
         self.timing_sidecar = Some(sidecar);
@@ -225,8 +236,7 @@ impl Drop for FfmpegFrameSource {
         let _ = self.decoder_child.kill();
         let _ = self.decoder_child.wait();
         if let Some(sidecar) = self.timing_sidecar.as_mut() {
-            let _ = sidecar.child.kill();
-            let _ = sidecar.child.wait();
+            sidecar.terminate();
         }
     }
 }
@@ -245,10 +255,12 @@ impl FrameSource for FfmpegFrameSource {
     }
 
     fn next_frame_with_timing(&mut self) -> Result<Option<FrameWithTiming>> {
+        // Activate and align timing before decoding the rich frame. If the
+        // deferred probe cannot start or align, no decoded frame is consumed.
+        self.ensure_timing_sidecar_aligned_to(self.next_index)?;
         let Some(frame) = self.read_frame()? else {
             return Ok(None);
         };
-        self.ensure_timing_sidecar_aligned_to(frame.index.0)?;
         let timing = self.read_active_timing()?;
         Ok(Some(FrameWithTiming { frame, timing }))
     }
@@ -329,6 +341,27 @@ fn probe_video_details_with_binaries(
         },
         time_base: parse_time_base(&stream.time_base)?,
     })
+}
+
+fn resolve_open_time_path(path: &Path) -> Result<PathBuf> {
+    if path.is_absolute() {
+        return Ok(path.to_path_buf());
+    }
+    let current_dir = std::env::current_dir()
+        .map_err(|error| SceneDetectError::FrameSource(error.to_string()))?;
+    Ok(current_dir.join(path))
+}
+
+fn resolve_deferred_executable_path(path: &Path) -> Result<PathBuf> {
+    if path.is_absolute() || is_bare_executable_name(path) {
+        return Ok(path.to_path_buf());
+    }
+    resolve_open_time_path(path)
+}
+
+fn is_bare_executable_name(path: &Path) -> bool {
+    let mut components = path.components();
+    matches!(components.next(), Some(Component::Normal(_))) && components.next().is_none()
 }
 
 fn read_frame_timing(
@@ -438,5 +471,22 @@ mod tests {
         assert_eq!(timing.presentation_time.unwrap().ticks, 125);
         assert_eq!(timing.duration.unwrap().ticks, 40);
         assert!((timing.presentation_time.unwrap().seconds() - 0.125).abs() < 1.0e-12);
+    }
+
+    #[test]
+    fn resolves_paths_needed_by_deferred_timing_at_open_time() {
+        let current_dir = std::env::current_dir().unwrap();
+
+        let input = resolve_open_time_path(Path::new("fixtures/video.mkv")).unwrap();
+        assert_eq!(input, current_dir.join("fixtures/video.mkv"));
+        assert!(input.is_absolute());
+
+        let explicit_probe =
+            resolve_deferred_executable_path(Path::new("tools/ffprobe")).unwrap();
+        assert_eq!(explicit_probe, current_dir.join("tools/ffprobe"));
+        assert!(explicit_probe.is_absolute());
+
+        let path_probe = resolve_deferred_executable_path(Path::new("ffprobe")).unwrap();
+        assert_eq!(path_probe, PathBuf::from("ffprobe"));
     }
 }
