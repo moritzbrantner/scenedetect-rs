@@ -572,6 +572,7 @@ export function createReviewWorkspace({
             sample,
             media_time_seconds: mediaTimeForSample(sample),
           })),
+          ...(output?.boundary_review ? { boundary_review: output.boundary_review } : {}),
         },
         review: this.reviewArtifact(),
       };
