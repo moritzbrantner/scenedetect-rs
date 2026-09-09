@@ -481,8 +481,7 @@ mod tests {
         assert_eq!(input, current_dir.join("fixtures/video.mkv"));
         assert!(input.is_absolute());
 
-        let explicit_probe =
-            resolve_deferred_executable_path(Path::new("tools/ffprobe")).unwrap();
+        let explicit_probe = resolve_deferred_executable_path(Path::new("tools/ffprobe")).unwrap();
         assert_eq!(explicit_probe, current_dir.join("tools/ffprobe"));
         assert!(explicit_probe.is_absolute());
 
