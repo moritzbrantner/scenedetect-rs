@@ -21,6 +21,7 @@ WASM_LOADER_PATH = SITE_DIR / "scenedetect-wasm.js"
 ANALYSIS_WORKER_PATH = SITE_DIR / "analysis-worker.js"
 ANALYSIS_WORKER_CLIENT_PATH = SITE_DIR / "analysis-worker-client.js"
 SESSION_STORE_PATH = SITE_DIR / "session-store.js"
+SESSION_STORE_TEST_PATH = SITE_DIR / "session-store.test.js"
 KEYBOARD_CONTROLS_PATH = SITE_DIR / "keyboard-controls.js"
 BENCHMARK_PATH = SITE_DIR / "data" / "benchmarks.json"
 PAGES_WORKFLOW = ROOT_DIR / ".github" / "workflows" / "pages.yml"
@@ -126,6 +127,8 @@ def check_pages_workflow() -> None:
         "node --check site/analysis-worker.js",
         "node --check site/analysis-worker-client.js",
         "node --check site/session-store.js",
+        "node --check site/session-store.test.js",
+        "node --test --experimental-default-type=module site/session-store.test.js",
         "node --check site/keyboard-controls.js",
     ]
     for value in required:
@@ -221,6 +224,8 @@ def check_workbench() -> None:
             "saveWorkbenchSettings",
             "saveRunSnapshot",
             "sessionArtifact",
+            "detectorSnapshotsMatch",
+            "detector_snapshot",
             "scene_list_csv",
             "boundary_review_json",
             "data-boundary-frame",
@@ -254,7 +259,16 @@ def check_workbench() -> None:
     )
     require_markers(
         SESSION_STORE_PATH,
-        ("localStorage", "history.replaceState", "config", "saveRunSnapshot"),
+        ("localStorage", "history.replaceState", "config", "saveRunSnapshot", "detectorSnapshotsMatch"),
+    )
+    require_markers(
+        SESSION_STORE_TEST_PATH,
+        (
+            "detectorSnapshotsMatch",
+            "changed scene boundary",
+            "changed presented media time",
+            "fail closed when either snapshot is missing",
+        ),
     )
     require_markers(
         KEYBOARD_CONTROLS_PATH,
