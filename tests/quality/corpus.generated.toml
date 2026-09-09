@@ -55,7 +55,7 @@ detector = "threshold"
 threshold = 12.0
 min_scene_len = "1"
 tolerance_frames = 0
-args = ["--fade-bias", "-1"]
+args = ["--fade-bias", "-0.5"]
 
 [[cases]]
 id = "generated-hist-color-only"
