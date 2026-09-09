@@ -57,6 +57,13 @@ function canonicalize(value) {
   return value;
 }
 
+function canonicalMatch(left, right) {
+  if (!left || !right) {
+    return false;
+  }
+  return JSON.stringify(canonicalize(left)) === JSON.stringify(canonicalize(right));
+}
+
 export function loadWorkbenchSettings() {
   const url = new URL(window.location.href);
   const encoded = url.searchParams.get("config");
@@ -116,8 +123,9 @@ export function fingerprintsMatch(left, right) {
 }
 
 export function settingsMatch(left, right) {
-  if (!left || !right) {
-    return false;
-  }
-  return JSON.stringify(canonicalize(left)) === JSON.stringify(canonicalize(right));
+  return canonicalMatch(left, right);
+}
+
+export function detectorSnapshotsMatch(left, right) {
+  return canonicalMatch(left, right);
 }
