@@ -12,6 +12,11 @@ _Avoid_: Video backend
 **Frame**:
 One decoded RGB image at a known frame index.
 
+**Media Time**:
+An exact presentation position or duration represented as integer ticks plus a
+rational time base. Use this for backend/container timing, including VFR data.
+_Avoid_: Timecode, floating-point timestamp
+
 **Timecode**:
 A user-facing representation of a frame position or duration.
 _Avoid_: Timestamp
@@ -58,6 +63,12 @@ _Avoid_: Segment
 
 **Scene List**:
 Ordered Scene Spans derived from Detection Stats.
+
+**Scene Timeline**:
+A versioned exact-media-time projection of a Scene List. It preserves canonical
+frame boundaries while attaching optional rational Media Time endpoints from a
+timing-aware Frame Source. It is derived output, not Detector truth.
+_Avoid_: Timed Detection Stats
 
 **Scene List Artifact**:
 Legacy reusable representation of a Scene List plus detection provenance.

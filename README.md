@@ -16,6 +16,7 @@ Project site: [`https://moritzbrantner.github.io/scenedetect-rs/`](https://morit
 - Rust CLI binary: `scenedetect-rs`
 - Native Detectors: Content, Adaptive, Threshold, Histogram, and perceptual Hash
 - Primary reusable artifact: sibling `*.scenedetect.json` Detection Stats
+- Exact timing projection: versioned `*.timeline.json` Scene Timeline with rational Media Time endpoints
 - Frame acquisition: `ffmpeg` subprocess adapter
 - Oracle parity: PySceneDetect v0.7 through a `uv`-managed Python 3.12 environment
 - Config-driven parity: `tests/parity/cases.toml` tracks required Parity Cases and Expected Gaps
@@ -33,13 +34,21 @@ scenedetect-rs detect hist -i input.mp4
 scenedetect-rs detect hash -i input.mp4
 ```
 
-For `input.mp4`, detection writes `input.scenedetect.json`. Render commands derive outputs from that artifact without decoding the video again:
+For `input.mp4`, detection writes `input.scenedetect.json`. Frame-index render commands derive outputs from that artifact without decoding the video again:
 
 ```sh
 scenedetect-rs render scenes -i input.mp4
 scenedetect-rs render stats -i input.mp4 --csv
 scenedetect-rs render html -i input.mp4
 ```
+
+Render an exact Scene Timeline when downstream tooling needs presentation timing rather than average-frame-rate timecodes:
+
+```sh
+scenedetect-rs render timeline -i input.mp4
+```
+
+This writes `input.timeline.json`. The Scene Timeline preserves the canonical Scene Span frame boundaries from Detection Stats and attaches exact integer-tick/rational-time-base Media Time endpoints. It explicitly re-reads the video through the timing-aware Frame Source, so this render path may decode/probe media again. Rendering it never rewrites Detection Stats.
 
 Content Detection Stats additionally support score-ranked Boundary Candidate review:
 
@@ -64,7 +73,7 @@ scenedetect-rs detect content -i input.mp4 --progress always
 scenedetect-rs detect adaptive -i input.mp4 --progress never
 ```
 
-Derived files use the input stem, for example `input.scenes.csv`, `input.stats.csv`, `input.boundaries.csv`, and `input.scenes.html`.
+Derived files use the input stem, for example `input.scenes.csv`, `input.stats.csv`, `input.boundaries.csv`, `input.scenes.html`, and `input.timeline.json`.
 
 ## PySceneDetect Compatibility
 

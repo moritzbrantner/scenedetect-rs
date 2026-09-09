@@ -2,6 +2,7 @@ mod artifacts;
 mod inspect_command;
 mod native_stats;
 mod scene_list_command;
+mod scene_timeline;
 
 use std::fs::{self, File};
 use std::io::IsTerminal;
@@ -220,6 +221,7 @@ enum NativeRenderCommand {
     Stats(NativeRenderStatsArgs),
     Boundaries(NativeRenderBoundariesArgs),
     Html(NativeRenderHtmlArgs),
+    Timeline(NativeRenderTimelineArgs),
 }
 
 #[derive(Debug, Args)]
@@ -256,6 +258,14 @@ struct NativeRenderBoundariesArgs {
 
 #[derive(Debug, Args)]
 struct NativeRenderHtmlArgs {
+    #[arg(short = 'i', long = "input")]
+    input: PathBuf,
+    #[arg(short = 'o', long = "output")]
+    output: Option<PathBuf>,
+}
+
+#[derive(Debug, Args)]
+struct NativeRenderTimelineArgs {
     #[arg(short = 'i', long = "input")]
     input: PathBuf,
     #[arg(short = 'o', long = "output")]
@@ -735,6 +745,7 @@ fn handle_native_render(args: &NativeRenderArgs) -> Result<()> {
         NativeRenderCommand::Stats(args) => handle_native_render_stats(args),
         NativeRenderCommand::Boundaries(args) => handle_native_render_boundaries(args),
         NativeRenderCommand::Html(args) => handle_native_render_html(args),
+        NativeRenderCommand::Timeline(args) => handle_native_render_timeline(args),
     }
 }
 
@@ -835,6 +846,12 @@ fn handle_native_render_html(args: &NativeRenderHtmlArgs) -> Result<()> {
     let file = File::create(&output_path)
         .with_context(|| format!("failed to create HTML Scene List {}", output_path.display()))?;
     write_scene_list_html(&scene_list, file)?;
+    println!("{}", output_path.display());
+    Ok(())
+}
+
+fn handle_native_render_timeline(args: &NativeRenderTimelineArgs) -> Result<()> {
+    let output_path = scene_timeline::render(&args.input, args.output.as_deref())?;
     println!("{}", output_path.display());
     Ok(())
 }

@@ -7,11 +7,13 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 mod output;
+mod timeline;
 
 pub use output::{
     write_boundary_review_csv, write_boundary_review_json, write_scene_events_ndjson,
     write_scene_list_csv, write_scene_list_html, write_scene_list_json, write_stats_csv,
 };
+pub use timeline::{scene_timeline_from_source, SceneTimeline, SceneTimelineSpan};
 
 pub type Result<T> = std::result::Result<T, SceneDetectError>;
 
