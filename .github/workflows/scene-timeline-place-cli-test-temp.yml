@@ -1,0 +1,49 @@
+name: Place Scene Timeline CLI test
+
+on:
+  push:
+    branches:
+      - verify/scene-timeline-place-cli-test
+
+permissions:
+  contents: write
+
+jobs:
+  place-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/scene-timeline-artifact
+          fetch-depth: 0
+
+      - name: Move Timeline behavior into focused CLI target
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          source = Path("crates/scenedetect-cli/tests/native_timeline.rs")
+          target = Path("crates/scenedetect-cli/tests/cli.rs")
+          text = source.read_text()
+          lines = text.splitlines()
+          start = next(i for i, line in enumerate(lines) if line.startswith("fn require_ffmpeg"))
+          snippet = "\n".join(lines[start:])
+          snippet = snippet.replace("StdCommand", "Command")
+          snippet = snippet.replace("fs::", "std::fs::")
+          snippet = snippet.replace("Value", "serde_json::Value")
+          snippet = snippet.replace("tempdir()", "tempfile::tempdir()")
+          with target.open("a") as output:
+              output.write("\n\n")
+              output.write(snippet)
+              output.write("\n")
+          source.unlink()
+          PY
+          cargo fmt --all
+
+      - name: Commit focused test placement
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add crates/scenedetect-cli/tests/cli.rs crates/scenedetect-cli/tests/native_timeline.rs
+          git commit -m "test(cli): keep timeline coverage in focused target"
+          git push origin HEAD:feat/scene-timeline-artifact
