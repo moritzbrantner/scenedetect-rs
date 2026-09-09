@@ -3,6 +3,7 @@ import { createKeyboardController } from "./keyboard-controls.js";
 import { createResultsOverview } from "./review-overview.js";
 import { createReviewWorkspace } from "./review-workspace.js";
 import {
+  detectorSnapshotsMatch,
   fingerprintsMatch,
   listRunSnapshots,
   loadWorkbenchSettings,
@@ -438,16 +439,31 @@ function renderResults(output, fps) {
   resultsOverview.renderBoundaryReview(output.boundary_review, fps);
   reviewWorkspace.load({ output, fps, duration: video.duration });
 
-  if (
-    pendingImportedSession &&
-    fingerprintsMatch(pendingImportedSession.media, currentMediaFingerprint())
-  ) {
-    if (settingsMatch(pendingImportedSession.settings, currentRunSettings)) {
+  if (pendingImportedSession) {
+    const mediaMatches = fingerprintsMatch(
+      pendingImportedSession.media,
+      currentMediaFingerprint(),
+    );
+    const runSettingsMatch = settingsMatch(pendingImportedSession.settings, currentRunSettings);
+    const currentDetectorSnapshot = reviewWorkspace.sessionArtifact({
+      media: null,
+      settings: null,
+    }).detector_snapshot;
+    const detectorOutputMatches = detectorSnapshotsMatch(
+      pendingImportedSession.detector_snapshot,
+      currentDetectorSnapshot,
+    );
+
+    if (mediaMatches && runSettingsMatch && detectorOutputMatches) {
       reviewWorkspace.loadReviewDecisions(pendingImportedSession.review?.decisions);
       pendingImportedSession = null;
     } else {
-      reviewStatus.textContent =
-        "Imported review decisions remain detached because the completed detector or sampling settings differ from the imported session.";
+      const mismatch = !mediaMatches
+        ? "media fingerprint"
+        : !runSettingsMatch
+          ? "detector or sampling settings"
+          : "detector output";
+      reviewStatus.textContent = `Imported review decisions remain detached because the completed ${mismatch} differs from the imported session.`;
     }
   }
 
@@ -800,7 +816,12 @@ importSessionFile.addEventListener("change", async () => {
   }
   try {
     const imported = JSON.parse(await file.text());
-    if (imported.schema_version !== 1 || !imported.settings || !imported.review) {
+    if (
+      imported.schema_version !== 1 ||
+      !imported.settings ||
+      !imported.detector_snapshot ||
+      !imported.review
+    ) {
       throw new Error("Unsupported or incomplete workbench session file.");
     }
     await applySettings(imported.settings);
