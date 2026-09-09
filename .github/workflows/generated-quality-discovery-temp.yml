@@ -31,9 +31,5 @@ jobs:
           enable-cache: false
       - name: Run generated quality corpus
         run: bun run quality:generated
-      - name: Print ranked quality report
-        if: always()
-        run: |
-          if [ -f tests/quality/output/report.json ]; then
-            cat tests/quality/output/report.json
-          fi
+      - name: Probe hash mirror threshold sensitivity
+        run: bash scripts/diagnose-hash-quality-temp.sh
