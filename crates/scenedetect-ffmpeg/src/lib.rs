@@ -1,5 +1,5 @@
 use std::io::{BufRead, BufReader, ErrorKind, Read};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::process::{Child, ChildStdout, Command, Stdio};
 
 use scenedetect_core::{
@@ -32,13 +32,26 @@ pub struct VideoMetadata {
     pub frame_rate: FrameRate,
 }
 
+struct TimingSidecar {
+    child: Child,
+    stdout: BufReader<ChildStdout>,
+}
+
+impl TimingSidecar {
+    fn terminate(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
 pub struct FfmpegFrameSource {
     metadata: VideoMetadata,
     time_base: TimeBase,
+    input_path: PathBuf,
+    ffprobe_path: PathBuf,
     decoder_child: Child,
     decoder_stdout: ChildStdout,
-    timing_child: Child,
-    timing_stdout: BufReader<ChildStdout>,
+    timing_sidecar: Option<TimingSidecar>,
     next_index: u64,
 }
 
@@ -67,15 +80,20 @@ impl FfmpegFrameSource {
         frame_rate_override: Option<FrameRate>,
         binaries: FfmpegBinaries,
     ) -> Result<Self> {
-        let path = path.as_ref();
-        let mut probe = probe_video_details_with_binaries(path, &binaries)?;
+        let path = resolve_open_time_path(path.as_ref())?;
+        let ffprobe_path = resolve_deferred_executable_path(&binaries.ffprobe)?;
+        let mut probe = probe_video_details_with_binaries(&path, &binaries)?;
         if let Some(frame_rate) = frame_rate_override {
             probe.metadata.frame_rate = frame_rate;
         }
 
+        // The default scene-detection path needs only RGB Frames and therefore
+        // starts only the decoder. Per-frame timing is activated lazily by
+        // `next_frame_with_timing`, avoiding an otherwise unnecessary second
+        // traversal for current frame-index-only Detector semantics.
         let mut decoder_child = Command::new(&binaries.ffmpeg)
             .args(["-v", "error", "-i"])
-            .arg(path)
+            .arg(&path)
             .args([
                 "-fps_mode",
                 "passthrough",
@@ -99,48 +117,14 @@ impl FfmpegFrameSource {
             SceneDetectError::FrameSource("ffmpeg stdout was unavailable".to_owned())
         })?;
 
-        let timing_spawn = Command::new(&binaries.ffprobe)
-            .args([
-                "-v",
-                "error",
-                "-select_streams",
-                "v:0",
-                "-show_frames",
-                "-show_entries",
-                "frame=best_effort_timestamp,pkt_duration",
-                "-of",
-                "compact=p=0:nk=0",
-            ])
-            .arg(path)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn();
-        let mut timing_child = match timing_spawn {
-            Ok(child) => child,
-            Err(err) => {
-                let _ = decoder_child.kill();
-                let _ = decoder_child.wait();
-                return Err(match err.kind() {
-                    ErrorKind::NotFound => SceneDetectError::FrameSource(
-                        FfmpegError::MissingFfprobe(binaries.ffprobe.clone()).to_string(),
-                    ),
-                    _ => SceneDetectError::FrameSource(err.to_string()),
-                });
-            }
-        };
-        let timing_stdout = timing_child.stdout.take().ok_or_else(|| {
-            let _ = decoder_child.kill();
-            let _ = decoder_child.wait();
-            SceneDetectError::FrameSource("ffprobe timing stdout was unavailable".to_owned())
-        })?;
-
         Ok(Self {
             metadata: probe.metadata,
             time_base: probe.time_base,
+            input_path: path,
+            ffprobe_path,
             decoder_child,
             decoder_stdout,
-            timing_child,
-            timing_stdout: BufReader::new(timing_stdout),
+            timing_sidecar: None,
             next_index: 0,
         })
     }
@@ -149,7 +133,7 @@ impl FfmpegFrameSource {
         &self.metadata
     }
 
-    fn read_frame_with_timing(&mut self) -> Result<Option<FrameWithTiming>> {
+    fn read_frame(&mut self) -> Result<Option<Frame>> {
         let frame_bytes = self.metadata.width as usize * self.metadata.height as usize * 3;
         let mut rgb = vec![0; frame_bytes];
         let mut read = 0;
@@ -158,7 +142,6 @@ impl FfmpegFrameSource {
             match self.decoder_stdout.read(&mut rgb[read..]) {
                 Ok(0) if read == 0 => {
                     let _ = self.decoder_child.wait();
-                    let _ = self.timing_child.wait();
                     return Ok(None);
                 }
                 Ok(0) => {
@@ -171,7 +154,6 @@ impl FfmpegFrameSource {
             }
         }
 
-        let timing = self.read_frame_timing()?;
         let frame = Frame {
             index: FrameIndex(self.next_index),
             width: self.metadata.width,
@@ -179,36 +161,83 @@ impl FfmpegFrameSource {
             rgb,
         };
         self.next_index += 1;
-        Ok(Some(FrameWithTiming { frame, timing }))
+        Ok(Some(frame))
     }
 
-    fn read_frame_timing(&mut self) -> Result<FrameTiming> {
-        let mut line = String::new();
-        loop {
-            let bytes = self
-                .timing_stdout
-                .read_line(&mut line)
-                .map_err(|err| SceneDetectError::FrameSource(err.to_string()))?;
-            if bytes == 0 {
-                return Err(SceneDetectError::FrameSource(
-                    "ffprobe timing stream ended before the decoded frame stream".to_owned(),
-                ));
-            }
-            let value = line.trim();
-            if !value.is_empty() {
-                return parse_frame_timing(value, self.time_base);
-            }
-            line.clear();
+    fn ensure_timing_sidecar_aligned_to(&mut self, frame_index: u64) -> Result<()> {
+        if self.timing_sidecar.is_some() {
+            return Ok(());
         }
+
+        let mut child = Command::new(&self.ffprobe_path)
+            .args([
+                "-v",
+                "error",
+                "-select_streams",
+                "v:0",
+                "-show_frames",
+                "-show_entries",
+                "frame=best_effort_timestamp,pkt_duration",
+                "-of",
+                "compact=p=0:nk=0",
+            ])
+            .arg(&self.input_path)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|err| match err.kind() {
+                ErrorKind::NotFound => SceneDetectError::FrameSource(
+                    FfmpegError::MissingFfprobe(self.ffprobe_path.clone()).to_string(),
+                ),
+                _ => SceneDetectError::FrameSource(err.to_string()),
+            })?;
+
+        let stdout = child.stdout.take().ok_or_else(|| {
+            let _ = child.kill();
+            let _ = child.wait();
+            SceneDetectError::FrameSource("ffprobe timing stdout was unavailable".to_owned())
+        })?;
+        let mut sidecar = TimingSidecar {
+            child,
+            stdout: BufReader::new(stdout),
+        };
+
+        // A caller may opt into timing after consuming plain Frames. Replay and
+        // discard only those prior timing records so the first rich read remains
+        // aligned without materializing the full timeline.
+        for _ in 0..frame_index {
+            if let Err(error) = read_frame_timing(&mut sidecar.stdout, self.time_base) {
+                sidecar.terminate();
+                return Err(error);
+            }
+        }
+
+        self.timing_sidecar = Some(sidecar);
+        Ok(())
+    }
+
+    fn read_active_timing(&mut self) -> Result<FrameTiming> {
+        let sidecar = self.timing_sidecar.as_mut().ok_or_else(|| {
+            SceneDetectError::FrameSource("frame timing sidecar is not active".to_owned())
+        })?;
+        read_frame_timing(&mut sidecar.stdout, self.time_base)
+    }
+
+    fn discard_active_timing(&mut self) -> Result<()> {
+        if self.timing_sidecar.is_some() {
+            self.read_active_timing()?;
+        }
+        Ok(())
     }
 }
 
 impl Drop for FfmpegFrameSource {
     fn drop(&mut self) {
         let _ = self.decoder_child.kill();
-        let _ = self.timing_child.kill();
         let _ = self.decoder_child.wait();
-        let _ = self.timing_child.wait();
+        if let Some(sidecar) = self.timing_sidecar.as_mut() {
+            sidecar.terminate();
+        }
     }
 }
 
@@ -218,13 +247,22 @@ impl FrameSource for FfmpegFrameSource {
     }
 
     fn next_frame(&mut self) -> Result<Option<Frame>> {
-        Ok(self
-            .read_frame_with_timing()?
-            .map(|frame_with_timing| frame_with_timing.frame))
+        let frame = self.read_frame()?;
+        if frame.is_some() {
+            self.discard_active_timing()?;
+        }
+        Ok(frame)
     }
 
     fn next_frame_with_timing(&mut self) -> Result<Option<FrameWithTiming>> {
-        self.read_frame_with_timing()
+        // Activate and align timing before decoding the rich frame. If the
+        // deferred probe cannot start or align, no decoded frame is consumed.
+        self.ensure_timing_sidecar_aligned_to(self.next_index)?;
+        let Some(frame) = self.read_frame()? else {
+            return Ok(None);
+        };
+        let timing = self.read_active_timing()?;
+        Ok(Some(FrameWithTiming { frame, timing }))
     }
 }
 
@@ -305,7 +343,50 @@ fn probe_video_details_with_binaries(
     })
 }
 
-fn parse_frame_timing(value: &str, time_base: TimeBase) -> Result<FrameTiming> {
+fn resolve_open_time_path(path: &Path) -> Result<PathBuf> {
+    if path.is_absolute() {
+        return Ok(path.to_path_buf());
+    }
+    let current_dir = std::env::current_dir()
+        .map_err(|error| SceneDetectError::FrameSource(error.to_string()))?;
+    Ok(current_dir.join(path))
+}
+
+fn resolve_deferred_executable_path(path: &Path) -> Result<PathBuf> {
+    if path.is_absolute() || is_bare_executable_name(path) {
+        return Ok(path.to_path_buf());
+    }
+    resolve_open_time_path(path)
+}
+
+fn is_bare_executable_name(path: &Path) -> bool {
+    let mut components = path.components();
+    matches!(components.next(), Some(Component::Normal(_))) && components.next().is_none()
+}
+
+fn read_frame_timing(
+    reader: &mut BufReader<ChildStdout>,
+    time_base: TimeBase,
+) -> Result<FrameTiming> {
+    let mut line = String::new();
+    loop {
+        let bytes = reader
+            .read_line(&mut line)
+            .map_err(|err| SceneDetectError::FrameSource(err.to_string()))?;
+        if bytes == 0 {
+            return Err(SceneDetectError::FrameSource(
+                "ffprobe timing stream ended before the decoded frame stream".to_owned(),
+            ));
+        }
+        let value = line.trim();
+        if !value.is_empty() {
+            return Ok(parse_frame_timing(value, time_base));
+        }
+        line.clear();
+    }
+}
+
+fn parse_frame_timing(value: &str, time_base: TimeBase) -> FrameTiming {
     let mut presentation_time = None;
     let mut duration = None;
 
@@ -325,10 +406,10 @@ fn parse_frame_timing(value: &str, time_base: TimeBase) -> Result<FrameTiming> {
         }
     }
 
-    Ok(FrameTiming {
+    FrameTiming {
         presentation_time,
         duration,
-    })
+    }
 }
 
 fn parse_time_base(value: &str) -> Result<TimeBase> {
@@ -386,10 +467,25 @@ mod tests {
     fn parses_stream_time_base_and_frame_timing() {
         let time_base = parse_time_base("1/1000").unwrap();
         assert_eq!(time_base, TimeBase::new(1, 1000).unwrap());
-        let timing =
-            parse_frame_timing("best_effort_timestamp=125|pkt_duration=40", time_base).unwrap();
+        let timing = parse_frame_timing("best_effort_timestamp=125|pkt_duration=40", time_base);
         assert_eq!(timing.presentation_time.unwrap().ticks, 125);
         assert_eq!(timing.duration.unwrap().ticks, 40);
         assert!((timing.presentation_time.unwrap().seconds() - 0.125).abs() < 1.0e-12);
+    }
+
+    #[test]
+    fn resolves_paths_needed_by_deferred_timing_at_open_time() {
+        let current_dir = std::env::current_dir().unwrap();
+
+        let input = resolve_open_time_path(Path::new("fixtures/video.mkv")).unwrap();
+        assert_eq!(input, current_dir.join("fixtures/video.mkv"));
+        assert!(input.is_absolute());
+
+        let explicit_probe = resolve_deferred_executable_path(Path::new("tools/ffprobe")).unwrap();
+        assert_eq!(explicit_probe, current_dir.join("tools/ffprobe"));
+        assert!(explicit_probe.is_absolute());
+
+        let path_probe = resolve_deferred_executable_path(Path::new("ffprobe")).unwrap();
+        assert_eq!(path_probe, PathBuf::from("ffprobe"));
     }
 }
