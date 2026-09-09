@@ -31,5 +31,5 @@ jobs:
           enable-cache: false
       - name: Run generated quality corpus
         run: bun run quality:generated
-      - name: Probe hash mirror threshold sensitivity
-        run: bash scripts/diagnose-hash-quality-temp.sh
+      - name: Probe edge-only content threshold sensitivity
+        run: bash scripts/diagnose-edge-quality-temp.sh
