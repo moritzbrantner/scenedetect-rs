@@ -29,7 +29,5 @@ jobs:
         with:
           version: 0.11.21
           enable-cache: false
-      - name: Run generated quality corpus
-        run: bun run quality:generated
-      - name: Probe edge-only content threshold sensitivity
-        run: bash scripts/diagnose-edge-quality-temp.sh
+      - name: Probe close-cut min-scene semantics
+        run: bash scripts/diagnose-min-scene-quality-temp.sh
