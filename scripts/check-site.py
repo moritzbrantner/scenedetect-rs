@@ -224,7 +224,7 @@ def check_workbench() -> None:
             "saveWorkbenchSettings",
             "saveRunSnapshot",
             "sessionArtifact",
-            "detectorSnapshotsMatch",
+            "reviewRestorationResult",
             "detector_snapshot",
             "scene_list_csv",
             "boundary_review_json",
@@ -247,6 +247,9 @@ def check_workbench() -> None:
             "mergeSelectedWithNext",
             "compareWith",
             "timeline-boundary",
+            "detection: output?.detection",
+            "boundary_review: output?.boundary_review",
+            "presented_samples: presentedSamples",
         ),
     )
     require_markers(
@@ -259,14 +262,23 @@ def check_workbench() -> None:
     )
     require_markers(
         SESSION_STORE_PATH,
-        ("localStorage", "history.replaceState", "config", "saveRunSnapshot", "detectorSnapshotsMatch"),
+        (
+            "localStorage",
+            "history.replaceState",
+            "config",
+            "saveRunSnapshot",
+            "detectorSnapshotsMatch",
+            "reviewRestorationResult",
+        ),
     )
     require_markers(
         SESSION_STORE_TEST_PATH,
         (
             "detectorSnapshotsMatch",
-            "changed scene boundary",
-            "changed presented media time",
+            "changed detection stats",
+            "changed non-boundary presentation timing",
+            "review restoration releases decisions only for an exact run identity",
+            "public workbench restoration path uses the tested fail-closed gate",
             "fail closed when either snapshot is missing",
         ),
     )
