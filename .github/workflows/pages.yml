@@ -50,7 +50,7 @@ jobs:
           node --check site/workbench.js
 
       - name: Test session restoration invariants
-        run: node --test --experimental-default-type=module site/session-store.test.js
+        run: node --test site/session-store.test.js
 
       - name: Check site
         run: python3 scripts/check-site.py
