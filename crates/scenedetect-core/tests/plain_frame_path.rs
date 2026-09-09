@@ -72,7 +72,10 @@ fn canonical_detectors_consume_only_plain_frames() {
         )
         .expect("frame-index detector should not require timing metadata");
 
-        assert!(plain_reads.get() > 0, "detector should consume plain frames");
+        assert!(
+            plain_reads.get() > 0,
+            "detector should consume plain frames"
+        );
         assert_eq!(
             rich_reads.get(),
             0,
