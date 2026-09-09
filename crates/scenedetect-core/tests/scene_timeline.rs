@@ -1,0 +1,119 @@
+use std::cell::Cell;
+use std::rc::Rc;
+
+use scenedetect_core::{
+    scene_timeline_from_source, Frame, FrameIndex, FrameRate, FrameSource, FrameTiming,
+    FrameWithTiming, MediaTime, SceneDetectError, SceneList, SceneSpan, TimeBase,
+};
+
+struct TimingFrameSource {
+    frame_rate: FrameRate,
+    frames: std::vec::IntoIter<FrameWithTiming>,
+    rich_reads: Rc<Cell<usize>>,
+    plain_reads: Rc<Cell<usize>>,
+}
+
+impl FrameSource for TimingFrameSource {
+    fn frame_rate(&self) -> FrameRate {
+        self.frame_rate
+    }
+
+    fn next_frame(&mut self) -> scenedetect_core::Result<Option<Frame>> {
+        self.plain_reads.set(self.plain_reads.get() + 1);
+        Err(SceneDetectError::FrameSource(
+            "Scene Timeline must use the timing-aware source path".to_owned(),
+        ))
+    }
+
+    fn next_frame_with_timing(&mut self) -> scenedetect_core::Result<Option<FrameWithTiming>> {
+        self.rich_reads.set(self.rich_reads.get() + 1);
+        Ok(self.frames.next())
+    }
+}
+
+fn timed_frame(index: u64, pts: i64, duration: i64, time_base: TimeBase) -> FrameWithTiming {
+    FrameWithTiming {
+        frame: Frame::solid(index, 2, 2, [index as u8, index as u8, index as u8]),
+        timing: FrameTiming {
+            presentation_time: Some(MediaTime::new(pts, time_base)),
+            duration: Some(MediaTime::new(duration, time_base)),
+        },
+    }
+}
+
+#[test]
+fn timeline_preserves_exact_vfr_scene_endpoints_without_plain_frame_fallback() {
+    let time_base = TimeBase::new(1, 1_000).unwrap();
+    let rich_reads = Rc::new(Cell::new(0));
+    let plain_reads = Rc::new(Cell::new(0));
+    let source = TimingFrameSource {
+        frame_rate: FrameRate(10.0),
+        frames: vec![
+            timed_frame(0, 0, 100, time_base),
+            timed_frame(1, 100, 300, time_base),
+            timed_frame(2, 400, 500, time_base),
+            timed_frame(3, 900, 100, time_base),
+        ]
+        .into_iter(),
+        rich_reads: Rc::clone(&rich_reads),
+        plain_reads: Rc::clone(&plain_reads),
+    };
+    let scene_list = SceneList {
+        frame_rate: FrameRate(10.0),
+        scenes: vec![
+            SceneSpan {
+                start: FrameIndex(0),
+                end: FrameIndex(2),
+            },
+            SceneSpan {
+                start: FrameIndex(2),
+                end: FrameIndex(4),
+            },
+        ],
+    };
+
+    let timeline = scene_timeline_from_source(&scene_list, source).unwrap();
+
+    assert_eq!(timeline.scenes.len(), 2);
+    assert_eq!(timeline.scenes[0].start, FrameIndex(0));
+    assert_eq!(timeline.scenes[0].end, FrameIndex(2));
+    assert_eq!(timeline.scenes[0].start_time, Some(MediaTime::new(0, time_base)));
+    assert_eq!(timeline.scenes[0].end_time, Some(MediaTime::new(400, time_base)));
+    assert_eq!(timeline.scenes[1].start_time, Some(MediaTime::new(400, time_base)));
+    assert_eq!(timeline.scenes[1].end_time, Some(MediaTime::new(1_000, time_base)));
+    assert_eq!(rich_reads.get(), 5, "four frames plus one EOF read");
+    assert_eq!(plain_reads.get(), 0, "timeline generation must opt into rich timing");
+}
+
+#[test]
+fn timeline_does_not_invent_final_media_time_when_duration_is_unknown() {
+    let time_base = TimeBase::new(1, 1_000).unwrap();
+    let source = TimingFrameSource {
+        frame_rate: FrameRate(10.0),
+        frames: vec![
+            timed_frame(0, 0, 100, time_base),
+            FrameWithTiming {
+                frame: Frame::solid(1, 2, 2, [1, 1, 1]),
+                timing: FrameTiming {
+                    presentation_time: Some(MediaTime::new(100, time_base)),
+                    duration: None,
+                },
+            },
+        ]
+        .into_iter(),
+        rich_reads: Rc::new(Cell::new(0)),
+        plain_reads: Rc::new(Cell::new(0)),
+    };
+    let scene_list = SceneList {
+        frame_rate: FrameRate(10.0),
+        scenes: vec![SceneSpan {
+            start: FrameIndex(0),
+            end: FrameIndex(2),
+        }],
+    };
+
+    let timeline = scene_timeline_from_source(&scene_list, source).unwrap();
+
+    assert_eq!(timeline.scenes[0].start_time, Some(MediaTime::new(0, time_base)));
+    assert_eq!(timeline.scenes[0].end_time, None);
+}
