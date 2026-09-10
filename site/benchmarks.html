@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Benchmarks · scenedetect-rs</title>
+    <meta
+      name="description"
+      content="Published scenedetect-rs benchmark evidence with snapshot freshness, provenance, methodology, and raw data."
+    />
+    <link rel="stylesheet" href="styles.css" />
+    <link rel="preload" as="fetch" href="data/benchmarks.json" crossorigin />
+  </head>
+  <body class="project-page">
+    <header class="site-header" aria-label="Project navigation">
+      <a class="brand" href="index.html">scenedetect-rs</a>
+      <nav aria-label="Primary navigation">
+        <a href="workbench.html">Workbench</a>
+        <a href="capabilities.html">Capabilities</a>
+        <a aria-current="page" href="benchmarks.html">Benchmarks</a>
+        <a href="browser-analysis.html">How it works</a>
+        <a href="https://github.com/moritzbrantner/scenedetect-rs">Source</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="reference-hero" aria-labelledby="benchmark-title">
+        <div class="project-shell narrow-shell">
+          <p class="eyebrow">Published Benchmark Snapshot</p>
+          <h1 id="benchmark-title">Benchmark evidence, with provenance attached</h1>
+          <p class="project-lede">
+            This page renders the repository's committed point-in-time timing snapshot. It exposes
+            when the measurements were produced, what Candidate and Reference Oracle were compared,
+            which corpora were present, and exactly how the report was generated.
+          </p>
+          <p class="project-note">
+            Benchmark timing is report-only evidence. It is not a correctness gate, and GitHub Pages
+            does not execute benchmarks during deployment.
+          </p>
+        </div>
+      </section>
+
+      <section aria-labelledby="latest-snapshot-heading">
+        <div class="project-shell">
+          <div class="section-heading">
+            <p class="eyebrow">Latest committed data</p>
+            <h2 id="latest-snapshot-heading">End-to-end CLI timing against PySceneDetect</h2>
+            <p>
+              Lower time is better. Each Benchmark Case compares equivalent Reference Oracle and
+              Candidate commands, including frame decode, Detector execution, and Scene List CSV output.
+            </p>
+          </div>
+
+          <p id="benchmark-status" class="benchmark-status" aria-live="polite">
+            Loading benchmark provenance…
+          </p>
+          <dl id="benchmark-meta" class="benchmark-meta" aria-live="polite">
+            <div>
+              <dt>Snapshot</dt>
+              <dd>Loading…</dd>
+            </div>
+          </dl>
+
+          <div class="table-frame benchmark-table">
+            <table>
+              <thead>
+                <tr>
+                  <th scope="col">Benchmark Case</th>
+                  <th scope="col">Corpus</th>
+                  <th scope="col">Detector</th>
+                  <th scope="col">PySceneDetect mean</th>
+                  <th scope="col">scenedetect-rs mean</th>
+                  <th scope="col">Relative result</th>
+                  <th scope="col">Faster implementation</th>
+                </tr>
+              </thead>
+              <tbody id="benchmark-rows">
+                <tr>
+                  <td colspan="7">Benchmark data is loading.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <p class="reference-source">
+            <a href="data/benchmarks.json">Open the raw benchmark snapshot</a>
+          </p>
+        </div>
+      </section>
+
+      <section aria-labelledby="method-heading">
+        <div class="project-shell">
+          <div class="section-heading">
+            <p class="eyebrow">Method</p>
+            <h2 id="method-heading">How the published numbers are produced</h2>
+          </div>
+          <dl class="capability-list">
+            <div>
+              <dt>Reference Oracle</dt>
+              <dd>
+                PySceneDetect v0.7 is invoked through the pinned headless Python environment used by
+                the repository's parity work.
+              </dd>
+            </div>
+            <div>
+              <dt>Candidate</dt>
+              <dd>
+                The Rust release CLI is measured end-to-end rather than timing an isolated Detector
+                function.
+              </dd>
+            </div>
+            <div>
+              <dt>Benchmark Corpus</dt>
+              <dd>
+                Deterministically generated media covers all five supported Detector families. Optional
+                real-video cases are local and the media itself is not committed.
+              </dd>
+            </div>
+            <div>
+              <dt>Publication</dt>
+              <dd>
+                The ignored local <code>hyperfine</code> report is converted into the committed
+                <code>site/data/benchmarks.json</code> snapshot. Pages only validates and publishes that
+                static data.
+              </dd>
+            </div>
+          </dl>
+
+          <div class="command-block" aria-label="Benchmark refresh commands">
+            <p>Deliberate refresh workflow</p>
+            <pre><code>bun run benchmark:real
+python3 scripts/update-site-benchmarks.py
+python3 scripts/check-site.py</code></pre>
+          </div>
+        </div>
+      </section>
+
+      <section aria-labelledby="interpretation-heading">
+        <div class="project-shell narrow-shell">
+          <div class="section-heading">
+            <p class="eyebrow">Interpretation</p>
+            <h2 id="interpretation-heading">What these numbers do and do not establish</h2>
+          </div>
+          <p>
+            A Published Benchmark Snapshot is evidence about one measured Candidate on one machine at
+            one point in time. It can show a useful performance direction, but it does not prove current
+            main performance, cross-machine speed, or correctness. Correctness remains owned by the
+            repository's deterministic tests and required parity cases.
+          </p>
+          <p>
+            For supported behavior, use the <a href="capabilities.html">Capabilities reference</a>.
+            For the actual browser product surface, use the <a href="workbench.html">Workbench</a>.
+          </p>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <span>scenedetect-rs</span>
+      <a href="index.html">Project home</a>
+    </footer>
+
+    <script src="app.js" defer></script>
+  </body>
+</html>
