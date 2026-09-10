@@ -57,6 +57,17 @@ function canonicalize(value) {
   return value;
 }
 
+function canonicalMatch(left, right) {
+  if (!left || !right) {
+    return false;
+  }
+  return JSON.stringify(canonicalize(left)) === JSON.stringify(canonicalize(right));
+}
+
+function restorationFailure(mismatch) {
+  return { restore: false, mismatch, decisions: null };
+}
+
 export function loadWorkbenchSettings() {
   const url = new URL(window.location.href);
   const encoded = url.searchParams.get("config");
@@ -116,8 +127,29 @@ export function fingerprintsMatch(left, right) {
 }
 
 export function settingsMatch(left, right) {
-  if (!left || !right) {
-    return false;
+  return canonicalMatch(left, right);
+}
+
+export function detectorSnapshotsMatch(left, right) {
+  return canonicalMatch(left, right);
+}
+
+export function reviewRestorationResult(importedSession, currentIdentity) {
+  if (!importedSession || !currentIdentity || !Array.isArray(importedSession.review?.decisions)) {
+    return restorationFailure("review session");
   }
-  return JSON.stringify(canonicalize(left)) === JSON.stringify(canonicalize(right));
+  if (!fingerprintsMatch(importedSession.media, currentIdentity.media)) {
+    return restorationFailure("media fingerprint");
+  }
+  if (!settingsMatch(importedSession.settings, currentIdentity.settings)) {
+    return restorationFailure("detector or sampling settings");
+  }
+  if (!detectorSnapshotsMatch(importedSession.detector_snapshot, currentIdentity.detector_snapshot)) {
+    return restorationFailure("detector output");
+  }
+  return {
+    restore: true,
+    mismatch: null,
+    decisions: importedSession.review.decisions,
+  };
 }

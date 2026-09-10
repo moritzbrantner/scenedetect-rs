@@ -45,8 +45,12 @@ jobs:
           node --check site/analysis-worker.js
           node --check site/analysis-worker-client.js
           node --check site/session-store.js
+          node --check site/session-store.test.js
           node --check site/keyboard-controls.js
           node --check site/workbench.js
+
+      - name: Test session restoration invariants
+        run: node --test site/session-store.test.js
 
       - name: Check site
         run: python3 scripts/check-site.py
