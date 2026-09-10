@@ -12,5 +12,9 @@
       "build": ["cargo", "build", "--workspace"],
       "test:unit": ["bun", "run", "tdd:rust"]
     }
+  },
+  "merge": {
+    "authority": "hosted",
+    "requiredChecks": ["Lint, build, and test", "Dependency security policy"]
   }
 }
