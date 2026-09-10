@@ -38,6 +38,7 @@ jobs:
 
       - name: Check browser JavaScript syntax
         run: |
+          node --check site/app.js
           node --check site/scenedetect-wasm.js
           node --check site/video-frame-sync.js
           node --check site/review-overview.js
