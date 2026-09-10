@@ -11,8 +11,11 @@ from typing import Any
 ROOT_DIR = Path(__file__).resolve().parents[1]
 SITE_DIR = ROOT_DIR / "site"
 INDEX_PATH = SITE_DIR / "index.html"
+CAPABILITIES_PATH = SITE_DIR / "capabilities.html"
+BENCHMARKS_PAGE_PATH = SITE_DIR / "benchmarks.html"
 WORKBENCH_PATH = SITE_DIR / "workbench.html"
 BROWSER_ANALYSIS_PATH = SITE_DIR / "browser-analysis.html"
+APP_JS_PATH = SITE_DIR / "app.js"
 WORKBENCH_JS_PATH = SITE_DIR / "workbench.js"
 REVIEW_OVERVIEW_PATH = SITE_DIR / "review-overview.js"
 REVIEW_WORKSPACE_PATH = SITE_DIR / "review-workspace.js"
@@ -122,6 +125,7 @@ def check_pages_workflow() -> None:
         "rustup target add wasm32-unknown-unknown",
         "cargo build --locked -p scenedetect-wasm --target wasm32-unknown-unknown --release",
         "site/wasm/scenedetect_wasm.wasm",
+        "node --check site/app.js",
         "node --check site/video-frame-sync.js",
         "node --check site/review-overview.js",
         "node --check site/review-workspace.js",
@@ -148,16 +152,20 @@ def check_pages_workflow() -> None:
 
 def check_index() -> None:
     html = read_text(INDEX_PATH)
-    require_reference(html, "styles.css", "site/index.html")
-    require_reference(html, "app.js", "site/index.html")
-    require_reference(html, "data/benchmarks.json", "site/index.html")
-    require_reference(html, "workbench.html", "site/index.html")
+    for reference in (
+        "styles.css",
+        "workbench.html",
+        "capabilities.html",
+        "benchmarks.html",
+        "browser-analysis.html",
+    ):
+        require_reference(html, reference, "site/index.html")
     if not re.search(r"<main\b", html):
         raise SiteCheckError("site/index.html must contain a main landmark")
     for text in (
         "scenedetect-rs",
-        "PySceneDetect",
-        "Benchmark",
+        "Detection Stats",
+        "Follow the evidence",
         "detect-content",
         "detect-adaptive",
         "detect-threshold",
@@ -166,6 +174,74 @@ def check_index() -> None:
     ):
         if text not in html:
             raise SiteCheckError(f"site/index.html missing expected content: {text}")
+
+
+def check_capabilities() -> None:
+    html = read_text(CAPABILITIES_PATH)
+    for reference in (
+        "styles.css",
+        "index.html",
+        "workbench.html",
+        "benchmarks.html",
+        "browser-analysis.html",
+    ):
+        require_reference(html, reference, "site/capabilities.html")
+    if not re.search(r"<main\b", html):
+        raise SiteCheckError("site/capabilities.html must contain a main landmark")
+    for text in (
+        "What scenedetect-rs can prove today",
+        "tests/parity/capability-matrix.md",
+        "Detection Stats",
+        "Scene Timeline",
+        "Local media",
+        "does not claim native FFmpeg decode or VFR parity",
+        "detect-content",
+        "detect-adaptive",
+        "detect-threshold",
+        "detect-hist",
+        "detect-hash",
+    ):
+        if text not in html:
+            raise SiteCheckError(f"site/capabilities.html missing expected content: {text}")
+
+
+def check_benchmarks_page() -> None:
+    html = read_text(BENCHMARKS_PAGE_PATH)
+    for reference in (
+        "styles.css",
+        "app.js",
+        "data/benchmarks.json",
+        "index.html",
+        "capabilities.html",
+        "workbench.html",
+    ):
+        require_reference(html, reference, "site/benchmarks.html")
+    if not re.search(r"<main\b", html):
+        raise SiteCheckError("site/benchmarks.html must contain a main landmark")
+    for text in (
+        "Published Benchmark Snapshot",
+        "report-only",
+        'id="benchmark-status"',
+        'id="benchmark-meta"',
+        'id="benchmark-rows"',
+        "Open the raw benchmark snapshot",
+        "bun run benchmark:real",
+        "scripts/update-site-benchmarks.py",
+    ):
+        if text not in html:
+            raise SiteCheckError(f"site/benchmarks.html missing expected content: {text}")
+
+    require_markers(
+        APP_JS_PATH,
+        (
+            'const STATUS_ID = "benchmark-status"',
+            'const META_ID = "benchmark-meta"',
+            'const ROWS_ID = "benchmark-rows"',
+            "snapshotAgeDays",
+            "dirty working tree",
+            'fetch("data/benchmarks.json", { cache: "no-store" })',
+        ),
+    )
 
 
 def check_browser_analysis() -> None:
@@ -348,6 +424,8 @@ def check_workbench() -> None:
 def main() -> int:
     try:
         check_index()
+        check_capabilities()
+        check_benchmarks_page()
         check_workbench()
         check_browser_analysis()
         check_benchmark_snapshot()
