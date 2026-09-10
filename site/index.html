@@ -3,174 +3,174 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>scenedetect-rs</title>
+    <title>scenedetect-rs · Rust scene detection</title>
     <meta
       name="description"
-      content="Rust scene detection for the CLI and browser, with PySceneDetect parity goals and published benchmark snapshots."
+      content="Rust scene detection built around reusable Detection Stats, a native CLI, local WebAssembly analysis, verified PySceneDetect parity, and published benchmark evidence."
     />
     <link rel="stylesheet" href="styles.css" />
-    <link rel="preload" as="image" href="assets/hero-scene-detection.png" />
-    <link rel="preload" as="fetch" href="data/benchmarks.json" crossorigin />
   </head>
-  <body>
+  <body class="project-page">
     <header class="site-header" aria-label="Project navigation">
-      <a class="brand" href="https://github.com/moritzbrantner/scenedetect-rs">scenedetect-rs</a>
+      <a class="brand" aria-current="page" href="index.html">scenedetect-rs</a>
       <nav aria-label="Primary navigation">
-        <a href="workbench.html">Browser workbench</a>
-        <a href="#capabilities">Capabilities</a>
-        <a href="#benchmarks">Benchmarks</a>
-        <a href="#contribute">Contribute</a>
+        <a href="workbench.html">Workbench</a>
+        <a href="capabilities.html">Capabilities</a>
+        <a href="benchmarks.html">Benchmarks</a>
+        <a href="browser-analysis.html">How it works</a>
+        <a href="https://github.com/moritzbrantner/scenedetect-rs">Source</a>
       </nav>
     </header>
 
     <main>
-      <section class="hero" aria-label="Project overview">
-        <div class="hero-media" aria-hidden="true">
-          <img
-            src="assets/hero-scene-detection.png"
-            alt=""
-            width="1280"
-            height="720"
-          />
+      <section class="project-hero" aria-labelledby="project-title">
+        <div class="project-shell project-hero-layout">
+          <div>
+            <p class="eyebrow">Rust scene detection · CLI + WebAssembly</p>
+            <h1 id="project-title">Detect once. Reuse the evidence.</h1>
+            <p class="project-lede">
+              <code>scenedetect-rs</code> is a Rust reimplementation and expansion of PySceneDetect.
+              Its native workflow treats reusable Detection Stats as the canonical result of scene
+              detection, while compatibility commands remain available as a verified parity seam.
+            </p>
+            <div class="project-actions">
+              <a class="button primary" href="workbench.html">Run in browser</a>
+              <a class="button secondary" href="capabilities.html">See capabilities</a>
+              <a class="button secondary" href="benchmarks.html">See benchmarks</a>
+            </div>
+          </div>
+          <aside class="project-principle" aria-label="Browser execution boundary">
+            <p class="eyebrow">Browser boundary</p>
+            <p>
+              Selected media stays local. The browser owns decode and sampling; Rust compiled to
+              WebAssembly owns Detector semantics. The browser surface does not pretend to be native
+              FFmpeg decode.
+            </p>
+            <a href="browser-analysis.html">Read how browser analysis works</a>
+          </aside>
         </div>
-        <div class="hero-copy">
-          <p class="eyebrow">Rust scene detection · CLI + WebAssembly</p>
-          <h1>scenedetect-rs</h1>
-          <p class="lede">
-            A Rust reimplementation and expansion of PySceneDetect, focused on
-            CLI-compatible scene detection, local browser analysis through WebAssembly,
-            FFmpeg frame acquisition, and parity against the PySceneDetect v0.7 Reference Oracle.
-          </p>
-          <div class="hero-actions">
-            <a class="button primary" href="workbench.html">Run in browser</a>
-            <a class="button secondary" href="https://github.com/moritzbrantner/scenedetect-rs">
-              View source
-            </a>
-            <a class="button secondary" href="#benchmarks">See benchmarks</a>
+      </section>
+
+      <section aria-labelledby="workflow-heading">
+        <div class="project-shell">
+          <div class="section-heading">
+            <p class="eyebrow">Native workflow</p>
+            <h2 id="workflow-heading">Detection is a reusable data boundary</h2>
+            <p>
+              Run a Detector once to produce canonical Detection Stats, then derive the views and
+              formats a caller needs. Exact Media Time is a separate timing-aware projection rather
+              than hidden mutation of Detector truth.
+            </p>
+          </div>
+
+          <div class="workflow-sequence" aria-label="Native SceneDetect workflow">
+            <div>
+              <span>01</span>
+              <strong>Detect</strong>
+              <p>Decode frames and write <code>input.scenedetect.json</code>.</p>
+            </div>
+            <div>
+              <span>02</span>
+              <strong>Inspect or render</strong>
+              <p>Reuse matching Detection Stats for scenes, stats, HTML, and boundary review.</p>
+            </div>
+            <div>
+              <span>03</span>
+              <strong>Project exact timing when needed</strong>
+              <p>Render a Scene Timeline with rational Media Time endpoints.</p>
+            </div>
           </div>
         </div>
       </section>
 
-      <section class="quickstart" aria-labelledby="quickstart-heading">
-        <div class="section-inner split">
-          <div>
-            <p class="eyebrow">CLI shape</p>
-            <h2 id="quickstart-heading">PySceneDetect-compatible command direction</h2>
+      <section aria-labelledby="quickstart-heading">
+        <div class="project-shell project-split">
+          <div class="section-heading">
+            <p class="eyebrow">Quick start</p>
+            <h2 id="quickstart-heading">A small CLI surface around explicit artifacts</h2>
             <p>
-              The first milestone targets <code>detect-content</code>,
-              <code>detect-adaptive</code>, and
-              <code>detect-threshold</code>, <code>detect-hist</code>,
-              <code>detect-hash</code>, scene-list CSV output, and detector stats
-              CSV output. The browser workbench exposes the same five Rust detector implementations
-              over locally decoded video frames.
+              Content, Adaptive, Threshold, Histogram, and Perceptual Hash Detectors are available in
+              the native workflow and through the current PySceneDetect v0.7 compatibility surface.
             </p>
           </div>
           <div class="code-stack" aria-label="CLI examples">
-            <pre><code>scenedetect-rs -i input.mp4 --output out detect-content list-scenes</code></pre>
-            <pre><code>scenedetect-rs -i input.mp4 --stats stats.csv detect-content list-scenes --no-output-file</code></pre>
+            <pre><code>scenedetect-rs detect content -i input.mp4</code></pre>
+            <pre><code>scenedetect-rs render scenes -i input.mp4
+scenedetect-rs render stats -i input.mp4 --csv</code></pre>
+            <pre><code>scenedetect-rs render timeline -i input.mp4</code></pre>
           </div>
         </div>
       </section>
 
-      <section id="capabilities" class="capabilities" aria-labelledby="capabilities-heading">
-        <div class="section-inner">
+      <section aria-labelledby="reference-heading">
+        <div class="project-shell">
           <div class="section-heading">
-            <p class="eyebrow">Parity status</p>
-            <h2 id="capabilities-heading">Current Detector coverage</h2>
-          </div>
-          <div class="capability-grid" role="list">
-            <article class="status-card supported" role="listitem">
-              <span class="status-mark" aria-hidden="true"></span>
-              <h3>Supported Detectors</h3>
-              <p>
-                <code>detect-content</code>, <code>detect-adaptive</code>,
-                <code>detect-threshold</code>, <code>detect-hist</code>,
-                <code>detect-hash</code>
-              </p>
-            </article>
-            <article class="status-card expected-gap" role="listitem">
-              <span class="status-mark" aria-hidden="true"></span>
-              <h3>Expected Gaps</h3>
-              <p>None for PySceneDetect v0.7 Detector parity</p>
-            </article>
-            <article class="status-card oracle" role="listitem">
-              <span class="status-mark" aria-hidden="true"></span>
-              <h3>Reference Oracle</h3>
-              <p>PySceneDetect v0.7 via scenedetect-headless</p>
-            </article>
-          </div>
-          <p class="supporting-link">
-            See the
-            <a href="https://github.com/moritzbrantner/scenedetect-rs/blob/main/tests/parity/capability-matrix.md">
-              PySceneDetect capability matrix
-            </a>
-            for required Parity Cases and Expected Gaps.
-          </p>
-        </div>
-      </section>
-
-      <section id="benchmarks" class="benchmarks" aria-labelledby="benchmarks-heading">
-        <div class="section-inner">
-          <div class="section-heading">
-            <p class="eyebrow">Published Benchmark Snapshot</p>
-            <h2 id="benchmarks-heading">End-to-end CLI timing against PySceneDetect</h2>
+            <p class="eyebrow">Project reference</p>
+            <h2 id="reference-heading">Follow the evidence, not a feature counter</h2>
             <p>
-              Lower time is better. These report-only timings come from a local
-              machine and are not correctness gates. Real-video media is
-              optional, local, and not committed.
+              The public site separates demonstrated behavior from performance evidence and product
+              interaction. Each surface links back to the repository contract that supports its claims.
             </p>
           </div>
 
-          <div id="benchmark-summary" class="benchmark-summary" aria-live="polite">
-            Loading benchmark snapshot...
-          </div>
-
-          <div class="table-frame">
-            <table>
-              <thead>
-                <tr>
-                  <th scope="col">Benchmark Case</th>
-                  <th scope="col">Corpus</th>
-                  <th scope="col">Detector</th>
-                  <th scope="col">PySceneDetect mean</th>
-                  <th scope="col">scenedetect-rs mean</th>
-                  <th scope="col">Result ratio</th>
-                  <th scope="col">Faster implementation</th>
-                </tr>
-              </thead>
-              <tbody id="benchmark-rows">
-                <tr>
-                  <td colspan="7">Benchmark data is loading.</td>
-                </tr>
-              </tbody>
-            </table>
+          <div class="reference-list">
+            <a href="capabilities.html">
+              <span>Capabilities</span>
+              <strong>Verified Detector parity, native artifacts, timing, browser behavior, and explicit limits.</strong>
+              <span aria-hidden="true">→</span>
+            </a>
+            <a href="benchmarks.html">
+              <span>Benchmarks</span>
+              <strong>Published timing data with snapshot date, Candidate, Reference Oracle, corpus, machine, and method.</strong>
+              <span aria-hidden="true">→</span>
+            </a>
+            <a href="workbench.html">
+              <span>Browser workbench</span>
+              <strong>Run all five Rust Detector implementations against locally decoded video and review the result.</strong>
+              <span aria-hidden="true">→</span>
+            </a>
+            <a href="browser-analysis.html">
+              <span>Browser architecture</span>
+              <strong>Understand the decode, sampling, worker, WebAssembly, and human-review ownership boundaries.</strong>
+              <span aria-hidden="true">→</span>
+            </a>
           </div>
         </div>
       </section>
 
-      <section id="contribute" class="contribute" aria-labelledby="contribute-heading">
-        <div class="section-inner">
+      <section aria-labelledby="compatibility-heading">
+        <div class="project-shell project-split">
           <div class="section-heading">
-            <p class="eyebrow">Project links</p>
-            <h2 id="contribute-heading">Contribute through public interfaces</h2>
+            <p class="eyebrow">Compatibility seam</p>
+            <h2 id="compatibility-heading">PySceneDetect-compatible commands remain available</h2>
+            <p>
+              The parity surface currently covers <code>detect-content</code>,
+              <code>detect-adaptive</code>, <code>detect-threshold</code>, <code>detect-hist</code>,
+              and <code>detect-hash</code>. Required behavior is tracked in the repository's capability
+              matrix and parity suite.
+            </p>
           </div>
-          <div class="link-grid">
-            <a href="https://github.com/moritzbrantner/scenedetect-rs/blob/main/README.md">
-              README
-            </a>
-            <a href="https://github.com/moritzbrantner/scenedetect-rs/blob/main/CONTRIBUTING.md">
-              CONTRIBUTING
-            </a>
-            <a href="https://github.com/moritzbrantner/scenedetect-rs/issues">
-              GitHub issues
-            </a>
-            <a href="https://github.com/moritzbrantner/scenedetect-rs/blob/main/tests/parity/README.md">
-              Parity docs
-            </a>
-            <a href="https://github.com/moritzbrantner/scenedetect-rs/blob/main/tests/benchmarks/README.md">
-              Benchmark docs
-            </a>
+          <div class="code-stack" aria-label="PySceneDetect-compatible CLI examples">
+            <pre><code>scenedetect-rs -i input.mp4 --output out detect-content list-scenes</code></pre>
+            <pre><code>scenedetect-rs -i input.mp4 detect-adaptive --threshold 3 list-scenes</code></pre>
           </div>
+        </div>
+      </section>
+
+      <section aria-labelledby="source-heading">
+        <div class="project-shell narrow-shell">
+          <div class="section-heading">
+            <p class="eyebrow">Source and contribution</p>
+            <h2 id="source-heading">The repository remains the authority</h2>
+          </div>
+          <p>
+            Read the <a href="https://github.com/moritzbrantner/scenedetect-rs/blob/main/README.md">README</a>
+            for usage, the
+            <a href="https://github.com/moritzbrantner/scenedetect-rs/blob/main/CONTRIBUTING.md">contribution contract</a>
+            for development workflow, and
+            <a href="https://github.com/moritzbrantner/scenedetect-rs/issues">GitHub Issues</a>
+            for planned work.
+          </p>
         </div>
       </section>
     </main>
@@ -179,7 +179,5 @@
       <span>scenedetect-rs</span>
       <span>MIT licensed</span>
     </footer>
-
-    <script src="app.js" defer></script>
   </body>
 </html>

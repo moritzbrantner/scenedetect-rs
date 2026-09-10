@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Capabilities · scenedetect-rs</title>
+    <meta
+      name="description"
+      content="Verified scenedetect-rs detector, CLI, artifact, timing, and browser capabilities with explicit evidence boundaries."
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body class="project-page">
+    <header class="site-header" aria-label="Project navigation">
+      <a class="brand" href="index.html">scenedetect-rs</a>
+      <nav aria-label="Primary navigation">
+        <a href="workbench.html">Workbench</a>
+        <a aria-current="page" href="capabilities.html">Capabilities</a>
+        <a href="benchmarks.html">Benchmarks</a>
+        <a href="browser-analysis.html">How it works</a>
+        <a href="https://github.com/moritzbrantner/scenedetect-rs">Source</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="reference-hero" aria-labelledby="capability-title">
+        <div class="project-shell narrow-shell">
+          <p class="eyebrow">Capability reference</p>
+          <h1 id="capability-title">What scenedetect-rs can prove today</h1>
+          <p class="project-lede">
+            This page describes demonstrated public behavior, not an aspirational feature list.
+            Detector parity is backed by the repository's required PySceneDetect v0.7 Parity Cases;
+            native and browser capabilities are stated with their ownership and timing boundaries.
+          </p>
+          <p class="project-note">
+            The authoritative detector matrix remains
+            <a href="https://github.com/moritzbrantner/scenedetect-rs/blob/main/tests/parity/capability-matrix.md">
+              tests/parity/capability-matrix.md
+            </a>.
+          </p>
+        </div>
+      </section>
+
+      <section aria-labelledby="detector-parity-heading">
+        <div class="project-shell">
+          <div class="section-heading">
+            <p class="eyebrow">PySceneDetect v0.7</p>
+            <h2 id="detector-parity-heading">Required Detector parity</h2>
+            <p>
+              These commands are Supported by the Candidate and Required by the parity suite.
+              Expected Gaps belong in the parity configuration rather than being hidden on this page.
+            </p>
+          </div>
+
+          <div class="table-frame compact-table">
+            <table>
+              <thead>
+                <tr>
+                  <th scope="col">PySceneDetect command</th>
+                  <th scope="col">Candidate status</th>
+                  <th scope="col">Parity status</th>
+                  <th scope="col">Verified behavior</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><code>detect-content</code></td>
+                  <td class="status-text">Supported</td>
+                  <td>Required</td>
+                  <td>Hard Scene Boundaries, threshold sensitivity, luma-only mode, and min-scene-len suppression.</td>
+                </tr>
+                <tr>
+                  <td><code>detect-adaptive</code></td>
+                  <td class="status-text">Supported</td>
+                  <td>Required</td>
+                  <td>Adaptive detection on deterministic generated motion-like Scene Boundaries.</td>
+                </tr>
+                <tr>
+                  <td><code>detect-threshold</code></td>
+                  <td class="status-text">Supported</td>
+                  <td>Required</td>
+                  <td>Fade-return Scene List parity.</td>
+                </tr>
+                <tr>
+                  <td><code>detect-hist</code></td>
+                  <td class="status-text">Supported</td>
+                  <td>Required</td>
+                  <td>Histogram Detector parity on a hard luma Scene Boundary.</td>
+                </tr>
+                <tr>
+                  <td><code>detect-hash</code></td>
+                  <td class="status-text">Supported</td>
+                  <td>Required</td>
+                  <td>Perceptual Hash Detector parity on a structural pattern Scene Boundary.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section aria-labelledby="native-heading">
+        <div class="project-shell">
+          <div class="section-heading">
+            <p class="eyebrow">Native workflow</p>
+            <h2 id="native-heading">Detection data is the reusable product boundary</h2>
+          </div>
+          <dl class="capability-list">
+            <div>
+              <dt>Detection Stats</dt>
+              <dd>
+                <code>scenedetect-rs detect …</code> writes a sibling
+                <code>*.scenedetect.json</code> artifact containing Detector provenance, per-frame
+                scores, decisions, and metrics. Native render commands consume that artifact.
+              </dd>
+            </div>
+            <div>
+              <dt>Derived output</dt>
+              <dd>
+                Scene List, stats CSV, HTML, and boundary-review outputs can be derived from matching
+                Detection Stats without repeating the original detection pass.
+              </dd>
+            </div>
+            <div>
+              <dt>Exact Media Time</dt>
+              <dd>
+                <code>render timeline</code> produces a versioned Scene Timeline with integer-tick,
+                rational-time-base endpoints. It deliberately re-reads the timing-aware Frame Source
+                and does not rewrite Detection Stats.
+              </dd>
+            </div>
+            <div>
+              <dt>Frame Source</dt>
+              <dd>
+                The native CLI acquires frames through the FFmpeg subprocess adapter. Detector truth
+                remains owned by the Rust core rather than the media adapter.
+              </dd>
+            </div>
+          </dl>
+        </div>
+      </section>
+
+      <section aria-labelledby="browser-heading">
+        <div class="project-shell">
+          <div class="section-heading">
+            <p class="eyebrow">Browser workflow</p>
+            <h2 id="browser-heading">Local analysis with an explicit browser boundary</h2>
+          </div>
+          <dl class="capability-list">
+            <div>
+              <dt>Local media</dt>
+              <dd>The selected video stays on the device; the static site has no upload endpoint.</dd>
+            </div>
+            <div>
+              <dt>Decode and sampling</dt>
+              <dd>
+                The browser owns video decode, presentation synchronization, canvas reads, and sampling.
+                This surface does not claim native FFmpeg decode or VFR parity.
+              </dd>
+            </div>
+            <div>
+              <dt>Rust Detector semantics</dt>
+              <dd>
+                Sampled RGB frames are transferred to a worker and processed by the Rust Detector core
+                compiled to WebAssembly.
+              </dd>
+            </div>
+            <div>
+              <dt>Human review</dt>
+              <dd>
+                Boundary review remains separate evidence from Detector output and can be exported with
+                the workbench session artifacts.
+              </dd>
+            </div>
+          </dl>
+          <div class="inline-actions">
+            <a href="workbench.html">Open the browser workbench</a>
+            <a href="browser-analysis.html">Read the browser architecture</a>
+          </div>
+        </div>
+      </section>
+
+      <section aria-labelledby="compatibility-heading">
+        <div class="project-shell narrow-shell">
+          <div class="section-heading">
+            <p class="eyebrow">Compatibility boundary</p>
+            <h2 id="compatibility-heading">Compatibility is a seam, not the native data model</h2>
+          </div>
+          <p>
+            PySceneDetect-compatible commands remain available for parity and migration work. CSV is
+            the default <code>list-scenes</code> format used by parity; JSON, NDJSON, and self-contained
+            HTML Scene List output are also available. Flexible command ordering after a Detector
+            command remains deliberately outside the initial compatibility scope.
+          </p>
+          <p class="reference-source">
+            Source of truth:
+            <a href="https://github.com/moritzbrantner/scenedetect-rs/blob/main/README.md">README</a>,
+            <a href="https://github.com/moritzbrantner/scenedetect-rs/blob/main/tests/parity/README.md">parity documentation</a>,
+            and the required parity suite.
+          </p>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <span>scenedetect-rs</span>
+      <a href="index.html">Project home</a>
+    </footer>
+  </body>
+</html>

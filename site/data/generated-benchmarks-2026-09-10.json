@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-09-10T19:23:13+00:00",
+  "candidate_ref": "262d42c2d692d13b0540562805e239c61f6e0865",
+  "reference_oracle": "scenedetect-headless==0.7",
+  "source": {
+    "command": "tests/benchmarks/run-hyperfine.sh --generated-only",
+    "machine_label": "github-actions-ubuntu-latest",
+    "notes": "Generated Benchmark Corpus only; measured on a GitHub-hosted ubuntu-latest runner; timing is report-only and machine-sensitive."
+  },
+  "settings": {
+    "warmup": 1,
+    "runs": 3
+  },
+  "cases": [
+    {
+      "id": "generated-adaptive-hard-cuts",
+      "corpus": "generated",
+      "detector": "detect-adaptive",
+      "reference_mean_seconds": 0.44649931736,
+      "candidate_mean_seconds": 0.04687472502666667,
+      "ratio": 9.525374647125716,
+      "winner": "candidate"
+    },
+    {
+      "id": "generated-content-hard-cuts",
+      "corpus": "generated",
+      "detector": "detect-content",
+      "reference_mean_seconds": 0.42994055769333334,
+      "candidate_mean_seconds": 0.04617228836,
+      "ratio": 9.311657987170497,
+      "winner": "candidate"
+    },
+    {
+      "id": "generated-hash-hard-cuts",
+      "corpus": "generated",
+      "detector": "detect-hash",
+      "reference_mean_seconds": 0.4256949910266667,
+      "candidate_mean_seconds": 0.046039015026666665,
+      "ratio": 9.246396578643052,
+      "winner": "candidate"
+    },
+    {
+      "id": "generated-histogram-hard-cuts",
+      "corpus": "generated",
+      "detector": "detect-hist",
+      "reference_mean_seconds": 0.40025797302666666,
+      "candidate_mean_seconds": 0.04688778369333333,
+      "ratio": 8.536508691571548,
+      "winner": "candidate"
+    },
+    {
+      "id": "generated-threshold-fade",
+      "corpus": "generated",
+      "detector": "detect-threshold",
+      "reference_mean_seconds": 0.38264148902666667,
+      "candidate_mean_seconds": 0.046138872360000006,
+      "ratio": 8.293256194930262,
+      "winner": "candidate"
+    }
+  ]
+}

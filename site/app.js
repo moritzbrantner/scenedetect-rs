@@ -1,4 +1,5 @@
-const SUMMARY_ID = "benchmark-summary";
+const STATUS_ID = "benchmark-status";
+const META_ID = "benchmark-meta";
 const ROWS_ID = "benchmark-rows";
 
 const corpusOrder = new Map([
@@ -14,6 +15,27 @@ function formatSeconds(value) {
     return `${(value * 1000).toFixed(1)} ms`;
   }
   return `${value.toFixed(3)} s`;
+}
+
+function formatDate(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return new Intl.DateTimeFormat("en", {
+    dateStyle: "long",
+    timeStyle: "short",
+    timeZone: "UTC",
+  }).format(date);
+}
+
+function snapshotAgeDays(value) {
+  const generated = new Date(value);
+  if (Number.isNaN(generated.getTime())) {
+    return null;
+  }
+  const ageMs = Date.now() - generated.getTime();
+  return Math.max(0, Math.floor(ageMs / 86_400_000));
 }
 
 function ratioLabel(caseData) {
@@ -40,18 +62,56 @@ function winnerLabel(winner) {
   return "Tie";
 }
 
-function setSummary(snapshot) {
-  const summary = document.getElementById(SUMMARY_ID);
-  const corpora = new Set(snapshot.cases.map((caseData) => caseData.corpus));
-  const corpusLabel = Array.from(corpora).sort().join(" + ") || "no";
-  summary.textContent = [
-    `${snapshot.cases.length} Benchmark Cases`,
-    `${corpusLabel} corpus`,
-    `Reference Oracle: ${snapshot.reference_oracle}`,
-    `Candidate: ${snapshot.candidate_ref}`,
-    `Generated: ${snapshot.generated_at}`,
-    snapshot.source.notes,
-  ].join(" | ");
+function addMetaRow(meta, term, description) {
+  const row = document.createElement("div");
+  const dt = document.createElement("dt");
+  const dd = document.createElement("dd");
+  dt.textContent = term;
+  dd.textContent = description;
+  row.append(dt, dd);
+  meta.append(row);
+}
+
+function renderStatus(snapshot) {
+  const status = document.getElementById(STATUS_ID);
+  const ageDays = snapshotAgeDays(snapshot.generated_at);
+  const dirtyCandidate = snapshot.candidate_ref.endsWith("-dirty");
+  const notes = [];
+
+  if (ageDays === null) {
+    notes.push("Snapshot age is unavailable.");
+  } else if (ageDays > 45) {
+    status.classList.add("historical");
+    notes.push(`This is historical performance evidence: the snapshot is ${ageDays} days old.`);
+  } else {
+    notes.push(`This snapshot was published ${ageDays} day${ageDays === 1 ? "" : "s"} ago.`);
+  }
+
+  if (dirtyCandidate) {
+    status.classList.add("historical");
+    notes.push("Its Candidate ref records a dirty working tree, so it must not be read as current main performance.");
+  }
+
+  notes.push("Use required tests and parity cases for correctness claims.");
+  status.textContent = notes.join(" ");
+}
+
+function renderMeta(snapshot) {
+  const meta = document.getElementById(META_ID);
+  meta.replaceChildren();
+
+  const corpora = Array.from(new Set(snapshot.cases.map((caseData) => caseData.corpus))).sort(
+    (left, right) => (corpusOrder.get(left) ?? 99) - (corpusOrder.get(right) ?? 99),
+  );
+
+  addMetaRow(meta, "Published", `${formatDate(snapshot.generated_at)} UTC`);
+  addMetaRow(meta, "Candidate ref", snapshot.candidate_ref);
+  addMetaRow(meta, "Reference Oracle", snapshot.reference_oracle);
+  addMetaRow(meta, "Corpus coverage", corpora.join(" + ") || "No Benchmark Cases published");
+  addMetaRow(meta, "Machine label", snapshot.source.machine_label);
+  addMetaRow(meta, "Command", snapshot.source.command);
+  addMetaRow(meta, "Timing settings", `${snapshot.settings.warmup} warmup, ${snapshot.settings.runs} measured runs`);
+  addMetaRow(meta, "Source note", snapshot.source.notes);
 }
 
 function sortCases(cases) {
@@ -69,12 +129,12 @@ function renderRows(snapshot) {
   const rows = document.getElementById(ROWS_ID);
   rows.replaceChildren();
 
-  if (!Array.isArray(snapshot.cases) || snapshot.cases.length === 0) {
+  if (snapshot.cases.length === 0) {
     const row = document.createElement("tr");
     const cell = document.createElement("td");
     cell.colSpan = 7;
     cell.textContent =
-      "No benchmark cases are published yet. Run the local snapshot workflow to populate this table.";
+      "No Benchmark Cases are published yet. Run the deliberate local snapshot workflow to populate this table.";
     row.append(cell);
     rows.append(row);
     return;
@@ -118,12 +178,33 @@ function validateSnapshot(snapshot) {
   if (!snapshot || snapshot.schema_version !== 1 || !Array.isArray(snapshot.cases)) {
     throw new Error("Unsupported benchmark snapshot schema.");
   }
+  if (!snapshot.source || !snapshot.settings) {
+    throw new Error("Benchmark snapshot provenance is incomplete.");
+  }
+}
+
+function renderUnavailable() {
+  const status = document.getElementById(STATUS_ID);
+  const meta = document.getElementById(META_ID);
+  const rows = document.getElementById(ROWS_ID);
+
+  status.classList.add("historical");
+  status.textContent =
+    "Benchmark data is unavailable. The project site remains usable, but this page cannot make timing claims without its committed snapshot.";
+
+  meta.replaceChildren();
+  addMetaRow(meta, "Snapshot", "Unavailable");
+
+  rows.replaceChildren();
+  const row = document.createElement("tr");
+  const cell = document.createElement("td");
+  cell.colSpan = 7;
+  cell.textContent = "Benchmark data is unavailable.";
+  row.append(cell);
+  rows.append(row);
 }
 
 async function loadBenchmarks() {
-  const summary = document.getElementById(SUMMARY_ID);
-  const rows = document.getElementById(ROWS_ID);
-
   try {
     const response = await fetch("data/benchmarks.json", { cache: "no-store" });
     if (!response.ok) {
@@ -131,12 +212,11 @@ async function loadBenchmarks() {
     }
     const snapshot = await response.json();
     validateSnapshot(snapshot);
-    setSummary(snapshot);
+    renderStatus(snapshot);
+    renderMeta(snapshot);
     renderRows(snapshot);
   } catch (error) {
-    summary.textContent =
-      "Benchmark snapshot could not be loaded. The site remains usable, but timing data is unavailable.";
-    rows.innerHTML = '<tr><td colspan="7">Benchmark data is unavailable.</td></tr>';
+    renderUnavailable();
   }
 }
 
