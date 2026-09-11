@@ -14,6 +14,7 @@ DEFAULT_INPUT = ROOT_DIR / "tests" / "quality" / "output" / "report.json"
 DEFAULT_OUTPUT = ROOT_DIR / "site" / "data" / "quality.json"
 DEFAULT_COMMAND = "bun run quality:generated"
 DEFAULT_MANIFEST = "tests/quality/corpus.generated.toml"
+GENERATED_MANIFEST_PATH = (ROOT_DIR / DEFAULT_MANIFEST).resolve()
 DEFAULT_ORACLE = "scenedetect-headless==0.7"
 
 
@@ -44,6 +45,21 @@ def git_candidate_ref() -> str:
         ).stdout.strip()
     except (OSError, subprocess.CalledProcessError):
         return "unknown"
+
+
+def require_generated_manifest(report: dict[str, Any]) -> None:
+    manifest = report.get("manifest")
+    if not isinstance(manifest, str) or not manifest:
+        raise QualitySnapshotError("quality report is missing manifest provenance")
+    try:
+        resolved = Path(manifest).expanduser().resolve(strict=False)
+    except OSError as error:
+        raise QualitySnapshotError(f"quality report manifest cannot be resolved: {manifest}") from error
+    if resolved != GENERATED_MANIFEST_PATH:
+        raise QualitySnapshotError(
+            "quality report was not produced from the generated corpus manifest: "
+            f"expected {GENERATED_MANIFEST_PATH}, got {resolved}"
+        )
 
 
 def sanitize_configuration(value: Any) -> dict[str, Any]:
@@ -121,6 +137,7 @@ def build_snapshot(
     machine_label: str,
     command: str,
 ) -> dict[str, Any]:
+    require_generated_manifest(report)
     totals = report.get("totals")
     cases = report.get("cases")
     divergences = report.get("worst_divergences")
@@ -157,6 +174,7 @@ def fixture_report() -> dict[str, Any]:
     return {
         "schema_version": 1,
         "generated_at": "2026-09-11T00:00:00+00:00",
+        "manifest": str(GENERATED_MANIFEST_PATH),
         "totals": {
             "cases": 1,
             "reference_boundaries": 1,
@@ -204,8 +222,9 @@ def fixture_report() -> dict[str, Any]:
 
 
 def check_fixture() -> None:
+    report = fixture_report()
     snapshot = build_snapshot(
-        fixture_report(),
+        report,
         candidate_ref="fixture-ref",
         machine_label="fixture-runner",
         command=DEFAULT_COMMAND,
@@ -216,6 +235,19 @@ def check_fixture() -> None:
         "bun run quality:generated -- --case fixture-content"
     )
     assert snapshot["source"]["report_only"] is True
+
+    wrong_manifest = {**report, "manifest": str(ROOT_DIR / "tests" / "quality" / "corpus.example.toml")}
+    try:
+        build_snapshot(
+            wrong_manifest,
+            candidate_ref="fixture-ref",
+            machine_label="fixture-runner",
+            command=DEFAULT_COMMAND,
+        )
+    except QualitySnapshotError as error:
+        assert "was not produced from the generated corpus manifest" in str(error)
+    else:
+        raise AssertionError("non-generated quality report provenance must fail closed")
 
     with tempfile.TemporaryDirectory() as directory:
         path = Path(directory) / "quality.json"
