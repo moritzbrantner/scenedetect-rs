@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Quality · scenedetect-rs</title>
+    <meta
+      name="description"
+      content="Deterministic scene-detection quality evidence against the PySceneDetect v0.7 Reference Oracle, including boundary matches and divergences."
+    />
+    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="evidence.css" />
+    <link rel="preload" as="fetch" href="data/quality.json" crossorigin />
+  </head>
+  <body class="project-page">
+    <header class="site-header" aria-label="Project navigation">
+      <a class="brand" href="index.html">scenedetect-rs</a>
+      <nav aria-label="Primary navigation">
+        <a href="workbench.html">Workbench</a>
+        <a href="capabilities.html">Capabilities</a>
+        <a aria-current="page" href="quality.html">Quality</a>
+        <a href="benchmarks.html">Benchmarks</a>
+        <a href="browser-analysis.html">How it works</a>
+        <a href="https://github.com/moritzbrantner/scenedetect-rs">Source</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="reference-hero" aria-labelledby="quality-title">
+        <div class="project-shell narrow-shell">
+          <p class="eyebrow">Scene-quality evidence</p>
+          <h1 id="quality-title">How closely does the Candidate agree with the Reference Oracle?</h1>
+          <p class="project-lede">
+            This page publishes a sanitized immutable snapshot from the repository's existing
+            deterministic quality-discovery loop. It reports boundary matches, false positives,
+            false negatives, and frame deltas without turning subjective quality into a CI gate.
+          </p>
+          <p class="project-note">
+            The generated corpus is a discovery instrument, not a claim of universal equivalence on arbitrary video.
+          </p>
+        </div>
+      </section>
+
+      <section aria-labelledby="snapshot-heading">
+        <div class="project-shell">
+          <div class="section-heading">
+            <p class="eyebrow">Published generated corpus</p>
+            <h2 id="snapshot-heading">One reproducible quality snapshot</h2>
+          </div>
+          <p id="quality-status" class="benchmark-status" aria-live="polite">Loading quality evidence…</p>
+          <dl id="quality-meta" class="benchmark-meta" aria-live="polite"></dl>
+          <p class="reference-source"><a id="quality-raw-link" href="data/quality.json">Open raw quality evidence</a></p>
+        </div>
+      </section>
+
+      <section aria-labelledby="cases-heading">
+        <div class="project-shell">
+          <div class="section-heading">
+            <p class="eyebrow">Cases</p>
+            <h2 id="cases-heading">Every stress case keeps its own tolerance and reproduction command</h2>
+            <p>
+              The table uses the same per-case concepts as <code>tests/quality/output/report.json</code>.
+              Counts are evidence, not decorative KPIs.
+            </p>
+          </div>
+          <div class="table-frame quality-table">
+            <table>
+              <thead>
+                <tr>
+                  <th scope="col">Case</th>
+                  <th scope="col">Detector</th>
+                  <th scope="col">Tolerance</th>
+                  <th scope="col">Reference</th>
+                  <th scope="col">Candidate</th>
+                  <th scope="col">Matched</th>
+                  <th scope="col">False +</th>
+                  <th scope="col">False −</th>
+                  <th scope="col">Max delta</th>
+                  <th scope="col">Reproduce</th>
+                </tr>
+              </thead>
+              <tbody id="quality-case-rows">
+                <tr><td colspan="10">Quality data is loading.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section aria-labelledby="divergence-heading">
+        <div class="project-shell narrow-shell">
+          <div class="section-heading">
+            <p class="eyebrow">Discovery queue</p>
+            <h2 id="divergence-heading">Highest-ranked divergences</h2>
+            <p>
+              When this list is non-empty, the repository's quality loop selects one deterministic
+              actionable divergence, preserves it in caller-facing regression coverage, and fixes it narrowly.
+            </p>
+          </div>
+          <div id="quality-divergences" class="quality-divergences" aria-live="polite">Loading divergences…</div>
+        </div>
+      </section>
+
+      <section aria-labelledby="quality-boundary-heading">
+        <div class="project-shell">
+          <div class="section-heading">
+            <p class="eyebrow">Method and boundary</p>
+            <h2 id="quality-boundary-heading">Quality discovery stays separate from compatibility and speed</h2>
+          </div>
+          <dl class="capability-list">
+            <div><dt>Reference semantics</dt><dd>The quality runner compares detector semantics through the locked PySceneDetect v0.7 detector API. CLI compatibility remains owned by <code>tests/parity/</code>.</dd></div>
+            <div><dt>Generated corpus</dt><dd>Deterministic tiny FFmpeg fixtures exercise Content, Adaptive, Threshold, Histogram, and Perceptual Hash behavior without committing private real media.</dd></div>
+            <div><dt>Progressive repair</dt><dd>One highest-ranked actionable divergence graduates into normal regression coverage before the smallest semantic fix is made.</dd></div>
+            <div><dt>Evidence class</dt><dd>The snapshot is report-only. It can guide work, but it cannot make correctness checks green or substitute for required parity.</dd></div>
+          </dl>
+          <div class="command-block" aria-label="Quality discovery command">
+            <p>Re-run the full deterministic discovery corpus</p>
+            <pre><code>bun run quality:generated</code></pre>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <span>scenedetect-rs</span>
+      <a href="index.html">Project home</a>
+    </footer>
+
+    <script src="quality.js" defer></script>
+  </body>
+</html>

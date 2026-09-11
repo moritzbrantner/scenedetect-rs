@@ -6,10 +6,11 @@
     <title>Benchmarks · scenedetect-rs</title>
     <meta
       name="description"
-      content="Published scenedetect-rs benchmark evidence with current generated measurements, historical real-video data, provenance, and methodology."
+      content="Immutable scenedetect-rs benchmark evidence with selectable history, provenance, methodology, and raw snapshots."
     />
     <link rel="stylesheet" href="styles.css" />
-    <link rel="preload" as="fetch" href="data/benchmarks.json" crossorigin />
+    <link rel="stylesheet" href="evidence.css" />
+    <link rel="preload" as="fetch" href="data/benchmark-history.json" crossorigin />
   </head>
   <body class="project-page">
     <header class="site-header" aria-label="Project navigation">
@@ -17,6 +18,7 @@
       <nav aria-label="Primary navigation">
         <a href="workbench.html">Workbench</a>
         <a href="capabilities.html">Capabilities</a>
+        <a href="quality.html">Quality</a>
         <a aria-current="page" href="benchmarks.html">Benchmarks</a>
         <a href="browser-analysis.html">How it works</a>
         <a href="https://github.com/moritzbrantner/scenedetect-rs">Source</a>
@@ -26,141 +28,36 @@
     <main>
       <section class="reference-hero" aria-labelledby="benchmark-title">
         <div class="project-shell narrow-shell">
-          <p class="eyebrow">Benchmark evidence</p>
-          <h1 id="benchmark-title">Current numbers and historical evidence stay separate</h1>
+          <p class="eyebrow">Performance evidence</p>
+          <h1 id="benchmark-title">Every benchmark remains attached to the run that produced it</h1>
           <p class="project-lede">
-            The newest deterministic generated-corpus run is published with its exact Candidate,
-            machine, Reference Oracle, and command. Older real-video measurements remain available
-            below with their original provenance instead of being mixed into a current-looking table.
+            Benchmark snapshots are immutable evidence sets. Select one run to inspect its Candidate,
+            Reference Oracle, corpus, machine, command, timing settings, and results without combining
+            measurements from different dates or machines.
           </p>
           <p class="project-note">
-            Benchmark timing is report-only evidence. It is not a correctness gate, and GitHub Pages
-            does not execute benchmarks during deployment.
+            Timing is report-only. It is not a correctness gate, and GitHub Pages never runs benchmarks.
           </p>
         </div>
       </section>
 
-      <section aria-labelledby="current-generated-heading">
+      <section aria-labelledby="history-heading">
         <div class="project-shell">
           <div class="section-heading">
-            <p class="eyebrow">Current generated evidence · September 10, 2026</p>
-            <h2 id="current-generated-heading">All five Detector families against PySceneDetect v0.7</h2>
-            <p>
-              Measured on the same GitHub-hosted <code>ubuntu-latest</code> runner from Candidate
-              <code>262d42c2d692d13b0540562805e239c61f6e0865</code>. Lower time is better. These are
-              end-to-end CLI timings, including decode, Detector execution, and Scene List CSV output.
-            </p>
+            <p class="eyebrow">Benchmark history</p>
+            <h2 id="history-heading">Inspect one evidence set at a time</h2>
           </div>
 
-          <dl class="benchmark-meta">
-            <div>
-              <dt>Published</dt>
-              <dd>September 10, 2026 at 19:23:13 UTC</dd>
-            </div>
-            <div>
-              <dt>Candidate ref</dt>
-              <dd><code>262d42c2d692d13b0540562805e239c61f6e0865</code></dd>
-            </div>
-            <div>
-              <dt>Reference Oracle</dt>
-              <dd><code>scenedetect-headless==0.7</code></dd>
-            </div>
-            <div>
-              <dt>Corpus coverage</dt>
-              <dd>Deterministic generated corpus · Content, Adaptive, Threshold, Histogram, Perceptual Hash</dd>
-            </div>
-            <div>
-              <dt>Machine label</dt>
-              <dd><code>github-actions-ubuntu-latest</code></dd>
-            </div>
-            <div>
-              <dt>Command</dt>
-              <dd><code>tests/benchmarks/run-hyperfine.sh --generated-only</code></dd>
-            </div>
-            <div>
-              <dt>Timing settings</dt>
-              <dd>1 warmup, 3 measured runs</dd>
-            </div>
-          </dl>
-
-          <div class="table-frame benchmark-table">
-            <table>
-              <thead>
-                <tr>
-                  <th scope="col">Benchmark Case</th>
-                  <th scope="col">Detector</th>
-                  <th scope="col">PySceneDetect mean</th>
-                  <th scope="col">scenedetect-rs mean</th>
-                  <th scope="col">Relative result</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td class="case-id">generated-adaptive-hard-cuts</td>
-                  <td><code>detect-adaptive</code></td>
-                  <td>446.5 ms</td>
-                  <td>46.9 ms</td>
-                  <td class="winner-candidate">9.53x faster</td>
-                </tr>
-                <tr>
-                  <td class="case-id">generated-content-hard-cuts</td>
-                  <td><code>detect-content</code></td>
-                  <td>429.9 ms</td>
-                  <td>46.2 ms</td>
-                  <td class="winner-candidate">9.31x faster</td>
-                </tr>
-                <tr>
-                  <td class="case-id">generated-hash-hard-cuts</td>
-                  <td><code>detect-hash</code></td>
-                  <td>425.7 ms</td>
-                  <td>46.0 ms</td>
-                  <td class="winner-candidate">9.25x faster</td>
-                </tr>
-                <tr>
-                  <td class="case-id">generated-histogram-hard-cuts</td>
-                  <td><code>detect-hist</code></td>
-                  <td>400.3 ms</td>
-                  <td>46.9 ms</td>
-                  <td class="winner-candidate">8.54x faster</td>
-                </tr>
-                <tr>
-                  <td class="case-id">generated-threshold-fade</td>
-                  <td><code>detect-threshold</code></td>
-                  <td>382.6 ms</td>
-                  <td>46.1 ms</td>
-                  <td class="winner-candidate">8.29x faster</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-
-          <p class="reference-source">
-            <a href="data/generated-benchmarks-2026-09-10.json">Open the raw September 10 generated benchmark evidence</a>
-          </p>
-        </div>
-      </section>
-
-      <section aria-labelledby="historical-snapshot-heading">
-        <div class="project-shell">
-          <div class="section-heading">
-            <p class="eyebrow">Historical full snapshot · June 19, 2026</p>
-            <h2 id="historical-snapshot-heading">Generated and local real-video evidence</h2>
-            <p>
-              This is the repository's existing Published Benchmark Snapshot. It includes three
-              generated cases plus three local Shrek Retold content-detection cases. It is retained
-              because it contains evidence the current generated-only run does not replace.
-            </p>
+          <div class="evidence-picker">
+            <label for="benchmark-snapshot">Published snapshot</label>
+            <select id="benchmark-snapshot" aria-describedby="benchmark-description"></select>
+            <p id="benchmark-description" class="evidence-description">Loading benchmark history…</p>
           </div>
 
           <p id="benchmark-status" class="benchmark-status" aria-live="polite">
-            Loading historical benchmark provenance…
+            Loading benchmark provenance…
           </p>
-          <dl id="benchmark-meta" class="benchmark-meta" aria-live="polite">
-            <div>
-              <dt>Snapshot</dt>
-              <dd>Loading…</dd>
-            </div>
-          </dl>
+          <dl id="benchmark-meta" class="benchmark-meta" aria-live="polite"></dl>
 
           <div class="table-frame benchmark-table">
             <table>
@@ -176,16 +73,12 @@
                 </tr>
               </thead>
               <tbody id="benchmark-rows">
-                <tr>
-                  <td colspan="7">Historical benchmark data is loading.</td>
-                </tr>
+                <tr><td colspan="7">Benchmark data is loading.</td></tr>
               </tbody>
             </table>
           </div>
 
-          <p class="reference-source">
-            <a href="data/benchmarks.json">Open the raw benchmark snapshot (historical full data)</a>
-          </p>
+          <p class="reference-source"><a id="benchmark-raw-link" href="data/benchmark-history.json">Open raw benchmark evidence</a></p>
         </div>
       </section>
 
@@ -193,42 +86,16 @@
         <div class="project-shell">
           <div class="section-heading">
             <p class="eyebrow">Method</p>
-            <h2 id="method-heading">How to read and reproduce the evidence</h2>
+            <h2 id="method-heading">Same-run ratios are useful; cross-machine absolutes are not comparable</h2>
           </div>
           <dl class="capability-list">
-            <div>
-              <dt>Reference Oracle</dt>
-              <dd>
-                PySceneDetect v0.7 is invoked through the pinned headless Python environment used by
-                the repository's parity work.
-              </dd>
-            </div>
-            <div>
-              <dt>Candidate</dt>
-              <dd>
-                The Rust release CLI is measured end-to-end rather than timing an isolated Detector
-                function.
-              </dd>
-            </div>
-            <div>
-              <dt>Benchmark Corpus</dt>
-              <dd>
-                Deterministically generated media covers all five supported Detector families. Optional
-                real-video cases are local and the media itself is not committed.
-              </dd>
-            </div>
-            <div>
-              <dt>Publication</dt>
-              <dd>
-                Timing output is curated into committed JSON evidence. The September generated run is
-                identified by its GitHub-hosted runner; the June full snapshot keeps its original local
-                provenance. Pages only validates and publishes static files.
-              </dd>
-            </div>
+            <div><dt>Reference Oracle</dt><dd>PySceneDetect v0.7 runs through the pinned headless Python environment used by parity work.</dd></div>
+            <div><dt>Candidate</dt><dd>The Rust release CLI is measured end-to-end, including decode, Detector execution, and Scene List CSV output.</dd></div>
+            <div><dt>History</dt><dd><code>site/data/benchmark-history.json</code> indexes committed immutable snapshots. A snapshot retains its original machine and Candidate provenance.</dd></div>
+            <div><dt>Interpretation</dt><dd>Relative results inside one snapshot compare commands on the same runner. Absolute timings from different snapshots must not be treated as a time series unless the environment is demonstrably equivalent.</dd></div>
           </dl>
-
           <div class="command-block" aria-label="Benchmark refresh commands">
-            <p>Deliberate local full refresh</p>
+            <p>Deliberate full local refresh</p>
             <pre><code>bun run benchmark:real
 python3 scripts/update-site-benchmarks.py
 python3 scripts/check-site.py</code></pre>
@@ -236,22 +103,16 @@ python3 scripts/check-site.py</code></pre>
         </div>
       </section>
 
-      <section aria-labelledby="interpretation-heading">
+      <section aria-labelledby="evidence-boundary-heading">
         <div class="project-shell narrow-shell">
           <div class="section-heading">
-            <p class="eyebrow">Interpretation</p>
-            <h2 id="interpretation-heading">What these numbers do and do not establish</h2>
+            <p class="eyebrow">Evidence boundary</p>
+            <h2 id="evidence-boundary-heading">Speed and quality answer different questions</h2>
           </div>
           <p>
-            Each benchmark data set is evidence about one measured Candidate on one machine at one
-            point in time. The September generated run is the current deterministic comparison; the
-            June snapshot is historical evidence with additional real-video coverage. Neither proves
-            cross-machine speed or correctness. Correctness remains owned by deterministic tests and
-            required parity cases.
-          </p>
-          <p>
-            For supported behavior, use the <a href="capabilities.html">Capabilities reference</a>.
-            For the actual browser product surface, use the <a href="workbench.html">Workbench</a>.
+            Use <a href="quality.html">Quality</a> for Reference Oracle agreement and divergences,
+            <a href="capabilities.html">Capabilities</a> for supported behavior, and this page only for
+            performance evidence. None of these report-only measurements replace deterministic correctness gates.
           </p>
         </div>
       </section>

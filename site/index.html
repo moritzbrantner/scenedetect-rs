@@ -6,7 +6,7 @@
     <title>scenedetect-rs · Rust scene detection</title>
     <meta
       name="description"
-      content="Rust scene detection built around reusable Detection Stats, a native CLI, local WebAssembly analysis, verified PySceneDetect parity, and published benchmark evidence."
+      content="Rust scene detection built around reusable Detection Stats, local WebAssembly analysis, verified capabilities, quality evidence, and immutable benchmark snapshots."
     />
     <link rel="stylesheet" href="styles.css" />
   </head>
@@ -16,6 +16,7 @@
       <nav aria-label="Primary navigation">
         <a href="workbench.html">Workbench</a>
         <a href="capabilities.html">Capabilities</a>
+        <a href="quality.html">Quality</a>
         <a href="benchmarks.html">Benchmarks</a>
         <a href="browser-analysis.html">How it works</a>
         <a href="https://github.com/moritzbrantner/scenedetect-rs">Source</a>
@@ -36,7 +37,7 @@
             <div class="project-actions">
               <a class="button primary" href="workbench.html">Run in browser</a>
               <a class="button secondary" href="capabilities.html">See capabilities</a>
-              <a class="button secondary" href="benchmarks.html">See benchmarks</a>
+              <a class="button secondary" href="quality.html">See quality evidence</a>
             </div>
           </div>
           <aside class="project-principle" aria-label="Browser execution boundary">
@@ -108,20 +109,25 @@ scenedetect-rs render stats -i input.mp4 --csv</code></pre>
             <p class="eyebrow">Project reference</p>
             <h2 id="reference-heading">Follow the evidence, not a feature counter</h2>
             <p>
-              The public site separates demonstrated behavior from performance evidence and product
-              interaction. Each surface links back to the repository contract that supports its claims.
+              Capability, quality, performance, and product interaction are deliberately separate.
+              Each reference surface points back to the repository evidence that supports its claims.
             </p>
           </div>
 
           <div class="reference-list">
             <a href="capabilities.html">
               <span>Capabilities</span>
-              <strong>Verified Detector parity, native artifacts, timing, browser behavior, and explicit limits.</strong>
+              <strong>Machine-readable supported behavior, required parity evidence, ownership, and explicit limits.</strong>
+              <span aria-hidden="true">→</span>
+            </a>
+            <a href="quality.html">
+              <span>Quality</span>
+              <strong>Deterministic Reference Oracle agreement, boundary divergences, tolerances, and reproduction commands.</strong>
               <span aria-hidden="true">→</span>
             </a>
             <a href="benchmarks.html">
               <span>Benchmarks</span>
-              <strong>Published timing data with snapshot date, Candidate, Reference Oracle, corpus, machine, and method.</strong>
+              <strong>Immutable timing snapshots with Candidate, Reference Oracle, corpus, machine, and method attached.</strong>
               <span aria-hidden="true">→</span>
             </a>
             <a href="workbench.html">
@@ -146,8 +152,8 @@ scenedetect-rs render stats -i input.mp4 --csv</code></pre>
             <p>
               The parity surface currently covers <code>detect-content</code>,
               <code>detect-adaptive</code>, <code>detect-threshold</code>, <code>detect-hist</code>,
-              and <code>detect-hash</code>. Required behavior is tracked in the repository's capability
-              matrix and parity suite.
+              and <code>detect-hash</code>. Supported behavior is projected from the machine-readable
+              capability manifest and checked against required parity cases.
             </p>
           </div>
           <div class="code-stack" aria-label="PySceneDetect-compatible CLI examples">
