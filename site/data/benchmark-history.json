@@ -12,7 +12,7 @@
     {
       "id": "local-2026-06-19",
       "label": "June 19, 2026 · generated + local real video",
-      "path": "benchmarks.json",
+      "path": "benchmarks-2026-06-19.json",
       "evidence_class": "historical-local",
       "description": "Historical local snapshot with three generated cases plus three real-video content cases. Preserved with its original machine and dirty-candidate provenance."
     }
