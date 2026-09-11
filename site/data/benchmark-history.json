@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "default_snapshot": "generated-2026-09-10",
+  "snapshots": [
+    {
+      "id": "generated-2026-09-10",
+      "label": "September 10, 2026 · generated corpus",
+      "path": "generated-benchmarks-2026-09-10.json",
+      "evidence_class": "current-generated",
+      "description": "Current deterministic generated-corpus comparison across all five supported Detector families on a named GitHub-hosted runner."
+    },
+    {
+      "id": "local-2026-06-19",
+      "label": "June 19, 2026 · generated + local real video",
+      "path": "benchmarks.json",
+      "evidence_class": "historical-local",
+      "description": "Historical local snapshot with three generated cases plus three real-video content cases. Preserved with its original machine and dirty-candidate provenance."
+    }
+  ]
+}
