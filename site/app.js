@@ -10,6 +10,8 @@ const corpusOrder = new Map([
   ["real", 1],
 ]);
 
+let activeSnapshotRequest = 0;
+
 function formatSeconds(value) {
   if (!Number.isFinite(value)) return "n/a";
   if (value < 1) return `${(value * 1000).toFixed(1)} ms`;
@@ -145,16 +147,38 @@ async function fetchJson(path) {
   return response.json();
 }
 
-async function renderSnapshot(entry) {
-  const snapshot = await fetchJson(`data/${entry.path}`);
-  validateSnapshot(snapshot);
-  document.getElementById(DESCRIPTION_ID).textContent = entry.description;
+function renderUnavailable(message = "Benchmark evidence is unavailable.") {
+  document.getElementById(DESCRIPTION_ID).textContent = message;
+  const status = document.getElementById(STATUS_ID);
+  status.className = "benchmark-status historical";
+  status.textContent = "No benchmark claims are shown because the selected committed evidence could not be loaded.";
+  document.getElementById(META_ID).replaceChildren();
+  document.getElementById(ROWS_ID).innerHTML = '<tr><td colspan="7">Benchmark data is unavailable.</td></tr>';
   const rawLink = document.getElementById(RAW_LINK_ID);
-  rawLink.href = `data/${entry.path}`;
-  rawLink.textContent = `Open raw snapshot: ${entry.label}`;
-  renderStatus(entry, snapshot);
-  renderMeta(snapshot);
-  renderRows(snapshot);
+  rawLink.href = "data/benchmark-history.json";
+  rawLink.textContent = "Open benchmark history manifest";
+}
+
+async function renderSnapshot(entry) {
+  const requestId = ++activeSnapshotRequest;
+  document.getElementById(DESCRIPTION_ID).textContent = `Loading ${entry.label}…`;
+
+  try {
+    const snapshot = await fetchJson(`data/${entry.path}`);
+    validateSnapshot(snapshot);
+    if (requestId !== activeSnapshotRequest) return;
+
+    document.getElementById(DESCRIPTION_ID).textContent = entry.description;
+    const rawLink = document.getElementById(RAW_LINK_ID);
+    rawLink.href = `data/${entry.path}`;
+    rawLink.textContent = `Open raw snapshot: ${entry.label}`;
+    renderStatus(entry, snapshot);
+    renderMeta(snapshot);
+    renderRows(snapshot);
+  } catch (error) {
+    if (requestId !== activeSnapshotRequest) return;
+    renderUnavailable(`Could not load ${entry.label}.`);
+  }
 }
 
 function selectedSnapshotId(historyManifest) {
@@ -174,23 +198,14 @@ function renderSelector(historyManifest) {
     select.append(option);
   }
   select.value = selectedSnapshotId(historyManifest);
-  select.addEventListener("change", async () => {
+  select.addEventListener("change", () => {
     const entry = historyManifest.snapshots.find((item) => item.id === select.value);
     if (!entry) return;
     const url = new URL(window.location.href);
     url.searchParams.set("snapshot", entry.id);
     window.history.replaceState({}, "", url);
-    await renderSnapshot(entry);
+    void renderSnapshot(entry);
   });
-}
-
-function renderUnavailable() {
-  document.getElementById(DESCRIPTION_ID).textContent = "Benchmark evidence is unavailable.";
-  const status = document.getElementById(STATUS_ID);
-  status.className = "benchmark-status historical";
-  status.textContent = "No benchmark claims are shown because the committed evidence could not be loaded.";
-  document.getElementById(META_ID).replaceChildren();
-  document.getElementById(ROWS_ID).innerHTML = '<tr><td colspan="7">Benchmark data is unavailable.</td></tr>';
 }
 
 async function loadBenchmarkHistory() {
