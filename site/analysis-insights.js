@@ -28,7 +28,8 @@ export function detectorMetricSpec(settings) {
       label: "Histogram distance",
       threshold: Number(config.threshold),
       tunable: true,
-      score: (row) => 1 - Number(firstMetric(row.metrics, "hist_diff")),
+      score: (row) =>
+        Number(row.frame) === 0 ? 0 : 1 - Number(firstMetric(row.metrics, "hist_diff")),
       eligible: () => true,
     };
   }
