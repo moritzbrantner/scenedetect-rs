@@ -31,6 +31,15 @@ export async function createSceneDetect() {
   if (!wasm.memory) {
     throw new Error("SceneDetect WASM did not export linear memory.");
   }
+  for (const name of [
+    "scenedetect_similarity_reset",
+    "scenedetect_similarity_push",
+    "scenedetect_similarity_finish",
+  ]) {
+    if (typeof wasm[name] !== "function") {
+      throw new Error(`SceneDetect WASM is missing required browser analysis export ${name}.`);
+    }
+  }
 
   function readBytes(ptr, len) {
     if (!len) {
@@ -83,6 +92,7 @@ export async function createSceneDetect() {
   }
 
   function createSession(config, frameRate) {
+    check(wasm.scenedetect_similarity_reset());
     const configBytes = encoder.encode(JSON.stringify(config));
     const handle = withBytes(configBytes, (ptr, len) =>
       wasm.scenedetect_session_new(ptr, len, frameRate),
@@ -100,8 +110,9 @@ export async function createSceneDetect() {
         if (!Number.isFinite(mediaTimeSeconds) || mediaTimeSeconds < 0) {
           throw new Error("Presented media time must be a non-negative finite number.");
         }
-        const code = withBytes(rgb, (ptr, len) =>
-          wasm.scenedetect_session_push(
+        const code = withBytes(rgb, (ptr, len) => {
+          check(wasm.scenedetect_similarity_push(index, width, height, ptr, len));
+          return wasm.scenedetect_session_push(
             handle,
             index,
             width,
@@ -109,8 +120,8 @@ export async function createSceneDetect() {
             mediaTimeSeconds,
             ptr,
             len,
-          ),
-        );
+          );
+        });
         check(code);
       },
       finish() {
@@ -120,13 +131,21 @@ export async function createSceneDetect() {
         live = false;
         const code = wasm.scenedetect_session_finish(handle);
         check(code);
-        return JSON.parse(readResultText());
+        const output = JSON.parse(readResultText());
+        const sceneListBytes = encoder.encode(JSON.stringify(output.detection.scene_list));
+        const similarityCode = withBytes(sceneListBytes, (ptr, len) =>
+          wasm.scenedetect_similarity_finish(ptr, len),
+        );
+        check(similarityCode);
+        output.scene_similarity = JSON.parse(readResultText());
+        return output;
       },
       drop() {
         if (!live) {
           return;
         }
         live = false;
+        check(wasm.scenedetect_similarity_reset());
         const code = wasm.scenedetect_session_drop(handle);
         check(code);
       },
