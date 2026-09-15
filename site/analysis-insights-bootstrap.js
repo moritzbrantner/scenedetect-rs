@@ -18,6 +18,7 @@ const similarityStatus = document.getElementById("scene-similarity-status");
 const similarityList = document.getElementById("scene-similarity-list");
 
 let latestOutput = null;
+let renderGeneration = 0;
 
 function setPath(object, path, value) {
   const parts = path.split(".");
@@ -107,18 +108,26 @@ updateSimilarityThresholdLabel();
 insights.reset();
 
 globalThis.addEventListener("scenedetect:analysis-start", () => {
+  renderGeneration += 1;
   latestOutput = null;
   insights.reset();
 });
 
 globalThis.addEventListener("scenedetect:analysis-complete", (event) => {
-  latestOutput = event.detail?.output ?? null;
-  if (!latestOutput) {
+  const output = event.detail?.output ?? null;
+  latestOutput = output;
+  const generation = ++renderGeneration;
+  if (!output) {
     insights.reset();
     return;
   }
-  insights.load({
-    output: latestOutput,
-    settings: currentDetectorSettings(),
+  requestAnimationFrame(() => {
+    if (generation !== renderGeneration || latestOutput !== output) {
+      return;
+    }
+    insights.load({
+      output,
+      settings: currentDetectorSettings(),
+    });
   });
 });
