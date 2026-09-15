@@ -1,33 +1,40 @@
+use std::cell::RefCell;
+
 use scenedetect_core::{Frame, FrameIndex, SceneList};
 use serde::Serialize;
 
 const GRID_SIZE: usize = 4;
 const FEATURE_COUNT: usize = GRID_SIZE * GRID_SIZE * 3;
+const MAX_BROWSER_SIGNATURES: usize = 200_000;
 const MAX_SCENES_FOR_PAIRWISE_COMPARISON: usize = 1024;
 const MAX_REPORTED_PAIRS: usize = 48;
 
+thread_local! {
+    static VISUAL_SIGNATURES: RefCell<Vec<FrameVisualSignature>> = const { RefCell::new(Vec::new()) };
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct FrameVisualSignature {
-    pub(crate) frame: FrameIndex,
+struct FrameVisualSignature {
+    frame: FrameIndex,
     values: [u8; FEATURE_COUNT],
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub(crate) struct SceneSimilarityReport {
-    pub(crate) method: &'static str,
-    pub(crate) total_scenes: usize,
-    pub(crate) scenes_considered: usize,
-    pub(crate) truncated: bool,
-    pub(crate) pairs: Vec<SceneSimilarityPair>,
+struct SceneSimilarityReport {
+    method: &'static str,
+    total_scenes: usize,
+    scenes_considered: usize,
+    truncated: bool,
+    pairs: Vec<SceneSimilarityPair>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub(crate) struct SceneSimilarityPair {
-    pub(crate) first_scene: usize,
-    pub(crate) second_scene: usize,
-    pub(crate) first_start: FrameIndex,
-    pub(crate) second_start: FrameIndex,
-    pub(crate) similarity: f64,
+struct SceneSimilarityPair {
+    first_scene: usize,
+    second_scene: usize,
+    first_start: FrameIndex,
+    second_start: FrameIndex,
+    similarity: f64,
 }
 
 #[derive(Debug, Clone)]
@@ -45,7 +52,99 @@ impl Default for SceneAggregate {
     }
 }
 
-pub(crate) fn frame_visual_signature(frame: &Frame) -> FrameVisualSignature {
+#[no_mangle]
+pub extern "C" fn scenedetect_similarity_reset() -> i32 {
+    VISUAL_SIGNATURES.with(|signatures| signatures.borrow_mut().clear());
+    super::set_result(Vec::new());
+    super::OK
+}
+
+#[no_mangle]
+pub extern "C" fn scenedetect_similarity_push(
+    index: u32,
+    width: u32,
+    height: u32,
+    rgb_ptr: *const u8,
+    rgb_len: usize,
+) -> i32 {
+    let result = (|| -> Result<(), String> {
+        if width == 0 || height == 0 {
+            return Err("similarity frame dimensions must be non-zero".to_owned());
+        }
+        let expected_len = (width as usize)
+            .checked_mul(height as usize)
+            .and_then(|pixels| pixels.checked_mul(3))
+            .ok_or_else(|| "similarity frame dimensions overflow RGB buffer size".to_owned())?;
+        if rgb_len != expected_len {
+            return Err(format!(
+                "similarity RGB buffer length mismatch: expected {expected_len}, received {rgb_len}"
+            ));
+        }
+        let rgb = super::copy_input(rgb_ptr, rgb_len)?;
+        let signature = frame_visual_signature(&Frame {
+            index: FrameIndex(index as u64),
+            width,
+            height,
+            rgb,
+        });
+        VISUAL_SIGNATURES.with(|signatures| {
+            let mut signatures = signatures.borrow_mut();
+            if signatures.len() >= MAX_BROWSER_SIGNATURES {
+                return Err(format!(
+                    "scene similarity accepts at most {MAX_BROWSER_SIGNATURES} analyzed samples"
+                ));
+            }
+            if signatures
+                .last()
+                .is_some_and(|previous| signature.frame <= previous.frame)
+            {
+                return Err("scene similarity sample indexes must increase".to_owned());
+            }
+            signatures.push(signature);
+            Ok(())
+        })
+    })();
+
+    match result {
+        Ok(()) => {
+            super::set_result(Vec::new());
+            super::OK
+        }
+        Err(error) => {
+            super::set_error(error);
+            super::ERROR
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn scenedetect_similarity_finish(
+    scene_list_ptr: *const u8,
+    scene_list_len: usize,
+) -> i32 {
+    let result = (|| -> Result<Vec<u8>, String> {
+        let bytes = super::copy_input(scene_list_ptr, scene_list_len)?;
+        let scene_list: SceneList =
+            serde_json::from_slice(&bytes).map_err(|error| error.to_string())?;
+        let signatures = VISUAL_SIGNATURES.with(|signatures| std::mem::take(&mut *signatures.borrow_mut()));
+        let report = scene_similarity_report(&scene_list, &signatures);
+        serde_json::to_vec(&report).map_err(|error| error.to_string())
+    })();
+
+    match result {
+        Ok(bytes) => {
+            super::set_result(bytes);
+            super::OK
+        }
+        Err(error) => {
+            VISUAL_SIGNATURES.with(|signatures| signatures.borrow_mut().clear());
+            super::set_error(error);
+            super::ERROR
+        }
+    }
+}
+
+fn frame_visual_signature(frame: &Frame) -> FrameVisualSignature {
     let mut values = [0_u8; FEATURE_COUNT];
     let width = frame.width as usize;
     let height = frame.height as usize;
@@ -78,7 +177,7 @@ pub(crate) fn frame_visual_signature(frame: &Frame) -> FrameVisualSignature {
     }
 }
 
-pub(crate) fn scene_similarity_report(
+fn scene_similarity_report(
     scene_list: &SceneList,
     signatures: &[FrameVisualSignature],
 ) -> SceneSimilarityReport {
@@ -314,5 +413,47 @@ mod tests {
         assert!(report.truncated);
         assert_eq!(report.scenes_considered, MAX_SCENES_FOR_PAIRWISE_COMPARISON);
         assert!(report.pairs.is_empty());
+    }
+
+    #[test]
+    fn wasm_similarity_exports_round_trip_a_scene_list() {
+        scenedetect_similarity_reset();
+        let first = Frame::solid(0, 8, 8, [200, 10, 10]);
+        let second = Frame::solid(1, 8, 8, [200, 10, 10]);
+        for frame in [&first, &second] {
+            assert_eq!(
+                scenedetect_similarity_push(
+                    frame.index.0 as u32,
+                    frame.width,
+                    frame.height,
+                    frame.rgb.as_ptr(),
+                    frame.rgb.len(),
+                ),
+                super::super::OK
+            );
+        }
+
+        let scene_list = SceneList {
+            frame_rate: FrameRate(6.0),
+            scenes: vec![
+                SceneSpan {
+                    start: FrameIndex(0),
+                    end: FrameIndex(1),
+                },
+                SceneSpan {
+                    start: FrameIndex(1),
+                    end: FrameIndex(2),
+                },
+            ],
+        };
+        let bytes = serde_json::to_vec(&scene_list).unwrap();
+        assert_eq!(
+            scenedetect_similarity_finish(bytes.as_ptr(), bytes.len()),
+            super::super::OK
+        );
+        let result = super::super::LAST_RESULT.with(|result| result.borrow().clone());
+        let value: serde_json::Value = serde_json::from_slice(&result).unwrap();
+        assert_eq!(value["method"], "4x4_rgb_scene_mean_mad_v1");
+        assert_eq!(value["pairs"][0]["similarity"], 1.0);
     }
 }
