@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   buildScoreSeries,
   detectorMetricSpec,
+  maximumSeriesScore,
   previewCandidateFrames,
 } from "./analysis-insights.js";
 
@@ -57,13 +58,15 @@ test("histogram preview converts correlation to detector distance", () => {
   };
   const { series } = buildScoreSeries(
     output([
+      { frame: 0, metrics: { "hist_diff [bins=256]": 0 } },
       { frame: 1, metrics: { "hist_diff [bins=256]": 0.9 } },
       { frame: 2, metrics: { "hist_diff [bins=256]": 0.99 } },
     ]),
     settings,
   );
 
-  assert.ok(Math.abs(series[0].score - 0.1) < 1e-12);
+  assert.equal(series[0].score, 0);
+  assert.ok(Math.abs(series[1].score - 0.1) < 1e-12);
   assert.deepEqual(previewCandidateFrames(series, 0.05), [1]);
 });
 
@@ -91,4 +94,12 @@ test("stateful fade detector explicitly disables threshold-only boundary preview
 
   assert.equal(spec.tunable, false);
   assert.equal(spec.label, "Average luminance");
+});
+
+test("maximum score stays bounded at the 200000-sample browser cap", () => {
+  const series = Array.from({ length: 200_000 }, (_, index) => ({
+    score: index === 199_999 ? 123.5 : 1,
+  }));
+
+  assert.equal(maximumSeriesScore(series), 123.5);
 });
