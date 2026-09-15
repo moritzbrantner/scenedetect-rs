@@ -51,6 +51,11 @@ export function createAnalysisWorker() {
       if (liveSession) {
         await this.drop();
       }
+      globalThis.dispatchEvent?.(
+        new CustomEvent("scenedetect:analysis-start", {
+          detail: { detector: config.detector, frameRate },
+        }),
+      );
       await request("start", { config, frameRate });
       liveSession = true;
     },
@@ -81,7 +86,13 @@ export function createAnalysisWorker() {
         throw new Error("SceneDetect worker session is not active.");
       }
       liveSession = false;
-      return request("finish");
+      const output = await request("finish");
+      globalThis.dispatchEvent?.(
+        new CustomEvent("scenedetect:analysis-complete", {
+          detail: { output },
+        }),
+      );
+      return output;
     },
 
     async drop() {
