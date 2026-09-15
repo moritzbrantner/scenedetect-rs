@@ -11,6 +11,7 @@
     <link rel="stylesheet" href="styles.css" />
     <link rel="stylesheet" href="workbench.css" />
     <link rel="stylesheet" href="timeline-cut-inspector.css" />
+    <link rel="stylesheet" href="analysis-insights.css" />
   </head>
   <body class="workbench-page">
     <header class="site-header" aria-label="Project navigation">
@@ -202,6 +203,62 @@
             </section>
           </section>
 
+          <section class="analysis-insights-panel" aria-labelledby="heatmap-heading">
+            <div class="analysis-insights-heading">
+              <div>
+                <p class="eyebrow">Detector evidence</p>
+                <h3 id="heatmap-heading">Change-point heatmap</h3>
+                <p>
+                  Inspect the detector metric across the full analyzed timeline. Threshold changes
+                  below are preview-only until a real Rust rerun completes, so the immutable detector
+                  result remains authoritative.
+                </p>
+              </div>
+            </div>
+            <p id="detector-metric-label" class="support-text">
+              Run an analysis to inspect detector scores.
+            </p>
+            <div class="heatmap-shell">
+              <canvas id="detector-score-heatmap" aria-label="Detector score heatmap"></canvas>
+            </div>
+            <div id="threshold-preview-controls" class="threshold-preview-controls" hidden>
+              <label class="threshold-preview-field" for="threshold-preview">
+                <span>Preview threshold</span>
+                <input id="threshold-preview" type="range" min="0" max="1" step="0.01" value="0" />
+                <output id="threshold-preview-value" for="threshold-preview">0.000</output>
+              </label>
+              <button id="apply-threshold-rerun" type="button" class="action-button">
+                Apply threshold &amp; rerun
+              </button>
+            </div>
+            <p id="threshold-preview-summary" class="support-text" aria-live="polite"></p>
+          </section>
+
+          <section class="scene-similarity-panel" aria-labelledby="scene-similarity-heading">
+            <div class="scene-similarity-heading">
+              <div>
+                <p class="eyebrow">Visual recurrence</p>
+                <h3 id="scene-similarity-heading">Scene similarity</h3>
+                <p>
+                  Compare detected scenes using bounded visual fingerprints computed in Rust/WASM.
+                  Similarity is derived evidence for finding repeated intros, outros, ads, or shots;
+                  it never changes scene boundaries by itself.
+                </p>
+              </div>
+            </div>
+            <div class="scene-similarity-controls">
+              <label class="scene-similarity-field" for="similarity-threshold">
+                <span>Minimum similarity</span>
+                <input id="similarity-threshold" type="range" min="0.5" max="1" step="0.01" value="0.85" />
+                <output id="similarity-threshold-value" for="similarity-threshold">85%</output>
+              </label>
+            </div>
+            <p id="scene-similarity-status" class="support-text" aria-live="polite">
+              Run an analysis to compare visually recurring scenes.
+            </p>
+            <div id="scene-similarity-list" class="scene-similarity-list"></div>
+          </section>
+
           <section class="review-panel" aria-labelledby="human-review-heading">
             <div class="result-subheading">
               <p class="eyebrow">Human review layer</p>
@@ -309,5 +366,6 @@
 
     <script type="module" src="workbench.js"></script>
     <script type="module" src="timeline-cut-inspector.js"></script>
+    <script type="module" src="analysis-insights-bootstrap.js"></script>
   </body>
 </html>
