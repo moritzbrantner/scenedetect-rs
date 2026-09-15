@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 
-use scenedetect_core::{Frame, FrameIndex, SceneList};
+use scenedetect_core::{FrameIndex, SceneList};
 use serde::Serialize;
 
 const OK: i32 = 0;
@@ -54,17 +54,6 @@ impl Default for SceneAggregate {
             count: 0,
         }
     }
-}
-
-fn copy_input(ptr: *const u8, len: usize) -> Result<Vec<u8>, String> {
-    if len == 0 {
-        return Ok(Vec::new());
-    }
-    if ptr.is_null() {
-        return Err("similarity input pointer is null".to_owned());
-    }
-    let bytes = unsafe { std::slice::from_raw_parts(ptr, len) };
-    Ok(bytes.to_vec())
 }
 
 fn set_result(bytes: Vec<u8>) {
@@ -129,13 +118,11 @@ pub extern "C" fn scenedetect_similarity_push(
                 "similarity RGB buffer length mismatch: expected {expected_len}, received {rgb_len}"
             ));
         }
-        let rgb = copy_input(rgb_ptr, rgb_len)?;
-        let signature = frame_visual_signature(&Frame {
-            index: FrameIndex(index as u64),
-            width,
-            height,
-            rgb,
-        });
+        if rgb_ptr.is_null() {
+            return Err("similarity RGB pointer is null".to_owned());
+        }
+        let rgb = unsafe { std::slice::from_raw_parts(rgb_ptr, rgb_len) };
+        let signature = frame_visual_signature(FrameIndex(index as u64), width, height, rgb);
         VISUAL_SIGNATURES.with(|signatures| {
             let mut signatures = signatures.borrow_mut();
             if signatures.len() >= MAX_BROWSER_SIGNATURES {
@@ -172,9 +159,12 @@ pub extern "C" fn scenedetect_similarity_finish(
     scene_list_len: usize,
 ) -> i32 {
     let result = (|| -> Result<Vec<u8>, String> {
-        let bytes = copy_input(scene_list_ptr, scene_list_len)?;
+        if scene_list_len == 0 || scene_list_ptr.is_null() {
+            return Err("scene similarity requires a Scene List document".to_owned());
+        }
+        let bytes = unsafe { std::slice::from_raw_parts(scene_list_ptr, scene_list_len) };
         let scene_list: SceneList =
-            serde_json::from_slice(&bytes).map_err(|error| error.to_string())?;
+            serde_json::from_slice(bytes).map_err(|error| error.to_string())?;
         let signatures = VISUAL_SIGNATURES
             .with(|signatures| std::mem::take(&mut *signatures.borrow_mut()));
         let report = scene_similarity_report(&scene_list, &signatures);
@@ -194,16 +184,18 @@ pub extern "C" fn scenedetect_similarity_finish(
     }
 }
 
-fn frame_visual_signature(frame: &Frame) -> FrameVisualSignature {
+fn frame_visual_signature(
+    frame: FrameIndex,
+    width: u32,
+    height: u32,
+    rgb: &[u8],
+) -> FrameVisualSignature {
     let mut values = [0_u8; FEATURE_COUNT];
-    let width = frame.width as usize;
-    let height = frame.height as usize;
+    let width = width as usize;
+    let height = height as usize;
 
     if width == 0 || height == 0 {
-        return FrameVisualSignature {
-            frame: frame.index,
-            values,
-        };
+        return FrameVisualSignature { frame, values };
     }
 
     let mut target = 0;
@@ -212,7 +204,7 @@ fn frame_visual_signature(frame: &Frame) -> FrameVisualSignature {
         for grid_x in 0..GRID_SIZE {
             let x = ((2 * grid_x + 1) * width / (2 * GRID_SIZE)).min(width - 1);
             let offset = (y * width + x) * 3;
-            if let Some(pixel) = frame.rgb.get(offset..offset + 3) {
+            if let Some(pixel) = rgb.get(offset..offset + 3) {
                 values[target] = pixel[0];
                 values[target + 1] = pixel[1];
                 values[target + 2] = pixel[2];
@@ -221,10 +213,7 @@ fn frame_visual_signature(frame: &Frame) -> FrameVisualSignature {
         }
     }
 
-    FrameVisualSignature {
-        frame: frame.index,
-        values,
-    }
+    FrameVisualSignature { frame, values }
 }
 
 fn scene_similarity_report(
@@ -375,7 +364,7 @@ fn keep_best_pair(pairs: &mut Vec<SceneSimilarityPair>, candidate: SceneSimilari
 #[cfg(test)]
 mod tests {
     use super::*;
-    use scenedetect_core::{FrameRate, SceneSpan};
+    use scenedetect_core::{Frame, FrameRate, SceneSpan};
 
     fn scene_list() -> SceneList {
         SceneList {
@@ -397,6 +386,10 @@ mod tests {
         }
     }
 
+    fn signature(frame: &Frame) -> FrameVisualSignature {
+        frame_visual_signature(frame.index, frame.width, frame.height, &frame.rgb)
+    }
+
     #[test]
     fn repeated_visual_scenes_rank_as_most_similar() {
         let frames = [
@@ -407,7 +400,7 @@ mod tests {
             Frame::solid(4, 8, 8, [220, 30, 30]),
             Frame::solid(5, 8, 8, [220, 30, 30]),
         ];
-        let signatures = frames.iter().map(frame_visual_signature).collect::<Vec<_>>();
+        let signatures = frames.iter().map(signature).collect::<Vec<_>>();
 
         let report = scene_similarity_report(&scene_list(), &signatures);
 
@@ -439,7 +432,7 @@ mod tests {
             rgb,
         };
 
-        let signature = frame_visual_signature(&frame);
+        let signature = signature(&frame);
 
         assert_eq!(signature.frame, FrameIndex(7));
         assert_ne!(&signature.values[0..3], &signature.values[9..12]);
