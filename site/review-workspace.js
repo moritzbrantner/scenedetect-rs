@@ -199,6 +199,56 @@ export function createReviewWorkspace({
     }
   }
 
+  function previousPresentedSample(sample) {
+    const numeric = Number(sample);
+    let previous = null;
+    for (const entry of presentedSamples) {
+      const candidate = Number(entry.sample);
+      if (Number.isFinite(candidate) && candidate < numeric && (previous == null || candidate > previous)) {
+        previous = candidate;
+      }
+    }
+    return previous ?? Math.max(0, numeric - 1);
+  }
+
+  function selectionDetail() {
+    if (selectedBoundary == null) {
+      return { type: "none" };
+    }
+    const sample = Number(selectedBoundary);
+    const beforeSample = previousPresentedSample(sample);
+    const candidate = output?.boundary_review?.candidates?.find(
+      (entry) => Number(entry.frame) === sample,
+    );
+    return {
+      type: "boundary",
+      sample,
+      label: decisionLabel(sample),
+      beforeSample,
+      beforeMediaTime: mediaTimeForSample(beforeSample),
+      afterSample: sample,
+      afterMediaTime: mediaTimeForSample(sample),
+      candidate: candidate
+        ? {
+            status: candidate.status,
+            score: candidate.score,
+            threshold_distance: candidate.threshold_distance,
+          }
+        : null,
+    };
+  }
+
+  function announceSelection() {
+    if (typeof timelineTrack.dispatchEvent !== "function" || typeof CustomEvent !== "function") {
+      return;
+    }
+    timelineTrack.dispatchEvent(
+      new CustomEvent("scenedetect:review-selection", {
+        detail: selectionDetail(),
+      }),
+    );
+  }
+
   function candidateClass(sample) {
     const candidate = output?.boundary_review?.candidates?.find(
       (entry) => Number(entry.frame) === sample,
@@ -282,6 +332,7 @@ export function createReviewWorkspace({
   function render() {
     renderTimeline();
     renderStatus();
+    announceSelection();
   }
 
   timelineTrack.addEventListener("click", (event) => {
@@ -402,6 +453,7 @@ export function createReviewWorkspace({
       timelineStatus.textContent = "Run an analysis to populate the scene timeline.";
       reviewStatus.textContent = "No review session is active.";
       compareStatus.textContent = "Choose a saved run to compare its detector boundaries.";
+      announceSelection();
     },
 
     acceptSelectedBoundary() {
