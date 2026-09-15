@@ -73,6 +73,16 @@ export function previewCandidateFrames(series, threshold) {
     .map((entry) => entry.frame);
 }
 
+export function maximumSeriesScore(series, initial = 0) {
+  let maximum = initial;
+  for (const entry of series) {
+    if (Number.isFinite(entry.score) && entry.score > maximum) {
+      maximum = entry.score;
+    }
+  }
+  return maximum;
+}
+
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
@@ -101,8 +111,7 @@ function drawHeatmap(canvas, series, threshold, candidates) {
     return;
   }
 
-  const finiteScores = series.map((entry) => entry.score).filter(Number.isFinite);
-  const maxScore = Math.max(1e-9, threshold, ...finiteScores);
+  const maxScore = Math.max(1e-9, threshold, maximumSeriesScore(series));
   const plotHeight = height - 28 * ratio;
   const columnMax = new Float64Array(width);
   for (let index = 0; index < series.length; index += 1) {
@@ -250,9 +259,8 @@ export function createAnalysisInsights({
   return {
     load({ output, settings }) {
       const { spec, series } = buildScoreSeries(output, settings);
-      const finiteScores = series.map((entry) => entry.score).filter(Number.isFinite);
       const threshold = Number.isFinite(spec.threshold) ? spec.threshold : 0;
-      const maximum = Math.max(1, threshold * 2, ...finiteScores.map((score) => score * 1.05));
+      const maximum = Math.max(1, threshold * 2, maximumSeriesScore(series) * 1.05);
       thresholdInput.min = "0";
       thresholdInput.max = String(maximum);
       thresholdInput.step = String(maximum <= 2 ? 0.001 : 0.1);
