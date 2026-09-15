@@ -165,8 +165,8 @@ pub extern "C" fn scenedetect_similarity_finish(
         let bytes = unsafe { std::slice::from_raw_parts(scene_list_ptr, scene_list_len) };
         let scene_list: SceneList =
             serde_json::from_slice(bytes).map_err(|error| error.to_string())?;
-        let signatures = VISUAL_SIGNATURES
-            .with(|signatures| std::mem::take(&mut *signatures.borrow_mut()));
+        let signatures =
+            VISUAL_SIGNATURES.with(|signatures| std::mem::take(&mut *signatures.borrow_mut()));
         let report = scene_similarity_report(&scene_list, &signatures);
         serde_json::to_vec(&report).map_err(|error| error.to_string())
     })();
@@ -454,10 +454,7 @@ mod tests {
         let report = scene_similarity_report(&scene_list, &[]);
 
         assert!(report.truncated);
-        assert_eq!(
-            report.scenes_considered,
-            MAX_SCENES_FOR_PAIRWISE_COMPARISON
-        );
+        assert_eq!(report.scenes_considered, MAX_SCENES_FOR_PAIRWISE_COMPARISON);
         assert!(report.pairs.is_empty());
     }
 
