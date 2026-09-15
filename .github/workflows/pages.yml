@@ -49,6 +49,9 @@ jobs:
           node --check site/timeline-cut-inspector.js
           node --check site/analysis-worker.js
           node --check site/analysis-worker-client.js
+          node --check site/analysis-insights.js
+          node --check site/analysis-insights-bootstrap.js
+          node --check site/analysis-insights.test.js
           node --check site/session-store.js
           node --check site/session-store.test.js
           node --check site/keyboard-controls.js
@@ -60,11 +63,18 @@ jobs:
       - name: Test timeline cut selection contract
         run: node --test site/review-workspace-selection.test.js
 
-      - name: Verify timeline cut inspector is published
+      - name: Test analysis insight preview semantics
+        run: node --test site/analysis-insights.test.js
+
+      - name: Verify timeline and analysis insights are published
         run: |
           grep -Fq 'timeline-cut-inspector.css' site/workbench.html
           grep -Fq 'timeline-cut-inspector.js' site/workbench.html
           grep -Fq 'Before / after frame inspector' site/workbench.html
+          grep -Fq 'analysis-insights.css' site/workbench.html
+          grep -Fq 'analysis-insights-bootstrap.js' site/workbench.html
+          grep -Fq 'Change-point heatmap' site/workbench.html
+          grep -Fq 'Scene similarity' site/workbench.html
 
       - name: Check site
         run: python3 scripts/check-site.py
