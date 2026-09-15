@@ -1,3 +1,3 @@
+#[path = "lib.rs"]
+mod legacy;
 mod similarity;
-
-include!("lib.rs");
