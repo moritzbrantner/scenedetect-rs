@@ -10,6 +10,7 @@
     />
     <link rel="stylesheet" href="styles.css" />
     <link rel="stylesheet" href="workbench.css" />
+    <link rel="stylesheet" href="timeline-cut-inspector.css" />
   </head>
   <body class="workbench-page">
     <header class="site-header" aria-label="Project navigation">
@@ -149,6 +150,8 @@
                 <p>
                   Scene spans use Rust detector output. Boundary positions use the media timestamps
                   actually presented by the browser and preserved through the WebAssembly session.
+                  Select a cut marker to inspect the analyzed frame immediately before it and the
+                  boundary frame itself.
                 </p>
               </div>
               <label class="timeline-zoom-field">
@@ -162,6 +165,41 @@
             <p id="timeline-status" class="support-text" aria-live="polite">
               Run an analysis to populate the scene timeline.
             </p>
+
+            <section id="cut-inspector" class="cut-inspector" aria-labelledby="cut-inspector-heading" hidden>
+              <div class="cut-inspector-heading">
+                <div>
+                  <p class="eyebrow">Selected cut</p>
+                  <h4 id="cut-inspector-heading">Before / after frame inspector</h4>
+                  <p id="cut-inspector-summary" class="support-text"></p>
+                </div>
+                <div class="cut-inspector-actions" aria-label="Open selected cut frames in the video player">
+                  <button id="cut-open-before" type="button" class="action-button" disabled>
+                    Open before
+                  </button>
+                  <button id="cut-open-after" type="button" class="action-button" disabled>
+                    Open after
+                  </button>
+                </div>
+              </div>
+              <div class="cut-inspector-grid">
+                <figure class="cut-inspector-frame">
+                  <div class="cut-inspector-frame-shell">
+                    <img id="cut-before-frame" alt="Analyzed frame immediately before the selected cut" />
+                    <span id="cut-before-placeholder" class="cut-inspector-placeholder">Loading local frame…</span>
+                  </div>
+                  <figcaption id="cut-before-caption">Before</figcaption>
+                </figure>
+                <figure class="cut-inspector-frame">
+                  <div class="cut-inspector-frame-shell">
+                    <img id="cut-after-frame" alt="Analyzed frame at the selected cut" />
+                    <span id="cut-after-placeholder" class="cut-inspector-placeholder">Loading local frame…</span>
+                  </div>
+                  <figcaption id="cut-after-caption">After</figcaption>
+                </figure>
+              </div>
+              <p id="cut-inspector-status" aria-live="polite"></p>
+            </section>
           </section>
 
           <section class="review-panel" aria-labelledby="human-review-heading">
@@ -270,5 +308,6 @@
     </footer>
 
     <script type="module" src="workbench.js"></script>
+    <script type="module" src="timeline-cut-inspector.js"></script>
   </body>
 </html>
