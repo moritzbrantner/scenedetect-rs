@@ -3,6 +3,8 @@ use std::cell::RefCell;
 use scenedetect_core::{Frame, FrameIndex, SceneList};
 use serde::Serialize;
 
+const OK: i32 = 0;
+const ERROR: i32 = -1;
 const GRID_SIZE: usize = 4;
 const FEATURE_COUNT: usize = GRID_SIZE * GRID_SIZE * 3;
 const MAX_BROWSER_SIGNATURES: usize = 200_000;
@@ -11,6 +13,8 @@ const MAX_REPORTED_PAIRS: usize = 48;
 
 thread_local! {
     static VISUAL_SIGNATURES: RefCell<Vec<FrameVisualSignature>> = const { RefCell::new(Vec::new()) };
+    static LAST_RESULT: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
+    static LAST_ERROR: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -52,11 +56,56 @@ impl Default for SceneAggregate {
     }
 }
 
+fn copy_input(ptr: *const u8, len: usize) -> Result<Vec<u8>, String> {
+    if len == 0 {
+        return Ok(Vec::new());
+    }
+    if ptr.is_null() {
+        return Err("similarity input pointer is null".to_owned());
+    }
+    let bytes = unsafe { std::slice::from_raw_parts(ptr, len) };
+    Ok(bytes.to_vec())
+}
+
+fn set_result(bytes: Vec<u8>) {
+    LAST_RESULT.with(|result| *result.borrow_mut() = bytes);
+    LAST_ERROR.with(|error| error.borrow_mut().clear());
+}
+
+fn set_error(message: impl Into<String>) {
+    LAST_ERROR.with(|error| *error.borrow_mut() = message.into().into_bytes());
+    LAST_RESULT.with(|result| result.borrow_mut().clear());
+}
+
+fn clear_error() {
+    LAST_ERROR.with(|error| error.borrow_mut().clear());
+}
+
+#[no_mangle]
+pub extern "C" fn scenedetect_similarity_result_ptr() -> *const u8 {
+    LAST_RESULT.with(|result| result.borrow().as_ptr())
+}
+
+#[no_mangle]
+pub extern "C" fn scenedetect_similarity_result_len() -> usize {
+    LAST_RESULT.with(|result| result.borrow().len())
+}
+
+#[no_mangle]
+pub extern "C" fn scenedetect_similarity_error_ptr() -> *const u8 {
+    LAST_ERROR.with(|error| error.borrow().as_ptr())
+}
+
+#[no_mangle]
+pub extern "C" fn scenedetect_similarity_error_len() -> usize {
+    LAST_ERROR.with(|error| error.borrow().len())
+}
+
 #[no_mangle]
 pub extern "C" fn scenedetect_similarity_reset() -> i32 {
     VISUAL_SIGNATURES.with(|signatures| signatures.borrow_mut().clear());
-    super::set_result(Vec::new());
-    super::OK
+    set_result(Vec::new());
+    OK
 }
 
 #[no_mangle]
@@ -80,7 +129,7 @@ pub extern "C" fn scenedetect_similarity_push(
                 "similarity RGB buffer length mismatch: expected {expected_len}, received {rgb_len}"
             ));
         }
-        let rgb = super::copy_input(rgb_ptr, rgb_len)?;
+        let rgb = copy_input(rgb_ptr, rgb_len)?;
         let signature = frame_visual_signature(&Frame {
             index: FrameIndex(index as u64),
             width,
@@ -107,12 +156,12 @@ pub extern "C" fn scenedetect_similarity_push(
 
     match result {
         Ok(()) => {
-            super::set_result(Vec::new());
-            super::OK
+            clear_error();
+            OK
         }
         Err(error) => {
-            super::set_error(error);
-            super::ERROR
+            set_error(error);
+            ERROR
         }
     }
 }
@@ -123,23 +172,24 @@ pub extern "C" fn scenedetect_similarity_finish(
     scene_list_len: usize,
 ) -> i32 {
     let result = (|| -> Result<Vec<u8>, String> {
-        let bytes = super::copy_input(scene_list_ptr, scene_list_len)?;
+        let bytes = copy_input(scene_list_ptr, scene_list_len)?;
         let scene_list: SceneList =
             serde_json::from_slice(&bytes).map_err(|error| error.to_string())?;
-        let signatures = VISUAL_SIGNATURES.with(|signatures| std::mem::take(&mut *signatures.borrow_mut()));
+        let signatures = VISUAL_SIGNATURES
+            .with(|signatures| std::mem::take(&mut *signatures.borrow_mut()));
         let report = scene_similarity_report(&scene_list, &signatures);
         serde_json::to_vec(&report).map_err(|error| error.to_string())
     })();
 
     match result {
         Ok(bytes) => {
-            super::set_result(bytes);
-            super::OK
+            set_result(bytes);
+            OK
         }
         Err(error) => {
             VISUAL_SIGNATURES.with(|signatures| signatures.borrow_mut().clear());
-            super::set_error(error);
-            super::ERROR
+            set_error(error);
+            ERROR
         }
     }
 }
@@ -411,7 +461,10 @@ mod tests {
         let report = scene_similarity_report(&scene_list, &[]);
 
         assert!(report.truncated);
-        assert_eq!(report.scenes_considered, MAX_SCENES_FOR_PAIRWISE_COMPARISON);
+        assert_eq!(
+            report.scenes_considered,
+            MAX_SCENES_FOR_PAIRWISE_COMPARISON
+        );
         assert!(report.pairs.is_empty());
     }
 
@@ -429,7 +482,7 @@ mod tests {
                     frame.rgb.as_ptr(),
                     frame.rgb.len(),
                 ),
-                super::super::OK
+                OK
             );
         }
 
@@ -449,9 +502,9 @@ mod tests {
         let bytes = serde_json::to_vec(&scene_list).unwrap();
         assert_eq!(
             scenedetect_similarity_finish(bytes.as_ptr(), bytes.len()),
-            super::super::OK
+            OK
         );
-        let result = super::super::LAST_RESULT.with(|result| result.borrow().clone());
+        let result = LAST_RESULT.with(|result| result.borrow().clone());
         let value: serde_json::Value = serde_json::from_slice(&result).unwrap();
         assert_eq!(value["method"], "4x4_rgb_scene_mean_mad_v1");
         assert_eq!(value["pairs"][0]["similarity"], 1.0);
