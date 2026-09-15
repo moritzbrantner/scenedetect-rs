@@ -45,6 +45,7 @@ jobs:
           node --check site/video-frame-sync.js
           node --check site/review-overview.js
           node --check site/review-workspace.js
+          node --check site/timeline-cut-inspector.js
           node --check site/analysis-worker.js
           node --check site/analysis-worker-client.js
           node --check site/session-store.js
