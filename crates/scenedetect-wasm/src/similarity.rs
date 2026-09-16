@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 
 use image::GrayImage;
 use image_analysis_processing::{
@@ -13,12 +13,16 @@ const ERROR: i32 = -1;
 const HASH_BITS: usize = (PERCEPTUAL_HASH_SIZE * PERCEPTUAL_HASH_SIZE) as usize;
 const PHASH_SAMPLE_SIDE: usize =
     (PERCEPTUAL_HASH_SIZE * PERCEPTUAL_HASH_HIGHFREQ_FACTOR) as usize;
-const MAX_BROWSER_SIGNATURES: usize = 200_000;
+const TARGET_VISUAL_HASHES_PER_SECOND: u32 = 1;
+const MAX_BROWSER_ANALYZED_SAMPLES: usize = 200_000;
 const MAX_SCENES_FOR_PAIRWISE_COMPARISON: usize = 1024;
 const MAX_REPORTED_PAIRS: usize = 48;
 
 thread_local! {
     static VISUAL_SIGNATURES: RefCell<Vec<FrameVisualSignature>> = const { RefCell::new(Vec::new()) };
+    static ANALYZED_SAMPLE_COUNT: Cell<usize> = const { Cell::new(0) };
+    static LAST_SAMPLE_INDEX: Cell<Option<u32>> = const { Cell::new(None) };
+    static VISUAL_SAMPLE_STRIDE: Cell<u32> = const { Cell::new(1) };
     static LAST_RESULT: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
     static LAST_ERROR: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
 }
@@ -33,7 +37,10 @@ struct FrameVisualSignature {
 struct SceneSimilarityReport {
     method: &'static str,
     total_scenes: usize,
+    scenes_selected: usize,
     scenes_considered: usize,
+    scenes_without_fingerprint: usize,
+    target_hashes_per_second: u32,
     truncated: bool,
     pairs: Vec<SceneSimilarityPair>,
 }
@@ -128,8 +135,25 @@ pub extern "C" fn scenedetect_similarity_error_len() -> usize {
 }
 
 #[no_mangle]
+pub extern "C" fn scenedetect_similarity_configure(frame_rate: f64) -> i32 {
+    match similarity_sample_stride(frame_rate) {
+        Ok(stride) => {
+            VISUAL_SAMPLE_STRIDE.with(|value| value.set(stride));
+            clear_error();
+            OK
+        }
+        Err(error) => {
+            set_error(error);
+            ERROR
+        }
+    }
+}
+
+#[no_mangle]
 pub extern "C" fn scenedetect_similarity_reset() -> i32 {
     VISUAL_SIGNATURES.with(|signatures| signatures.borrow_mut().clear());
+    ANALYZED_SAMPLE_COUNT.with(|count| count.set(0));
+    LAST_SAMPLE_INDEX.with(|index| index.set(None));
     set_result(Vec::new());
     OK
 }
@@ -158,24 +182,34 @@ pub extern "C" fn scenedetect_similarity_push(
         if rgb_ptr.is_null() {
             return Err("similarity RGB pointer is null".to_owned());
         }
-        let rgb = unsafe { std::slice::from_raw_parts(rgb_ptr, rgb_len) };
-        let signature = frame_visual_signature(FrameIndex(index as u64), width, height, rgb)?;
-        VISUAL_SIGNATURES.with(|signatures| {
-            let mut signatures = signatures.borrow_mut();
-            if signatures.len() >= MAX_BROWSER_SIGNATURES {
-                return Err(format!(
-                    "scene similarity accepts at most {MAX_BROWSER_SIGNATURES} analyzed samples"
-                ));
-            }
-            if signatures
-                .last()
-                .is_some_and(|previous| signature.frame <= previous.frame)
-            {
+
+        LAST_SAMPLE_INDEX.with(|last| {
+            if last.get().is_some_and(|previous| index <= previous) {
                 return Err("scene similarity sample indexes must increase".to_owned());
             }
-            signatures.push(signature);
+            last.set(Some(index));
             Ok(())
-        })
+        })?;
+        ANALYZED_SAMPLE_COUNT.with(|count| {
+            let current = count.get();
+            if current >= MAX_BROWSER_ANALYZED_SAMPLES {
+                return Err(format!(
+                    "scene similarity accepts at most {MAX_BROWSER_ANALYZED_SAMPLES} analyzed samples"
+                ));
+            }
+            count.set(current + 1);
+            Ok(())
+        })?;
+
+        let stride = VISUAL_SAMPLE_STRIDE.with(Cell::get);
+        if index % stride != 0 {
+            return Ok(());
+        }
+
+        let rgb = unsafe { std::slice::from_raw_parts(rgb_ptr, rgb_len) };
+        let signature = frame_visual_signature(FrameIndex(index as u64), width, height, rgb)?;
+        VISUAL_SIGNATURES.with(|signatures| signatures.borrow_mut().push(signature));
+        Ok(())
     })();
 
     match result {
@@ -219,6 +253,13 @@ pub extern "C" fn scenedetect_similarity_finish(
             ERROR
         }
     }
+}
+
+fn similarity_sample_stride(frame_rate: f64) -> Result<u32, String> {
+    if !frame_rate.is_finite() || frame_rate <= 0.0 {
+        return Err("scene similarity frame rate must be finite and greater than zero".to_owned());
+    }
+    Ok(frame_rate.ceil().clamp(1.0, f64::from(u32::MAX)) as u32)
 }
 
 fn frame_visual_signature(
@@ -266,19 +307,10 @@ fn scene_similarity_report(
     signatures: &[FrameVisualSignature],
 ) -> Result<SceneSimilarityReport, String> {
     let total_scenes = scene_list.scenes.len();
-    if total_scenes < 2 {
-        return Ok(SceneSimilarityReport {
-            method: "visual_analysis_phash_scene_majority_v1",
-            total_scenes,
-            scenes_considered: total_scenes,
-            truncated: false,
-            pairs: Vec::new(),
-        });
-    }
-
     let selected = selected_scene_indices(total_scenes);
     let truncated = selected.len() < total_scenes;
     let fingerprints = selected_scene_hashes(scene_list, signatures, &selected);
+    let scenes_without_fingerprint = selected.len().saturating_sub(fingerprints.len());
 
     let mut pairs = Vec::with_capacity(MAX_REPORTED_PAIRS);
     for first in 0..fingerprints.len() {
@@ -309,7 +341,10 @@ fn scene_similarity_report(
     Ok(SceneSimilarityReport {
         method: "visual_analysis_phash_scene_majority_v1",
         total_scenes,
-        scenes_considered: selected.len(),
+        scenes_selected: selected.len(),
+        scenes_considered: fingerprints.len(),
+        scenes_without_fingerprint,
+        target_hashes_per_second: TARGET_VISUAL_HASHES_PER_SECOND,
         truncated,
         pairs,
     })
@@ -459,7 +494,9 @@ mod tests {
         let report = scene_similarity_report(&scene_list(), &signatures).unwrap();
 
         assert_eq!(report.total_scenes, 3);
+        assert_eq!(report.scenes_selected, 3);
         assert_eq!(report.scenes_considered, 3);
+        assert_eq!(report.scenes_without_fingerprint, 0);
         assert_eq!(report.pairs[0].first_scene, 1);
         assert_eq!(report.pairs[0].second_scene, 3);
         assert!(report.pairs[0].hash_distance <= 2);
@@ -477,6 +514,15 @@ mod tests {
         .unwrap();
 
         assert!(distance <= 4, "unexpected pHash distance: {distance}");
+    }
+
+    #[test]
+    fn visual_hashing_is_capped_to_about_one_sample_per_second() {
+        assert_eq!(similarity_sample_stride(0.5).unwrap(), 1);
+        assert_eq!(similarity_sample_stride(1.0).unwrap(), 1);
+        assert_eq!(similarity_sample_stride(6.0).unwrap(), 6);
+        assert_eq!(similarity_sample_stride(30.0).unwrap(), 30);
+        assert!(similarity_sample_stride(0.0).is_err());
     }
 
     #[test]
@@ -500,7 +546,12 @@ mod tests {
         let report = scene_similarity_report(&scene_list, &[]).unwrap();
 
         assert!(report.truncated);
-        assert_eq!(report.scenes_considered, MAX_SCENES_FOR_PAIRWISE_COMPARISON);
+        assert_eq!(report.scenes_selected, MAX_SCENES_FOR_PAIRWISE_COMPARISON);
+        assert_eq!(report.scenes_considered, 0);
+        assert_eq!(
+            report.scenes_without_fingerprint,
+            MAX_SCENES_FOR_PAIRWISE_COMPARISON
+        );
         assert!(report.pairs.is_empty());
     }
 
@@ -531,8 +582,32 @@ mod tests {
     }
 
     #[test]
+    fn browser_sampling_retains_only_the_configured_stride() {
+        assert_eq!(scenedetect_similarity_configure(6.0), OK);
+        assert_eq!(scenedetect_similarity_reset(), OK);
+        for index in 0..12_u32 {
+            let frame = split_frame(u64::from(index), true, index as i16);
+            assert_eq!(
+                scenedetect_similarity_push(
+                    index,
+                    frame.width,
+                    frame.height,
+                    frame.rgb.as_ptr(),
+                    frame.rgb.len(),
+                ),
+                OK
+            );
+        }
+        let retained = VISUAL_SIGNATURES.with(|signatures| signatures.borrow().len());
+        assert_eq!(retained, 2);
+        let analyzed = ANALYZED_SAMPLE_COUNT.with(Cell::get);
+        assert_eq!(analyzed, 12);
+    }
+
+    #[test]
     fn wasm_similarity_exports_round_trip_a_scene_list() {
-        scenedetect_similarity_reset();
+        assert_eq!(scenedetect_similarity_configure(1.0), OK);
+        assert_eq!(scenedetect_similarity_reset(), OK);
         let first = split_frame(0, true, 0);
         let second = split_frame(1, true, 10);
         for frame in [&first, &second] {
@@ -569,6 +644,8 @@ mod tests {
         let result = LAST_RESULT.with(|result| result.borrow().clone());
         let value: serde_json::Value = serde_json::from_slice(&result).unwrap();
         assert_eq!(value["method"], "visual_analysis_phash_scene_majority_v1");
+        assert_eq!(value["scenes_selected"], 2);
+        assert_eq!(value["scenes_considered"], 2);
         assert_eq!(value["pairs"][0]["hash_distance"], 0);
         assert_eq!(value["pairs"][0]["similarity"], 1.0);
     }
