@@ -17,6 +17,16 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 image = { version = "0.25", default-features = false }
 image-analysis-processing = { package = "moenarch-image-analysis-processing", version = "0.1.0" }
+# image-analysis-processing 0.1.0 was published against this compatible
+# foundation set. Its semver ranges also admit newer 0.1.1 foundation crates
+# whose error-type migration is not source-compatible with that release. Keep
+# these pins local to the non-published browser adapter until the visual
+# foundation publishes a self-consistent successor.
+visual-math-geometry-2d-compat = { package = "moenarch-math-geometry-2d", version = "=0.1.0" }
+visual-math-linear-compat = { package = "moenarch-math-linear", version = "=0.1.0" }
+visual-runtime-core-compat = { package = "moenarch-runtime-core", version = "=0.2.0" }
+visual-tensor-data-compat = { package = "moenarch-tensor-data", version = "=0.1.0" }
+visual-vector-analysis-core-compat = { package = "moenarch-vector-analysis-core", version = "=0.1.0" }
 scenedetect-core = { path = "../scenedetect-core" }
 serde.workspace = true
 serde_json.workspace = true
