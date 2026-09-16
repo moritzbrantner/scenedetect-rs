@@ -204,7 +204,7 @@ export function createAnalysisInsights({
     const scope = report.truncated
       ? `Compared ${report.scenes_considered} evenly sampled scenes out of ${report.total_scenes}.`
       : `Compared all ${report.total_scenes} detected scenes.`;
-    similarityStatus.textContent = `${scope} Rust uses a compact 4×4 RGB scene fingerprint; this is visual recurrence evidence, not semantic classification.`;
+    similarityStatus.textContent = `${scope} Rust uses the shared visual-analysis DCT perceptual hash over compact luma samples; Hamming distance is recurrence/near-duplicate evidence, not semantic classification.`;
 
     similarityList.replaceChildren(
       ...matches.slice(0, 16).map((pair) => {
@@ -215,7 +215,7 @@ export function createAnalysisInsights({
         const score = document.createElement("strong");
         score.textContent = `${(Number(pair.similarity) * 100).toFixed(1)}%`;
         const label = document.createElement("span");
-        label.textContent = `Scene ${pair.first_scene} ↔ Scene ${pair.second_scene}`;
+        label.textContent = `Scene ${pair.first_scene} ↔ Scene ${pair.second_scene} · pHash distance ${pair.hash_distance}/64`;
         description.append(score, label);
 
         const actions = document.createElement("div");
