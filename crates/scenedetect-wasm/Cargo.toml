@@ -4,7 +4,10 @@ publish = false
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-rust-version.workspace = true
+# The browser-only adapter consumes visual-analysis 0.1.x, whose published
+# crates require Rust 1.95. Keep the published/core SceneDetect packages on the
+# workspace's Rust 1.87 contract instead of raising the whole repository MSRV.
+rust-version = "1.95"
 version.workspace = true
 
 [lib]
@@ -12,6 +15,8 @@ path = "src/browser_lib.rs"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+image = { version = "0.25", default-features = false }
+image-analysis-processing = { package = "moenarch-image-analysis-processing", version = "0.1.0" }
 scenedetect-core = { path = "../scenedetect-core" }
 serde.workspace = true
 serde_json.workspace = true
