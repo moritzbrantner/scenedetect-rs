@@ -201,10 +201,19 @@ export function createAnalysisInsights({
     }
     const minimum = Number(similarityThreshold.value);
     const matches = (report.pairs ?? []).filter((pair) => Number(pair.similarity) >= minimum);
-    const scope = report.truncated
-      ? `Compared ${report.scenes_considered} evenly sampled scenes out of ${report.total_scenes}.`
-      : `Compared all ${report.total_scenes} detected scenes.`;
-    similarityStatus.textContent = `${scope} Rust uses the shared visual-analysis DCT perceptual hash over compact luma samples; Hamming distance is recurrence/near-duplicate evidence, not semantic classification.`;
+    const selected = Number(report.scenes_selected ?? report.scenes_considered ?? 0);
+    const fingerprinted = Number(report.scenes_considered ?? 0);
+    const total = Number(report.total_scenes ?? selected);
+    const targetRate = Number(report.target_hashes_per_second ?? 1);
+    const selectionScope = report.truncated
+      ? `Selected ${selected} evenly distributed scenes from ${total}.`
+      : `Selected all ${total} detected scenes.`;
+    const coverage = `${fingerprinted} selected scene${fingerprinted === 1 ? " has" : "s have"} pHash evidence.`;
+    const omitted = Number(report.scenes_without_fingerprint ?? 0);
+    const omissionNote = omitted > 0
+      ? ` ${omitted} selected scene${omitted === 1 ? " was" : "s were"} too short to receive the bounded visual sample and ${omitted === 1 ? "is" : "are"} omitted from pairwise comparison.`
+      : "";
+    similarityStatus.textContent = `${selectionScope} ${coverage}${omissionNote} Rust samples at about ${targetRate} visual hash${targetRate === 1 ? "" : "es"}/second and uses the shared visual-analysis DCT perceptual hash; Hamming distance is recurrence/near-duplicate evidence, not semantic classification.`;
 
     similarityList.replaceChildren(
       ...matches.slice(0, 16).map((pair) => {
