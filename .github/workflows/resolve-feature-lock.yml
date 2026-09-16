@@ -1,0 +1,24 @@
+name: Resolve feature lockfile
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+      - name: Resolve and check browser adapter
+        run: cargo check -p scenedetect-wasm
+      - name: Print exact lockfile delta
+        if: always()
+        run: git diff -- Cargo.lock
