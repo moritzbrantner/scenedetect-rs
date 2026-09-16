@@ -22,3 +22,10 @@ jobs:
       - name: Print exact lockfile delta
         if: always()
         run: git diff -- Cargo.lock
+      - name: Upload resolved lockfile
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: resolved-cargo-lock
+          path: Cargo.lock
+          if-no-files-found: error
