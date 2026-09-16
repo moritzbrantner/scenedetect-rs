@@ -130,3 +130,64 @@ jobs:
             ${{ runner.temp }}/candidate-evidence
             ${{ runner.temp }}/runtime-score.json
             ${{ runner.temp }}/moonlight.md
+
+  browser-wasm-size:
+    name: Browser WASM size evidence
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: candidate
+
+      - name: Checkout reference
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: reference
+
+      - name: Install Rust WebAssembly target
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add wasm32-unknown-unknown
+
+      - name: Build reference browser WebAssembly
+        working-directory: reference
+        run: cargo build --locked -p scenedetect-wasm --target wasm32-unknown-unknown --release
+
+      - name: Build candidate browser WebAssembly
+        working-directory: candidate
+        run: cargo build --locked -p scenedetect-wasm --target wasm32-unknown-unknown --release
+
+      - name: Compare artifact sizes
+        run: |
+          reference_bytes=$(wc -c < reference/target/wasm32-unknown-unknown/release/scenedetect_wasm.wasm)
+          candidate_bytes=$(wc -c < candidate/target/wasm32-unknown-unknown/release/scenedetect_wasm.wasm)
+          delta_bytes=$((candidate_bytes - reference_bytes))
+          python3 - "$reference_bytes" "$candidate_bytes" "$delta_bytes" <<'PY' | tee "$RUNNER_TEMP/wasm-size.txt"
+          import sys
+          reference, candidate, delta = map(int, sys.argv[1:])
+          percent = (delta / reference * 100.0) if reference else 0.0
+          print(f"reference_bytes={reference}")
+          print(f"candidate_bytes={candidate}")
+          print(f"delta_bytes={delta}")
+          print(f"delta_percent={percent:.2f}")
+          PY
+          {
+            echo '### Browser WASM size comparison'
+            echo '```text'
+            cat "$RUNNER_TEMP/wasm-size.txt"
+            echo '```'
+            echo 'Report-only evidence; no wall-clock or artifact-size threshold is enforced.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload WASM size evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: browser-wasm-size-evidence
+          path: ${{ runner.temp }}/wasm-size.txt
