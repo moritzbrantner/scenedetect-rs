@@ -213,7 +213,7 @@ export function createAnalysisInsights({
     const omissionNote = omitted > 0
       ? ` ${omitted} selected scene${omitted === 1 ? " was" : "s were"} too short to receive the bounded visual sample and ${omitted === 1 ? "is" : "are"} omitted from pairwise comparison.`
       : "";
-    similarityStatus.textContent = `${selectionScope} ${coverage}${omissionNote} Rust samples at about ${targetRate} visual hash${targetRate === 1 ? "" : "es"}/second and uses the shared visual-analysis DCT perceptual hash; Hamming distance is recurrence/near-duplicate evidence, not semantic classification.`;
+    similarityStatus.textContent = `${selectionScope} ${coverage}${omissionNote} Rust caps shared pHash work at about ${targetRate} visual hash${targetRate === 1 ? "" : "es"}/second and uses the shared visual-analysis DCT perceptual hash; Hamming distance is recurrence/near-duplicate evidence, not semantic classification.`;
 
     similarityList.replaceChildren(
       ...matches.slice(0, 16).map((pair) => {
