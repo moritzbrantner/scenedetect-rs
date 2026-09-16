@@ -32,6 +32,7 @@ export async function createSceneDetect() {
     throw new Error("SceneDetect WASM did not export linear memory.");
   }
   for (const name of [
+    "scenedetect_similarity_configure",
     "scenedetect_similarity_reset",
     "scenedetect_similarity_push",
     "scenedetect_similarity_finish",
@@ -121,6 +122,7 @@ export async function createSceneDetect() {
   }
 
   function createSession(config, frameRate) {
+    checkSimilarity(wasm.scenedetect_similarity_configure(frameRate));
     checkSimilarity(wasm.scenedetect_similarity_reset());
     const configBytes = encoder.encode(JSON.stringify(config));
     const handle = withBytes(configBytes, (ptr, len) =>
