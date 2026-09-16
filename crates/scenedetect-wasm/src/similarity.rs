@@ -2,8 +2,7 @@ use std::cell::{Cell, RefCell};
 
 use image::GrayImage;
 use image_analysis_processing::{
-    hash_distance, perceptual_hash_luma, PERCEPTUAL_HASH_HIGHFREQ_FACTOR,
-    PERCEPTUAL_HASH_SIZE,
+    hash_distance, perceptual_hash_luma, PERCEPTUAL_HASH_HIGHFREQ_FACTOR, PERCEPTUAL_HASH_SIZE,
 };
 use scenedetect_core::{FrameIndex, SceneList};
 use serde::Serialize;
@@ -11,8 +10,7 @@ use serde::Serialize;
 const OK: i32 = 0;
 const ERROR: i32 = -1;
 const HASH_BITS: usize = (PERCEPTUAL_HASH_SIZE * PERCEPTUAL_HASH_SIZE) as usize;
-const PHASH_SAMPLE_SIDE: usize =
-    (PERCEPTUAL_HASH_SIZE * PERCEPTUAL_HASH_HIGHFREQ_FACTOR) as usize;
+const PHASH_SAMPLE_SIDE: usize = (PERCEPTUAL_HASH_SIZE * PERCEPTUAL_HASH_HIGHFREQ_FACTOR) as usize;
 const TARGET_VISUAL_HASHES_PER_SECOND: u32 = 1;
 const MAX_BROWSER_ANALYZED_SAMPLES: usize = 200_000;
 const MAX_SCENES_FOR_PAIRWISE_COMPARISON: usize = 1024;
