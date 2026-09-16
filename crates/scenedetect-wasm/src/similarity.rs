@@ -200,7 +200,7 @@ pub extern "C" fn scenedetect_similarity_push(
         })?;
 
         let stride = VISUAL_SAMPLE_STRIDE.with(Cell::get);
-        if index % stride != 0 {
+        if !index.is_multiple_of(stride) {
             return Ok(());
         }
 
