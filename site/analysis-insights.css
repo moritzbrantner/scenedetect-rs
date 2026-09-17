@@ -75,16 +75,16 @@
 
 .scene-similarity-list {
   display: grid;
-  gap: 0.55rem;
+  gap: 0.8rem;
   margin-top: 0.9rem;
 }
 
 .similarity-row {
-  display: flex;
-  justify-content: space-between;
-  gap: 1rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.75rem 1rem;
   align-items: center;
-  padding: 0.75rem 0;
+  padding: 0.9rem 0;
   border-top: 1px solid var(--line, #d7dce2);
 }
 
@@ -105,6 +105,84 @@
   gap: 0.5rem;
   flex-wrap: wrap;
   justify-content: flex-end;
+}
+
+.similarity-preview-pair {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 0.7rem;
+  align-items: center;
+}
+
+.similarity-scene-preview {
+  display: grid;
+  gap: 0.35rem;
+  min-width: 0;
+  margin: 0;
+}
+
+.similarity-scene-preview figcaption {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 650;
+}
+
+.similarity-filmstrip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.3rem;
+}
+
+.similarity-preview-frame {
+  position: relative;
+  display: block;
+  min-width: 0;
+  padding: 0;
+  overflow: hidden;
+  aspect-ratio: 16 / 9;
+  border: 1px solid var(--line, #d7dce2);
+  border-radius: 0.45rem;
+  background: #101817;
+  cursor: pointer;
+}
+
+.similarity-preview-frame:hover,
+.similarity-preview-frame:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+
+.similarity-preview-frame img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.similarity-preview-frame img:not([src]) {
+  display: none;
+}
+
+.similarity-preview-placeholder {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 0.5rem;
+  color: #d7ded9;
+  font-size: 0.72rem;
+  text-align: center;
+}
+
+.similarity-preview-placeholder[hidden] {
+  display: none;
+}
+
+.similarity-pair-divider {
+  color: var(--muted);
+  font-size: 1.15rem;
+  font-weight: 700;
 }
 
 @media (max-width: 760px) {
@@ -131,5 +209,17 @@
   .similarity-actions {
     justify-content: flex-start;
     margin-top: 0.6rem;
+  }
+
+  .similarity-preview-pair {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.45rem;
+    margin-top: 0.7rem;
+  }
+
+  .similarity-pair-divider {
+    justify-self: center;
+    transform: rotate(90deg);
   }
 }
