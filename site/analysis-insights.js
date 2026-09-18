@@ -1,3 +1,5 @@
+import { createLocalFramePreviewer } from "./local-frame-previewer.js";
+
 function firstMetric(metrics, prefix) {
   return Object.entries(metrics ?? {}).find(([name]) => name.startsWith(prefix))?.[1] ?? 0;
 }
@@ -83,6 +85,27 @@ export function maximumSeriesScore(series, initial = 0) {
   return maximum;
 }
 
+export function scenePreviewSamples(scene, count = 3) {
+  const start = Math.trunc(Number(scene?.start));
+  const end = Math.trunc(Number(scene?.end));
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
+    return Number.isFinite(start) ? [Math.max(0, start)] : [];
+  }
+  const first = Math.max(0, start);
+  const last = Math.max(first, end - 1);
+  const total = Math.max(1, Math.floor(Number(count) || 1));
+  if (total === 1 || first === last) {
+    return [first];
+  }
+  return [
+    ...new Set(
+      Array.from({ length: total }, (_value, index) =>
+        Math.round(first + ((last - first) * index) / (total - 1)),
+      ),
+    ),
+  ];
+}
+
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
@@ -155,6 +178,15 @@ function drawHeatmap(canvas, series, threshold, candidates) {
   context.fillText(maxScore.toFixed(maxScore < 2 ? 3 : 1), 4 * ratio, 14 * ratio);
 }
 
+function sceneForPair(output, sceneNumber, fallbackStart) {
+  const scenes = output?.detection?.scene_list?.scenes ?? [];
+  const indexed = scenes[Number(sceneNumber) - 1];
+  if (indexed && Number(indexed.start) === Number(fallbackStart)) {
+    return indexed;
+  }
+  return scenes.find((scene) => Number(scene.start) === Number(fallbackStart)) ?? indexed ?? null;
+}
+
 export function createAnalysisInsights({
   heatmapCanvas,
   metricLabel,
@@ -166,10 +198,20 @@ export function createAnalysisInsights({
   similarityThreshold,
   similarityStatus,
   similarityList,
+  video,
+  mediaTimeForSample,
   seekSample,
   applyThresholdAndRerun,
 }) {
   let current = null;
+  let similarityPreviewController = null;
+  let similarityPreviewGeneration = 0;
+  const similarityPreviewer = createLocalFramePreviewer(video, {
+    cacheLimit: 128,
+    maxWidth: 260,
+    maxHeight: 146,
+    quality: 0.8,
+  });
 
   function renderThresholdPreview() {
     if (!current) {
@@ -192,7 +234,85 @@ export function createAnalysisInsights({
     drawHeatmap(heatmapCanvas, current.series, threshold, candidates);
   }
 
+  function cancelSimilarityPreviews() {
+    similarityPreviewController?.abort();
+    similarityPreviewController = null;
+    similarityPreviewGeneration += 1;
+  }
+
+  function scenePreview(sceneNumber, fallbackStart) {
+    const scene = sceneForPair(current?.output, sceneNumber, fallbackStart) ?? {
+      start: Number(fallbackStart),
+      end: Number(fallbackStart) + 1,
+    };
+    const figure = document.createElement("figure");
+    figure.className = "similarity-scene-preview";
+    const caption = document.createElement("figcaption");
+    caption.textContent = `Scene ${sceneNumber}`;
+    const strip = document.createElement("div");
+    strip.className = "similarity-filmstrip";
+    const frames = scenePreviewSamples(scene, 3).map((sample, index, samples) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "similarity-preview-frame";
+      button.title = `Open Scene ${sceneNumber} at sample ${sample}`;
+      button.addEventListener("click", () => seekSample(sample));
+      const image = document.createElement("img");
+      image.alt = `Scene ${sceneNumber}, preview ${index + 1} of ${samples.length}`;
+      const placeholder = document.createElement("span");
+      placeholder.className = "similarity-preview-placeholder";
+      placeholder.textContent = "Loading…";
+      button.append(image, placeholder);
+      strip.append(button);
+      return { image, placeholder, sample };
+    });
+    figure.append(caption, strip);
+    return { figure, frames };
+  }
+
+  async function hydratePairPreviews(pairPreviews, signal, generation) {
+    const maxFrames = Math.max(0, ...pairPreviews.map((preview) => preview.frames.length));
+    for (let index = 0; index < maxFrames; index += 1) {
+      for (const preview of pairPreviews) {
+        const frame = preview.frames[index];
+        if (!frame) {
+          continue;
+        }
+        try {
+          const time = Number(mediaTimeForSample?.(frame.sample));
+          const url = await similarityPreviewer.capture(Number.isFinite(time) ? time : 0, {
+            signal,
+            maxWidth: 260,
+            maxHeight: 146,
+            quality: 0.8,
+          });
+          if (signal.aborted || generation !== similarityPreviewGeneration) {
+            return;
+          }
+          frame.image.src = url;
+          frame.placeholder.hidden = true;
+        } catch (error) {
+          if (error?.name === "AbortError") {
+            return;
+          }
+          frame.placeholder.textContent = "Preview unavailable";
+          console.warn("Unable to generate scene-similarity preview", error);
+        }
+      }
+    }
+  }
+
+  async function hydrateSimilarityPreviews(rows, signal, generation) {
+    for (const row of rows) {
+      if (signal.aborted || generation !== similarityPreviewGeneration) {
+        return;
+      }
+      await hydratePairPreviews(row, signal, generation);
+    }
+  }
+
   function renderSimilarity() {
+    cancelSimilarityPreviews();
     const report = current?.output?.scene_similarity;
     if (!report) {
       similarityStatus.textContent = "No Rust scene-similarity report is available for this run.";
@@ -201,22 +321,47 @@ export function createAnalysisInsights({
     }
     const minimum = Number(similarityThreshold.value);
     const matches = (report.pairs ?? []).filter((pair) => Number(pair.similarity) >= minimum);
-    const scope = report.truncated
-      ? `Compared ${report.scenes_considered} evenly sampled scenes out of ${report.total_scenes}.`
-      : `Compared all ${report.total_scenes} detected scenes.`;
-    similarityStatus.textContent = `${scope} Rust uses a compact 4×4 RGB scene fingerprint; this is visual recurrence evidence, not semantic classification.`;
+    const selected = Number(report.scenes_selected ?? report.scenes_considered ?? 0);
+    const fingerprinted = Number(report.scenes_considered ?? 0);
+    const total = Number(report.total_scenes ?? selected);
+    const targetRate = Number(report.target_hashes_per_second ?? 1);
+    const selectionScope = report.truncated
+      ? `Selected ${selected} evenly distributed scenes from ${total}.`
+      : `Selected all ${total} detected scenes.`;
+    const coverage = `${fingerprinted} selected scene${fingerprinted === 1 ? " has" : "s have"} pHash evidence.`;
+    const omitted = Number(report.scenes_without_fingerprint ?? 0);
+    const omissionNote = omitted > 0
+      ? ` ${omitted} selected scene${omitted === 1 ? " was" : "s were"} too short to receive the bounded visual sample and ${omitted === 1 ? "is" : "are"} omitted from pairwise comparison.`
+      : "";
+    similarityStatus.textContent = `${selectionScope} ${coverage}${omissionNote} Rust caps shared pHash work at about ${targetRate} visual hash${targetRate === 1 ? "" : "es"}/second and uses the shared visual-analysis DCT perceptual hash; Hamming distance is recurrence/near-duplicate evidence, not semantic classification. Each reported match below shows local three-frame strips from both scenes; click any frame to open it in the video.`;
 
+    const previewRows = [];
+    const visibleMatches = matches.slice(0, 16);
     similarityList.replaceChildren(
-      ...matches.slice(0, 16).map((pair) => {
-        const row = document.createElement("div");
+      ...visibleMatches.map((pair) => {
+        const row = document.createElement("article");
         row.className = "similarity-row";
         const description = document.createElement("div");
         description.className = "similarity-description";
         const score = document.createElement("strong");
         score.textContent = `${(Number(pair.similarity) * 100).toFixed(1)}%`;
         const label = document.createElement("span");
-        label.textContent = `Scene ${pair.first_scene} ↔ Scene ${pair.second_scene}`;
+        const distance = Number.isFinite(Number(pair.hash_distance))
+          ? ` · pHash distance ${pair.hash_distance}/64`
+          : "";
+        label.textContent = `Scene ${pair.first_scene} ↔ Scene ${pair.second_scene}${distance}`;
         description.append(score, label);
+
+        const first = scenePreview(pair.first_scene, pair.first_start);
+        const second = scenePreview(pair.second_scene, pair.second_start);
+        const previews = document.createElement("div");
+        previews.className = "similarity-preview-pair";
+        const divider = document.createElement("span");
+        divider.className = "similarity-pair-divider";
+        divider.setAttribute("aria-hidden", "true");
+        divider.textContent = "↔";
+        previews.append(first.figure, divider, second.figure);
+        previewRows.push([first, second]);
 
         const actions = document.createElement("div");
         actions.className = "similarity-actions";
@@ -231,7 +376,7 @@ export function createAnalysisInsights({
           button.addEventListener("click", () => seekSample(Number(sample)));
           actions.append(button);
         }
-        row.append(description, actions);
+        row.append(description, actions, previews);
         return row;
       }),
     );
@@ -241,7 +386,12 @@ export function createAnalysisInsights({
       empty.className = "support-text";
       empty.textContent = `No reported pair reaches ${(minimum * 100).toFixed(0)}% similarity.`;
       similarityList.append(empty);
+      return;
     }
+
+    similarityPreviewController = new AbortController();
+    const generation = similarityPreviewGeneration;
+    void hydrateSimilarityPreviews(previewRows, similarityPreviewController.signal, generation);
   }
 
   thresholdInput.addEventListener("input", renderThresholdPreview);
@@ -272,6 +422,7 @@ export function createAnalysisInsights({
       renderSimilarity();
     },
     reset() {
+      cancelSimilarityPreviews();
       current = null;
       metricLabel.textContent = "Run an analysis to inspect detector scores.";
       candidateSummary.textContent = "";

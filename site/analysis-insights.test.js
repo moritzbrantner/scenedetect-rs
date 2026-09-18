@@ -6,6 +6,7 @@ import {
   detectorMetricSpec,
   maximumSeriesScore,
   previewCandidateFrames,
+  scenePreviewSamples,
 } from "./analysis-insights.js";
 
 function output(rows) {
@@ -102,4 +103,10 @@ test("maximum score stays bounded at the 200000-sample browser cap", () => {
   }));
 
   assert.equal(maximumSeriesScore(series), 123.5);
+});
+
+test("scene preview samples span the scene without crossing its exclusive end", () => {
+  assert.deepEqual(scenePreviewSamples({ start: 10, end: 20 }, 3), [10, 15, 19]);
+  assert.deepEqual(scenePreviewSamples({ start: 4, end: 5 }, 3), [4]);
+  assert.deepEqual(scenePreviewSamples({ start: 8, end: 8 }, 3), [8]);
 });

@@ -35,6 +35,7 @@ jobs:
           mkdir -p site/wasm
           cp target/wasm32-unknown-unknown/release/scenedetect_wasm.wasm site/wasm/scenedetect_wasm.wasm
           test -s site/wasm/scenedetect_wasm.wasm
+          echo "SceneDetect browser WASM bytes: $(wc -c < site/wasm/scenedetect_wasm.wasm)"
 
       - name: Check browser JavaScript syntax
         run: |
@@ -75,6 +76,9 @@ jobs:
           grep -Fq 'analysis-insights-bootstrap.js' site/workbench.html
           grep -Fq 'Change-point heatmap' site/workbench.html
           grep -Fq 'Scene similarity' site/workbench.html
+          grep -Fq 'scenedetect_similarity_configure' site/scenedetect-wasm.js
+          grep -Fq 'shared visual-analysis DCT perceptual hash' site/analysis-insights.js
+          grep -Fq 'pHash distance' site/analysis-insights.js
 
       - name: Check site
         run: python3 scripts/check-site.py

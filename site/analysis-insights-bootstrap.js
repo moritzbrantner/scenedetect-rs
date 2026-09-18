@@ -57,6 +57,10 @@ function presentedTimeForSample(sample) {
   if (exact) {
     return Number(exact.media_time_seconds);
   }
+  const finalSample = latestOutput?.detection?.scene_list?.scenes?.at(-1)?.end;
+  if (Number(finalSample) === numeric && Number.isFinite(video.duration)) {
+    return video.duration;
+  }
   const fps = Number(document.getElementById("analysis-fps")?.value);
   return Number.isFinite(fps) && fps > 0 ? numeric / fps : 0;
 }
@@ -95,6 +99,8 @@ const insights = createAnalysisInsights({
   similarityThreshold,
   similarityStatus,
   similarityList,
+  video,
+  mediaTimeForSample: presentedTimeForSample,
   seekSample,
   applyThresholdAndRerun,
 });

@@ -1,9 +1,11 @@
-import { seekPresentedVideoFrame } from "./video-frame-sync.js";
+import {
+  createLocalFramePreviewer,
+  evenlySpacedPreviewTimes,
+} from "./local-frame-previewer.js";
 
-const CACHE_LIMIT = 24;
-const MAX_WIDTH = 640;
-const MAX_HEIGHT = 360;
 const SELECTION_EVENT = "scenedetect:review-selection";
+const CONTEXT_SECONDS = 1.25;
+const CONTEXT_FRAMES = 3;
 
 const timeline = document.getElementById("scene-timeline");
 const sourceVideo = document.getElementById("video-preview");
@@ -19,18 +21,26 @@ const afterCaption = document.getElementById("cut-after-caption");
 const openBefore = document.getElementById("cut-open-before");
 const openAfter = document.getElementById("cut-open-after");
 
-const previewVideo = document.createElement("video");
-previewVideo.muted = true;
-previewVideo.playsInline = true;
-previewVideo.preload = "auto";
-previewVideo.className = "cut-inspector-preview-video";
-previewVideo.setAttribute("aria-hidden", "true");
-document.body.append(previewVideo);
+const previewer = createLocalFramePreviewer(sourceVideo, {
+  cacheLimit: 48,
+  maxWidth: 640,
+  maxHeight: 360,
+  quality: 0.88,
+});
 
-const previewCanvas = document.createElement("canvas");
-const previewContext = previewCanvas.getContext("2d");
-const cache = new Map();
-let previewSource = "";
+function addFilmstrip(image, label) {
+  const figure = image.closest("figure");
+  const strip = document.createElement("div");
+  strip.className = "cut-inspector-filmstrip";
+  strip.setAttribute("aria-label", label);
+  strip.hidden = true;
+  figure?.insertBefore(strip, figure.querySelector("figcaption"));
+  return strip;
+}
+
+const beforeStrip = addFilmstrip(beforeImage, "Frames leading into the selected cut");
+const afterStrip = addFilmstrip(afterImage, "Frames after the selected cut");
+
 let generation = 0;
 let abortController = null;
 let selectedTimes = null;
@@ -45,88 +55,40 @@ function formatTime(seconds) {
     .padStart(6, "0")}`;
 }
 
-function clampTime(video, time) {
-  return Math.min(Math.max(0, video.duration - 0.001), Math.max(0, time));
-}
-
-function waitForMetadata(video, signal) {
-  if (video.readyState >= HTMLMediaElement.HAVE_METADATA && Number.isFinite(video.duration)) {
-    return Promise.resolve();
+function clampTime(time) {
+  if (!Number.isFinite(sourceVideo.duration)) {
+    return Math.max(0, Number(time) || 0);
   }
-  return new Promise((resolve, reject) => {
-    const cleanup = () => {
-      video.removeEventListener("loadedmetadata", onLoaded);
-      video.removeEventListener("error", onError);
-      signal?.removeEventListener("abort", onAbort);
-    };
-    const onLoaded = () => {
-      cleanup();
-      resolve();
-    };
-    const onError = () => {
-      cleanup();
-      reject(new Error("The browser could not decode the selected cut preview."));
-    };
-    const onAbort = () => {
-      cleanup();
-      reject(new DOMException("Cut preview cancelled", "AbortError"));
-    };
-    video.addEventListener("loadedmetadata", onLoaded, { once: true });
-    video.addEventListener("error", onError, { once: true });
-    signal?.addEventListener("abort", onAbort, { once: true });
-  });
-}
-
-async function ensurePreviewVideo(signal) {
-  const source = sourceVideo.currentSrc || sourceVideo.src;
-  if (!source) {
-    throw new Error("No local video is available for the selected cut preview.");
-  }
-  if (source !== previewSource) {
-    previewSource = source;
-    cache.clear();
-    previewVideo.src = source;
-    previewVideo.load();
-  }
-  await waitForMetadata(previewVideo, signal);
-}
-
-function ensureCacheLimit() {
-  while (cache.size > CACHE_LIMIT) {
-    cache.delete(cache.keys().next().value);
-  }
-}
-
-async function capture(sample, mediaTime, signal) {
-  await ensurePreviewVideo(signal);
-  const key = `${previewSource}|${sample}|${Number(mediaTime).toFixed(6)}`;
-  const cached = cache.get(key);
-  if (cached) {
-    return cached;
-  }
-
-  await seekPresentedVideoFrame(previewVideo, clampTime(previewVideo, mediaTime), signal);
-  if (!previewContext || !previewVideo.videoWidth || !previewVideo.videoHeight) {
-    throw new Error("The selected frame could not be drawn.");
-  }
-  const scale = Math.min(
-    1,
-    MAX_WIDTH / previewVideo.videoWidth,
-    MAX_HEIGHT / previewVideo.videoHeight,
-  );
-  previewCanvas.width = Math.max(1, Math.round(previewVideo.videoWidth * scale));
-  previewCanvas.height = Math.max(1, Math.round(previewVideo.videoHeight * scale));
-  previewContext.drawImage(previewVideo, 0, 0, previewCanvas.width, previewCanvas.height);
-  const dataUrl = previewCanvas.toDataURL("image/jpeg", 0.88);
-  cache.set(key, dataUrl);
-  ensureCacheLimit();
-  return dataUrl;
+  return Math.min(Math.max(0, sourceVideo.duration - 0.001), Math.max(0, Number(time) || 0));
 }
 
 function clearImage(image, placeholder) {
   image.removeAttribute("src");
   placeholder.hidden = false;
   placeholder.textContent = "Loading local frame…";
+}
+
+function clearFilmstrip(strip) {
+  strip.replaceChildren();
+  strip.hidden = true;
+}
+
+function renderFilmstrip(strip, previews, label) {
+  strip.replaceChildren(
+    ...previews.map(({ time, url }, index) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "cut-inspector-filmstrip-frame";
+      button.title = `Open ${label.toLowerCase()} context at ${formatTime(time)}`;
+      button.addEventListener("click", () => openMainVideo(time));
+      const image = document.createElement("img");
+      image.src = url;
+      image.alt = `${label} context frame ${index + 1} of ${previews.length}`;
+      button.append(image);
+      return button;
+    }),
+  );
+  strip.hidden = previews.length === 0;
 }
 
 function setIdle() {
@@ -139,6 +101,8 @@ function setIdle() {
   openAfter.disabled = true;
   clearImage(beforeImage, beforePlaceholder);
   clearImage(afterImage, afterPlaceholder);
+  clearFilmstrip(beforeStrip);
+  clearFilmstrip(afterStrip);
 }
 
 function describeSelection(detail) {
@@ -159,6 +123,55 @@ function describeSelection(detail) {
   return `${detail.label} · sample ${detail.sample}${suffix}.`;
 }
 
+async function loadContextStrips(signal, currentGeneration) {
+  const durationEnd = Number.isFinite(sourceVideo.duration)
+    ? Math.max(0, sourceVideo.duration - 0.001)
+    : selectedTimes.after + CONTEXT_SECONDS;
+  const beforeTimes = evenlySpacedPreviewTimes(
+    Math.max(0, selectedTimes.before - CONTEXT_SECONDS),
+    selectedTimes.before,
+    CONTEXT_FRAMES,
+  );
+  const afterTimes = evenlySpacedPreviewTimes(
+    selectedTimes.after,
+    Math.min(durationEnd, selectedTimes.after + CONTEXT_SECONDS),
+    CONTEXT_FRAMES,
+  );
+
+  try {
+    const beforePreviews = await previewer.captureMany(beforeTimes, {
+      signal,
+      maxWidth: 240,
+      maxHeight: 135,
+      quality: 0.8,
+    });
+    if (signal.aborted || currentGeneration !== generation) {
+      return;
+    }
+    renderFilmstrip(beforeStrip, beforePreviews, "Before cut");
+
+    const afterPreviews = await previewer.captureMany(afterTimes, {
+      signal,
+      maxWidth: 240,
+      maxHeight: 135,
+      quality: 0.8,
+    });
+    if (signal.aborted || currentGeneration !== generation) {
+      return;
+    }
+    renderFilmstrip(afterStrip, afterPreviews, "After cut");
+    status.textContent =
+      "Showing the exact analyzed samples plus short local context strips on both sides of the cut. Click any strip frame to open it in the video.";
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      return;
+    }
+    status.textContent =
+      "The exact cut frames are shown, but the surrounding local context frames could not be decoded.";
+    console.warn("Unable to generate cut context previews", error);
+  }
+}
+
 async function showSelection(detail) {
   abortController?.abort();
   abortController = new AbortController();
@@ -170,10 +183,10 @@ async function showSelection(detail) {
     after: Number(detail.afterMediaTime),
   };
   summary.textContent = describeSelection(detail);
-  beforeCaption.textContent = `Before · sample ${detail.beforeSample} · ${formatTime(
+  beforeCaption.textContent = `Before cut · sample ${detail.beforeSample} · ${formatTime(
     selectedTimes.before,
   )}`;
-  afterCaption.textContent = `After · sample ${detail.afterSample} · ${formatTime(
+  afterCaption.textContent = `After cut · sample ${detail.afterSample} · ${formatTime(
     selectedTimes.after,
   )}`;
   status.textContent = "Decoding the two analyzed frames locally…";
@@ -181,16 +194,28 @@ async function showSelection(detail) {
   openAfter.disabled = false;
   clearImage(beforeImage, beforePlaceholder);
   clearImage(afterImage, afterPlaceholder);
+  clearFilmstrip(beforeStrip);
+  clearFilmstrip(afterStrip);
 
   try {
-    const beforeUrl = await capture(detail.beforeSample, selectedTimes.before, signal);
+    const beforeUrl = await previewer.capture(selectedTimes.before, {
+      signal,
+      maxWidth: 640,
+      maxHeight: 360,
+      quality: 0.88,
+    });
     if (signal.aborted || currentGeneration !== generation) {
       return;
     }
     beforeImage.src = beforeUrl;
     beforePlaceholder.hidden = true;
 
-    const afterUrl = await capture(detail.afterSample, selectedTimes.after, signal);
+    const afterUrl = await previewer.capture(selectedTimes.after, {
+      signal,
+      maxWidth: 640,
+      maxHeight: 360,
+      quality: 0.88,
+    });
     if (signal.aborted || currentGeneration !== generation) {
       return;
     }
@@ -198,8 +223,9 @@ async function showSelection(detail) {
     afterPlaceholder.hidden = true;
     status.textContent =
       detail.beforeSample === detail.afterSample
-        ? "This boundary has no earlier analyzed sample; both previews resolve to the same sample."
-        : "Showing the analyzed sample immediately before the boundary and the boundary sample itself.";
+        ? "This boundary has no earlier analyzed sample; both exact previews resolve to the same sample. Loading local context frames…"
+        : "Showing the analyzed sample immediately before the boundary and the boundary sample itself. Loading local context frames…";
+    void loadContextStrips(signal, currentGeneration);
   } catch (error) {
     if (error?.name === "AbortError") {
       return;
@@ -217,7 +243,7 @@ function openMainVideo(time) {
     return;
   }
   sourceVideo.pause();
-  sourceVideo.currentTime = clampTime(sourceVideo, time);
+  sourceVideo.currentTime = clampTime(time);
   sourceVideo.scrollIntoView({ behavior: "smooth", block: "center" });
 }
 
