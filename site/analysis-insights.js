@@ -106,6 +106,20 @@ export function scenePreviewSamples(scene, count = 3) {
   ];
 }
 
+export function visiblePreviewRowIndexes(entries) {
+  const indexes = new Set();
+  for (const entry of entries ?? []) {
+    if (!entry?.isIntersecting) {
+      continue;
+    }
+    const index = Number(entry.target?.dataset?.similarityPreviewRow);
+    if (Number.isInteger(index) && index >= 0) {
+      indexes.add(index);
+    }
+  }
+  return [...indexes].sort((left, right) => left - right);
+}
+
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
@@ -205,6 +219,7 @@ export function createAnalysisInsights({
 }) {
   let current = null;
   let similarityPreviewController = null;
+  let similarityPreviewObserver = null;
   let similarityPreviewGeneration = 0;
   const similarityPreviewer = createLocalFramePreviewer(video, {
     cacheLimit: 128,
@@ -235,6 +250,8 @@ export function createAnalysisInsights({
   }
 
   function cancelSimilarityPreviews() {
+    similarityPreviewObserver?.disconnect();
+    similarityPreviewObserver = null;
     similarityPreviewController?.abort();
     similarityPreviewController = null;
     similarityPreviewGeneration += 1;
@@ -311,6 +328,38 @@ export function createAnalysisInsights({
     }
   }
 
+  function observeSimilarityPreviews(rows, signal, generation) {
+    if (typeof globalThis.IntersectionObserver !== "function") {
+      void hydrateSimilarityPreviews(
+        rows.map((row) => row.previews),
+        signal,
+        generation,
+      );
+      return;
+    }
+
+    const observer = new globalThis.IntersectionObserver(
+      (entries) => {
+        for (const index of visiblePreviewRowIndexes(entries)) {
+          if (signal.aborted || generation !== similarityPreviewGeneration) {
+            return;
+          }
+          const row = rows[index];
+          if (!row) {
+            continue;
+          }
+          observer.unobserve(row.element);
+          void hydratePairPreviews(row.previews, signal, generation);
+        }
+      },
+      { rootMargin: "160px 0px", threshold: 0.01 },
+    );
+    similarityPreviewObserver = observer;
+    for (const row of rows) {
+      observer.observe(row.element);
+    }
+  }
+
   function renderSimilarity() {
     cancelSimilarityPreviews();
     const report = current?.output?.scene_similarity;
@@ -333,14 +382,15 @@ export function createAnalysisInsights({
     const omissionNote = omitted > 0
       ? ` ${omitted} selected scene${omitted === 1 ? " was" : "s were"} too short to receive the bounded visual sample and ${omitted === 1 ? "is" : "are"} omitted from pairwise comparison.`
       : "";
-    similarityStatus.textContent = `${selectionScope} ${coverage}${omissionNote} Rust caps shared pHash work at about ${targetRate} visual hash${targetRate === 1 ? "" : "es"}/second and uses the shared visual-analysis DCT perceptual hash; Hamming distance is recurrence/near-duplicate evidence, not semantic classification. Each reported match below shows local three-frame strips from both scenes; click any frame to open it in the video.`;
+    similarityStatus.textContent = `${selectionScope} ${coverage}${omissionNote} Rust caps shared pHash work at about ${targetRate} visual hash${targetRate === 1 ? "" : "es"}/second and uses the shared visual-analysis DCT perceptual hash; Hamming distance is recurrence/near-duplicate evidence, not semantic classification. Each reported match below shows local three-frame strips from both scenes; previews decode as rows approach the viewport, and any frame opens it in the video.`;
 
     const previewRows = [];
     const visibleMatches = matches.slice(0, 16);
     similarityList.replaceChildren(
-      ...visibleMatches.map((pair) => {
+      ...visibleMatches.map((pair, rowIndex) => {
         const row = document.createElement("article");
         row.className = "similarity-row";
+        row.dataset.similarityPreviewRow = String(rowIndex);
         const description = document.createElement("div");
         description.className = "similarity-description";
         const score = document.createElement("strong");
@@ -361,7 +411,7 @@ export function createAnalysisInsights({
         divider.setAttribute("aria-hidden", "true");
         divider.textContent = "↔";
         previews.append(first.figure, divider, second.figure);
-        previewRows.push([first, second]);
+        previewRows.push({ element: row, previews: [first, second] });
 
         const actions = document.createElement("div");
         actions.className = "similarity-actions";
@@ -391,7 +441,7 @@ export function createAnalysisInsights({
 
     similarityPreviewController = new AbortController();
     const generation = similarityPreviewGeneration;
-    void hydrateSimilarityPreviews(previewRows, similarityPreviewController.signal, generation);
+    observeSimilarityPreviews(previewRows, similarityPreviewController.signal, generation);
   }
 
   thresholdInput.addEventListener("input", renderThresholdPreview);
