@@ -36,7 +36,9 @@ const boundaryReview = document.getElementById("boundary-review");
 const boundaryReviewSummary = document.getElementById("boundary-review-summary");
 const boundaryRows = document.getElementById("boundary-rows");
 const timelineTrack = document.getElementById("scene-timeline");
-const timelineZoom = document.getElementById("timeline-zoom");
+const timelineZoomOut = document.getElementById("timeline-zoom-out");
+const timelineZoomFit = document.getElementById("timeline-zoom-fit");
+const timelineZoomIn = document.getElementById("timeline-zoom-in");
 const timelineStatus = document.getElementById("timeline-status");
 const reviewStatus = document.getElementById("review-status");
 const compareStatus = document.getElementById("compare-status");
@@ -186,7 +188,9 @@ const resultsOverview = createResultsOverview({
 const reviewWorkspace = createReviewWorkspace({
   video,
   timelineTrack,
-  timelineZoom,
+  timelineZoomOut,
+  timelineZoomFit,
+  timelineZoomIn,
   timelineStatus,
   reviewStatus,
   compareStatus,

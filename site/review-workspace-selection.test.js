@@ -128,3 +128,61 @@ test("selected boundary exposes the previous presented sample and exact media ti
     globalThis.CustomEvent = originalCustomEvent;
   }
 });
+
+
+test("timeline minimum zoom fits the complete video and discrete controls zoom from that fit", () => {
+  const timelineTrack = fakeElement();
+  const timelineZoomOut = fakeElement();
+  const timelineZoomFit = fakeElement();
+  const timelineZoomIn = fakeElement();
+  const timelineStatus = fakeElement();
+  const video = {
+    duration: 600,
+    currentTime: 0,
+    paused: true,
+    pause() {
+      this.paused = true;
+    },
+  };
+  const workspace = createReviewWorkspace({
+    video,
+    timelineTrack,
+    timelineZoomOut,
+    timelineZoomFit,
+    timelineZoomIn,
+    timelineStatus,
+    reviewStatus: fakeElement(),
+    compareStatus: fakeElement(),
+    formatTime: String,
+  });
+
+  workspace.load({
+    fps: 1,
+    duration: video.duration,
+    output: {
+      detection: {
+        scene_list: { scenes: [{ start: 0, end: 600 }] },
+        stats: { rows: [] },
+      },
+      boundary_review: { candidates: [] },
+      presented_samples: [],
+    },
+  });
+
+  assert.equal(timelineTrack.style.width, "100%");
+  assert.equal(timelineZoomOut.disabled, true);
+  assert.equal(timelineZoomFit.disabled, true);
+  assert.equal(timelineZoomIn.disabled, false);
+  assert.match(timelineStatus.textContent, /fit to video/);
+
+  workspace.zoomBy(0.5);
+  assert.equal(timelineTrack.style.width, "150%");
+  assert.equal(timelineZoomOut.disabled, false);
+  assert.equal(timelineZoomFit.disabled, false);
+  assert.match(timelineStatus.textContent, /zoom 1\.5×/);
+
+  workspace.fitTimeline();
+  assert.equal(timelineTrack.style.width, "100%");
+  assert.equal(timelineZoomOut.disabled, true);
+  assert.equal(timelineZoomFit.disabled, true);
+});
