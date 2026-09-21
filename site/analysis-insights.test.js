@@ -7,6 +7,7 @@ import {
   maximumSeriesScore,
   previewCandidateFrames,
   scenePreviewSamples,
+  visiblePreviewRowIndexes,
 } from "./analysis-insights.js";
 
 function output(rows) {
@@ -109,4 +110,17 @@ test("scene preview samples span the scene without crossing its exclusive end", 
   assert.deepEqual(scenePreviewSamples({ start: 10, end: 20 }, 3), [10, 15, 19]);
   assert.deepEqual(scenePreviewSamples({ start: 4, end: 5 }, 3), [4]);
   assert.deepEqual(scenePreviewSamples({ start: 8, end: 8 }, 3), [8]);
+});
+
+
+test("similarity preview hydration selects only intersecting rows", () => {
+  const entries = [
+    { isIntersecting: false, target: { dataset: { similarityPreviewRow: "0" } } },
+    { isIntersecting: true, target: { dataset: { similarityPreviewRow: "2" } } },
+    { isIntersecting: true, target: { dataset: { similarityPreviewRow: "1" } } },
+    { isIntersecting: true, target: { dataset: { similarityPreviewRow: "2" } } },
+    { isIntersecting: true, target: { dataset: { similarityPreviewRow: "invalid" } } },
+  ];
+
+  assert.deepEqual(visiblePreviewRowIndexes(entries), [1, 2]);
 });
