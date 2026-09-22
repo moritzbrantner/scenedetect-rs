@@ -249,14 +249,73 @@
               <canvas id="detector-score-heatmap" aria-label="Detector score heatmap"></canvas>
             </div>
             <div id="threshold-preview-controls" class="threshold-preview-controls" hidden>
-              <label class="threshold-preview-field" for="threshold-preview">
-                <span>Preview threshold</span>
-                <input id="threshold-preview" type="range" min="0" max="1" step="0.01" value="0" />
-                <output id="threshold-preview-value" for="threshold-preview">0.000</output>
-              </label>
-              <button id="apply-threshold-rerun" type="button" class="action-button">
-                Apply threshold &amp; rerun
-              </button>
+              <div class="threshold-preview-editor">
+                <label class="threshold-preview-field" for="threshold-preview">
+                  <span>Preview threshold</span>
+                  <input
+                    id="threshold-preview"
+                    type="range"
+                    min="0"
+                    max="1000"
+                    step="1"
+                    value="0"
+                    aria-describedby="threshold-preview-scale"
+                  />
+                </label>
+                <label class="threshold-preview-number-field" for="threshold-preview-number">
+                  <span>Exact value</span>
+                  <input
+                    id="threshold-preview-number"
+                    type="number"
+                    min="0"
+                    step="any"
+                    value="0"
+                    inputmode="decimal"
+                  />
+                </label>
+                <button id="apply-threshold-rerun" type="button" class="action-button">
+                  Apply threshold &amp; rerun
+                </button>
+              </div>
+              <p id="threshold-preview-scale" class="support-text threshold-preview-scale">
+                The slider uses a logarithmic response for fine low-end control. Enter any exact
+                non-negative threshold in the number field.
+              </p>
+              <div class="threshold-playhead-feedback">
+                <figure class="threshold-playhead-video">
+                  <video
+                    id="threshold-preview-video"
+                    muted
+                    playsinline
+                    preload="metadata"
+                    aria-label="Video at the current review playhead"
+                    hidden
+                  ></video>
+                  <figcaption>Current video playhead</figcaption>
+                </figure>
+                <div class="threshold-impact">
+                  <strong>Threshold impact near the playhead</strong>
+                  <p id="threshold-preview-impact" class="support-text" aria-live="polite"></p>
+                  <div class="threshold-impact-actions">
+                    <button
+                      id="threshold-preview-previous-change"
+                      type="button"
+                      class="action-button"
+                      disabled
+                    >
+                      Previous affected crossing
+                    </button>
+                    <button
+                      id="threshold-preview-next-change"
+                      type="button"
+                      class="action-button"
+                      disabled
+                    >
+                      Next affected crossing
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
             <p id="threshold-preview-summary" class="support-text" aria-live="polite"></p>
           </section>
