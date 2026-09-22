@@ -53,11 +53,11 @@ const analysis = createAnalysisWorker();
 
 const detectorFields = {
   content: [
-    { key: "threshold", label: "Content threshold", step: "0.1", min: "0" },
+    { key: "threshold", label: "Content threshold", step: "0.01", min: "0" },
     {
       key: "review_threshold",
       label: "Boundary review threshold override",
-      step: "0.1",
+      step: "0.01",
       min: "0",
       optional: true,
     },
@@ -68,7 +68,7 @@ const detectorFields = {
     { key: "weights.edges", label: "Edge weight", step: "0.1", min: "0" },
   ],
   adaptive: [
-    { key: "threshold", label: "Adaptive ratio threshold", step: "0.1", min: "0" },
+    { key: "threshold", label: "Adaptive ratio threshold", step: "0.01", min: "0" },
     {
       key: "review_threshold",
       label: "Boundary review threshold override",
@@ -85,16 +85,16 @@ const detectorFields = {
     { key: "weights.edges", label: "Edge weight", step: "0.1", min: "0" },
   ],
   threshold: [
-    { key: "threshold", label: "Fade threshold", step: "0.1", min: "0" },
-    { key: "fade_bias", label: "Fade bias", step: "0.05", min: "-1", max: "1" },
+    { key: "threshold", label: "Fade threshold", step: "0.01", min: "0" },
+    { key: "fade_bias", label: "Fade bias", step: "0.01", min: "-1", max: "1" },
     { key: "add_last_scene", label: "Add final fade-out scene", type: "checkbox" },
   ],
   histogram: [
-    { key: "threshold", label: "Histogram threshold", step: "0.01", min: "0" },
+    { key: "threshold", label: "Histogram threshold", step: "0.001", min: "0" },
     { key: "bins", label: "Histogram bins", step: "1", min: "1" },
   ],
   hash: [
-    { key: "threshold", label: "Hash distance threshold", step: "0.001", min: "0", max: "1" },
+    { key: "threshold", label: "Hash distance threshold", step: "0.0001", min: "0", max: "1" },
     { key: "size", label: "Hash size", step: "1", min: "1" },
     { key: "lowpass", label: "Low-pass factor", step: "1", min: "1" },
   ],
