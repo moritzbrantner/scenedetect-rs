@@ -8,6 +8,7 @@ import {
   previewCandidateFrames,
   scenePreviewSamples,
   thresholdBoundaryChanges,
+  thresholdChangeNavigation,
   thresholdFromSliderPosition,
   thresholdSliderPosition,
 } from "./analysis-insights.js";
@@ -155,4 +156,16 @@ test("threshold preview reports raw crossings added and removed versus the analy
       { frame: 3, kind: "removed" },
     ],
   });
+});
+
+test("threshold crossing navigation moves past the current crossing", () => {
+  const changes = [
+    { frame: 10, kind: "added" },
+    { frame: 20, kind: "removed" },
+    { frame: 30, kind: "added" },
+  ];
+  const navigation = thresholdChangeNavigation(changes, 2, (frame) => frame / 10);
+
+  assert.equal(navigation.previous.frame, 10);
+  assert.equal(navigation.next.frame, 30);
 });

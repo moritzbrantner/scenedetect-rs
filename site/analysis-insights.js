@@ -92,6 +92,17 @@ export function thresholdBoundaryChanges(series, baselineThreshold, previewThres
   return { added, removed, changed };
 }
 
+export function thresholdChangeNavigation(changes, playhead, mediaTimeForSample) {
+  const timed = changes
+    .map((change) => ({ ...change, time: Number(mediaTimeForSample?.(change.frame)) }))
+    .filter((change) => Number.isFinite(change.time));
+  return {
+    timed,
+    previous: [...timed].reverse().find((change) => change.time < playhead) ?? null,
+    next: timed.find((change) => change.time > playhead) ?? null,
+  };
+}
+
 export function maximumSeriesScore(series, initial = 0) {
   let maximum = initial;
   for (const entry of series) {
@@ -304,7 +315,7 @@ export function createAnalysisInsights({
   }
 
   function syncThresholdPreviewVideo() {
-    if (!thresholdPreviewVideo || !video) {
+    if (!current || !thresholdPreviewVideo || !video) {
       return;
     }
     const source = video.currentSrc || video.src;
@@ -363,11 +374,14 @@ export function createAnalysisInsights({
     }
 
     const playhead = Number(video?.currentTime) || 0;
-    const timed = thresholdChanges
-      .map((change) => ({ ...change, time: Number(mediaTimeForSample?.(change.frame)) }))
-      .filter((change) => Number.isFinite(change.time));
-    previousThresholdChange = [...timed].reverse().find((change) => change.time <= playhead) ?? null;
-    nextThresholdChange = timed.find((change) => change.time > playhead) ?? null;
+    const navigation = thresholdChangeNavigation(
+      thresholdChanges,
+      playhead,
+      mediaTimeForSample,
+    );
+    const { timed } = navigation;
+    previousThresholdChange = navigation.previous;
+    nextThresholdChange = navigation.next;
     const nearest = timed.reduce(
       (best, change) =>
         !best || Math.abs(change.time - playhead) < Math.abs(best.time - playhead) ? change : best,
@@ -394,8 +408,10 @@ export function createAnalysisInsights({
     }
     const threshold = currentThreshold();
     if (!Number.isFinite(threshold) || threshold < 0) {
+      thresholdChanges = [];
       candidateSummary.textContent = "Enter a non-negative threshold value.";
       applyThresholdButton.disabled = true;
+      renderThresholdImpact();
       return;
     }
     const candidates = current.spec.tunable
@@ -418,7 +434,6 @@ export function createAnalysisInsights({
     }
     applyThresholdButton.disabled = !current.spec.tunable;
     drawHeatmap(heatmapCanvas, current.series, threshold, candidates);
-    syncThresholdPreviewVideo();
     renderThresholdImpact();
   }
 
@@ -588,9 +603,8 @@ export function createAnalysisInsights({
     renderThresholdPreview();
   });
   thresholdNumberInput.addEventListener("input", () => {
-    if (syncSliderFromNumber()) {
-      renderThresholdPreview();
-    }
+    syncSliderFromNumber();
+    renderThresholdPreview();
   });
   thresholdPreviousChangeButton.addEventListener("click", () => {
     if (previousThresholdChange) {
