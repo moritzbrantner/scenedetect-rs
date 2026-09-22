@@ -9,8 +9,12 @@ const heatmapCanvas = document.getElementById("detector-score-heatmap");
 const metricLabel = document.getElementById("detector-metric-label");
 const thresholdControls = document.getElementById("threshold-preview-controls");
 const thresholdInput = document.getElementById("threshold-preview");
-const thresholdValue = document.getElementById("threshold-preview-value");
+const thresholdNumberInput = document.getElementById("threshold-preview-number");
 const candidateSummary = document.getElementById("threshold-preview-summary");
+const thresholdPreviewVideo = document.getElementById("threshold-preview-video");
+const thresholdImpactSummary = document.getElementById("threshold-preview-impact");
+const thresholdPreviousChangeButton = document.getElementById("threshold-preview-previous-change");
+const thresholdNextChangeButton = document.getElementById("threshold-preview-next-change");
 const applyThresholdButton = document.getElementById("apply-threshold-rerun");
 const similarityThreshold = document.getElementById("similarity-threshold");
 const similarityThresholdValue = document.getElementById("similarity-threshold-value");
@@ -93,8 +97,12 @@ const insights = createAnalysisInsights({
   metricLabel,
   thresholdControls,
   thresholdInput,
-  thresholdValue,
+  thresholdNumberInput,
   candidateSummary,
+  thresholdPreviewVideo,
+  thresholdImpactSummary,
+  thresholdPreviousChangeButton,
+  thresholdNextChangeButton,
   applyThresholdButton,
   similarityThreshold,
   similarityStatus,
