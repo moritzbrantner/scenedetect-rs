@@ -271,7 +271,8 @@ export function createAnalysisInsights({
   });
 
   function currentThreshold() {
-    return Number(thresholdNumberInput.value);
+    const raw = thresholdNumberInput.value.trim();
+    return raw === "" ? Number.NaN : Number(raw);
   }
 
   function ensureThresholdMaximum(threshold) {
@@ -333,7 +334,13 @@ export function createAnalysisInsights({
   function renderThresholdImpact() {
     previousThresholdChange = null;
     nextThresholdChange = null;
-    if (!current?.spec.tunable) {
+    if (!current) {
+      thresholdImpactSummary.textContent = "";
+      thresholdPreviousChangeButton.disabled = true;
+      thresholdNextChangeButton.disabled = true;
+      return;
+    }
+    if (!current.spec.tunable) {
       thresholdImpactSummary.textContent =
         "Stateful fade semantics require an authoritative Rust rerun before Scene Boundary impact can be shown.";
       thresholdPreviousChangeButton.disabled = true;
@@ -598,6 +605,7 @@ export function createAnalysisInsights({
       }
     });
   }
+  thresholdPreviewVideo?.addEventListener("loadedmetadata", syncThresholdPreviewVideo);
   similarityThreshold.addEventListener("input", renderSimilarity);
   applyThresholdButton.addEventListener("click", () => {
     if (!current?.spec.tunable) {
