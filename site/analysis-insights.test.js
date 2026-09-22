@@ -164,7 +164,7 @@ test("threshold crossing navigation moves past the current crossing", () => {
     { frame: 20, kind: "removed" },
     { frame: 30, kind: "added" },
   ];
-  const navigation = thresholdChangeNavigation(changes, 2, (frame) => frame / 10);
+  const navigation = thresholdChangeNavigation(changes, 2.0005, (frame) => frame / 10);
 
   assert.equal(navigation.previous.frame, 10);
   assert.equal(navigation.next.frame, 30);

@@ -2,6 +2,7 @@ import { createLocalFramePreviewer } from "./local-frame-previewer.js";
 
 const THRESHOLD_SLIDER_MAX = 1000;
 const THRESHOLD_SLIDER_CURVE = 1000;
+const THRESHOLD_NAVIGATION_EPSILON_SECONDS = 0.001;
 
 function firstMetric(metrics, prefix) {
   return Object.entries(metrics ?? {}).find(([name]) => name.startsWith(prefix))?.[1] ?? 0;
@@ -98,8 +99,12 @@ export function thresholdChangeNavigation(changes, playhead, mediaTimeForSample)
     .filter((change) => Number.isFinite(change.time));
   return {
     timed,
-    previous: [...timed].reverse().find((change) => change.time < playhead) ?? null,
-    next: timed.find((change) => change.time > playhead) ?? null,
+    previous:
+      [...timed]
+        .reverse()
+        .find((change) => change.time < playhead - THRESHOLD_NAVIGATION_EPSILON_SECONDS) ?? null,
+    next:
+      timed.find((change) => change.time > playhead + THRESHOLD_NAVIGATION_EPSILON_SECONDS) ?? null,
   };
 }
 
@@ -411,6 +416,8 @@ export function createAnalysisInsights({
       thresholdChanges = [];
       candidateSummary.textContent = "Enter a non-negative threshold value.";
       applyThresholdButton.disabled = true;
+      const context = heatmapCanvas.getContext("2d");
+      context?.clearRect(0, 0, heatmapCanvas.width, heatmapCanvas.height);
       renderThresholdImpact();
       return;
     }
