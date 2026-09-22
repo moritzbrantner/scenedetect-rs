@@ -7,6 +7,9 @@ import {
   maximumSeriesScore,
   previewCandidateFrames,
   scenePreviewSamples,
+  thresholdBoundaryChanges,
+  thresholdFromSliderPosition,
+  thresholdSliderPosition,
 } from "./analysis-insights.js";
 
 function output(rows) {
@@ -109,4 +112,47 @@ test("scene preview samples span the scene without crossing its exclusive end", 
   assert.deepEqual(scenePreviewSamples({ start: 10, end: 20 }, 3), [10, 15, 19]);
   assert.deepEqual(scenePreviewSamples({ start: 4, end: 5 }, 3), [4]);
   assert.deepEqual(scenePreviewSamples({ start: 8, end: 8 }, 3), [8]);
+});
+
+
+test("threshold slider is logarithmic while preserving exact endpoints and round trips", () => {
+  const maximum = 100;
+  assert.equal(thresholdFromSliderPosition(0, maximum), 0);
+  assert.equal(thresholdFromSliderPosition(1000, maximum), maximum);
+
+  for (const threshold of [0.001, 0.01, 0.1, 1, 10, 50, 100]) {
+    const position = thresholdSliderPosition(threshold, maximum);
+    const roundTrip = thresholdFromSliderPosition(position, maximum);
+    assert.ok(Math.abs(roundTrip - threshold) <= Math.max(0.001, threshold * 0.01));
+  }
+
+  const lowEndSpan =
+    thresholdFromSliderPosition(100, maximum) - thresholdFromSliderPosition(0, maximum);
+  const highEndSpan =
+    thresholdFromSliderPosition(1000, maximum) - thresholdFromSliderPosition(900, maximum);
+  assert.ok(lowEndSpan < highEndSpan);
+});
+
+test("threshold preview reports raw crossings added and removed versus the analyzed threshold", () => {
+  const series = [
+    { frame: 0, score: 100, eligible: true },
+    { frame: 1, score: 1, eligible: true },
+    { frame: 2, score: 3, eligible: true },
+    { frame: 3, score: 5, eligible: true },
+    { frame: 4, score: 7, eligible: false },
+  ];
+
+  assert.deepEqual(thresholdBoundaryChanges(series, 5, 2), {
+    added: [2],
+    removed: [],
+    changed: [{ frame: 2, kind: "added" }],
+  });
+  assert.deepEqual(thresholdBoundaryChanges(series, 2, 6), {
+    added: [],
+    removed: [2, 3],
+    changed: [
+      { frame: 2, kind: "removed" },
+      { frame: 3, kind: "removed" },
+    ],
+  });
 });
