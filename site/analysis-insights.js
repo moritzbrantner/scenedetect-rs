@@ -132,7 +132,14 @@ export function thresholdFromSliderPosition(position, maximum) {
   if (safeMaximum === 0) {
     return 0;
   }
-  const fraction = clamp((Number(position) || 0) / THRESHOLD_SLIDER_MAX, 0, 1);
+  const numericPosition = Number(position) || 0;
+  if (numericPosition <= 0) {
+    return 0;
+  }
+  if (numericPosition >= THRESHOLD_SLIDER_MAX) {
+    return safeMaximum;
+  }
+  const fraction = clamp(numericPosition / THRESHOLD_SLIDER_MAX, 0, 1);
   return (
     safeMaximum *
     Math.expm1(Math.log1p(THRESHOLD_SLIDER_CURVE) * fraction) /
