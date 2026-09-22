@@ -1,5 +1,8 @@
 import { createLocalFramePreviewer } from "./local-frame-previewer.js";
 
+const THRESHOLD_SLIDER_MAX = 1000;
+const THRESHOLD_SLIDER_CURVE = 1000;
+
 function firstMetric(metrics, prefix) {
   return Object.entries(metrics ?? {}).find(([name]) => name.startsWith(prefix))?.[1] ?? 0;
 }
@@ -75,6 +78,20 @@ export function previewCandidateFrames(series, threshold) {
     .map((entry) => entry.frame);
 }
 
+export function thresholdBoundaryChanges(series, baselineThreshold, previewThreshold) {
+  const baseline = new Set(previewCandidateFrames(series, baselineThreshold));
+  const preview = new Set(previewCandidateFrames(series, previewThreshold));
+  const added = [...preview].filter((frame) => !baseline.has(frame)).sort((left, right) => left - right);
+  const removed = [...baseline]
+    .filter((frame) => !preview.has(frame))
+    .sort((left, right) => left - right);
+  const changed = [
+    ...added.map((frame) => ({ frame, kind: "added" })),
+    ...removed.map((frame) => ({ frame, kind: "removed" })),
+  ].sort((left, right) => left.frame - right.frame);
+  return { added, removed, changed };
+}
+
 export function maximumSeriesScore(series, initial = 0) {
   let maximum = initial;
   for (const entry of series) {
@@ -108,6 +125,37 @@ export function scenePreviewSamples(scene, count = 3) {
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
+}
+
+export function thresholdFromSliderPosition(position, maximum) {
+  const safeMaximum = Math.max(0, Number(maximum) || 0);
+  if (safeMaximum === 0) {
+    return 0;
+  }
+  const fraction = clamp((Number(position) || 0) / THRESHOLD_SLIDER_MAX, 0, 1);
+  return (
+    safeMaximum *
+    Math.expm1(Math.log1p(THRESHOLD_SLIDER_CURVE) * fraction) /
+    THRESHOLD_SLIDER_CURVE
+  );
+}
+
+export function thresholdSliderPosition(threshold, maximum) {
+  const safeMaximum = Math.max(0, Number(maximum) || 0);
+  if (safeMaximum === 0) {
+    return 0;
+  }
+  const normalized = clamp((Number(threshold) || 0) / safeMaximum, 0, 1);
+  const fraction =
+    Math.log1p(normalized * THRESHOLD_SLIDER_CURVE) / Math.log1p(THRESHOLD_SLIDER_CURVE);
+  return Math.round(fraction * THRESHOLD_SLIDER_MAX);
+}
+
+function editableThreshold(value) {
+  if (!Number.isFinite(value)) {
+    return "";
+  }
+  return String(Number(value.toPrecision(10)));
 }
 
 function canvasPixelSize(canvas) {
@@ -192,8 +240,12 @@ export function createAnalysisInsights({
   metricLabel,
   thresholdControls,
   thresholdInput,
-  thresholdValue,
+  thresholdNumberInput,
   candidateSummary,
+  thresholdPreviewVideo,
+  thresholdImpactSummary,
+  thresholdPreviousChangeButton,
+  thresholdNextChangeButton,
   applyThresholdButton,
   similarityThreshold,
   similarityStatus,
@@ -204,6 +256,11 @@ export function createAnalysisInsights({
   applyThresholdAndRerun,
 }) {
   let current = null;
+  let thresholdMaximum = 1;
+  let thresholdChanges = [];
+  let previousThresholdChange = null;
+  let nextThresholdChange = null;
+  let syncingThresholdPreviewVideo = false;
   let similarityPreviewController = null;
   let similarityPreviewGeneration = 0;
   const similarityPreviewer = createLocalFramePreviewer(video, {
@@ -213,26 +270,144 @@ export function createAnalysisInsights({
     quality: 0.8,
   });
 
+  function currentThreshold() {
+    return Number(thresholdNumberInput.value);
+  }
+
+  function ensureThresholdMaximum(threshold) {
+    if (Number.isFinite(threshold) && threshold > thresholdMaximum) {
+      thresholdMaximum = Math.max(threshold * 1.05, threshold + Number.EPSILON);
+    }
+  }
+
+  function syncSliderFromNumber() {
+    const threshold = currentThreshold();
+    if (!Number.isFinite(threshold) || threshold < 0) {
+      return false;
+    }
+    ensureThresholdMaximum(threshold);
+    thresholdInput.value = String(thresholdSliderPosition(threshold, thresholdMaximum));
+    return true;
+  }
+
+  function setThresholdFromSlider() {
+    const threshold = thresholdFromSliderPosition(thresholdInput.value, thresholdMaximum);
+    thresholdNumberInput.value = editableThreshold(threshold);
+  }
+
+  function syncThresholdPreviewVideo() {
+    if (!thresholdPreviewVideo || !video) {
+      return;
+    }
+    const source = video.currentSrc || video.src;
+    if (!source) {
+      thresholdPreviewVideo.hidden = true;
+      return;
+    }
+    thresholdPreviewVideo.hidden = false;
+    if (thresholdPreviewVideo.dataset.source !== source) {
+      syncingThresholdPreviewVideo = true;
+      thresholdPreviewVideo.src = source;
+      thresholdPreviewVideo.dataset.source = source;
+      thresholdPreviewVideo.load();
+      syncingThresholdPreviewVideo = false;
+    }
+    thresholdPreviewVideo.playbackRate = video.playbackRate || 1;
+    const targetTime = Number(video.currentTime);
+    if (
+      Number.isFinite(targetTime) &&
+      thresholdPreviewVideo.readyState >= HTMLMediaElement.HAVE_METADATA &&
+      Math.abs(Number(thresholdPreviewVideo.currentTime) - targetTime) > 0.04
+    ) {
+      syncingThresholdPreviewVideo = true;
+      thresholdPreviewVideo.currentTime = targetTime;
+      syncingThresholdPreviewVideo = false;
+    }
+    if (video.paused) {
+      thresholdPreviewVideo.pause();
+    } else if (thresholdPreviewVideo.paused) {
+      void thresholdPreviewVideo.play().catch(() => {});
+    }
+  }
+
+  function renderThresholdImpact() {
+    previousThresholdChange = null;
+    nextThresholdChange = null;
+    if (!current?.spec.tunable) {
+      thresholdImpactSummary.textContent =
+        "Stateful fade semantics require an authoritative Rust rerun before Scene Boundary impact can be shown.";
+      thresholdPreviousChangeButton.disabled = true;
+      thresholdNextChangeButton.disabled = true;
+      return;
+    }
+    if (thresholdChanges.length === 0) {
+      thresholdImpactSummary.textContent =
+        "No raw threshold crossings change relative to the analyzed threshold at this preview value.";
+      thresholdPreviousChangeButton.disabled = true;
+      thresholdNextChangeButton.disabled = true;
+      return;
+    }
+
+    const playhead = Number(video?.currentTime) || 0;
+    const timed = thresholdChanges
+      .map((change) => ({ ...change, time: Number(mediaTimeForSample?.(change.frame)) }))
+      .filter((change) => Number.isFinite(change.time));
+    previousThresholdChange = [...timed].reverse().find((change) => change.time <= playhead) ?? null;
+    nextThresholdChange = timed.find((change) => change.time > playhead) ?? null;
+    const nearest = timed.reduce(
+      (best, change) =>
+        !best || Math.abs(change.time - playhead) < Math.abs(best.time - playhead) ? change : best,
+      null,
+    );
+    const nearestText = nearest
+      ? ` Nearest affected sample: ${nearest.frame} at ${nearest.time.toFixed(3)}s (${
+          nearest.kind === "added" ? "potential split" : "potential merge"
+        } before authoritative minimum-scene-length handling).`
+      : "";
+    const added = thresholdChanges.filter((change) => change.kind === "added").length;
+    const removed = thresholdChanges.length - added;
+    thresholdImpactSummary.textContent =
+      `${added} potential new raw crossing${added === 1 ? "" : "s"}, ${removed} removed raw crossing${
+        removed === 1 ? "" : "s"
+      } versus the analyzed threshold.${nearestText}`;
+    thresholdPreviousChangeButton.disabled = !previousThresholdChange;
+    thresholdNextChangeButton.disabled = !nextThresholdChange;
+  }
+
   function renderThresholdPreview() {
     if (!current) {
       return;
     }
-    const threshold = Number(thresholdInput.value);
+    const threshold = currentThreshold();
+    if (!Number.isFinite(threshold) || threshold < 0) {
+      candidateSummary.textContent = "Enter a non-negative threshold value.";
+      applyThresholdButton.disabled = true;
+      return;
+    }
     const candidates = current.spec.tunable
       ? previewCandidateFrames(current.series, threshold)
       : [];
-    thresholdValue.textContent = Number.isFinite(threshold) ? threshold.toFixed(3) : "—";
+    thresholdChanges = current.spec.tunable
+      ? thresholdBoundaryChanges(current.series, current.spec.threshold, threshold).changed
+      : [];
     if (current.spec.tunable) {
+      const added = thresholdChanges.filter((change) => change.kind === "added").length;
+      const removed = thresholdChanges.length - added;
       candidateSummary.textContent = `${candidates.length} raw threshold crossing${
         candidates.length === 1 ? "" : "s"
-      }. This preview intentionally does not reproduce minimum-scene-length suppression; rerun to obtain authoritative Rust scenes.`;
+      } at ${editableThreshold(threshold)} · ${added} added / ${removed} removed versus analyzed threshold ${editableThreshold(
+        current.spec.threshold,
+      )}. This preview intentionally does not reproduce minimum-scene-length suppression; rerun to obtain authoritative Rust scenes.`;
     } else {
       candidateSummary.textContent =
         "Fade detection is stateful, so threshold-only boundary preview is disabled. The heatmap still shows the Rust luminance metric; use the detector controls and rerun for authoritative fade semantics.";
     }
     applyThresholdButton.disabled = !current.spec.tunable;
     drawHeatmap(heatmapCanvas, current.series, threshold, candidates);
+    syncThresholdPreviewVideo();
+    renderThresholdImpact();
   }
+
 
   function cancelSimilarityPreviews() {
     similarityPreviewController?.abort();
@@ -394,14 +569,42 @@ export function createAnalysisInsights({
     void hydrateSimilarityPreviews(previewRows, similarityPreviewController.signal, generation);
   }
 
-  thresholdInput.addEventListener("input", renderThresholdPreview);
+  thresholdInput.addEventListener("input", () => {
+    setThresholdFromSlider();
+    renderThresholdPreview();
+  });
+  thresholdNumberInput.addEventListener("input", () => {
+    if (syncSliderFromNumber()) {
+      renderThresholdPreview();
+    }
+  });
+  thresholdPreviousChangeButton.addEventListener("click", () => {
+    if (previousThresholdChange) {
+      seekSample(previousThresholdChange.frame);
+    }
+  });
+  thresholdNextChangeButton.addEventListener("click", () => {
+    if (nextThresholdChange) {
+      seekSample(nextThresholdChange.frame);
+    }
+  });
+  for (const eventName of ["loadedmetadata", "seeked", "timeupdate", "play", "pause", "ratechange"]) {
+    video?.addEventListener(eventName, () => {
+      if (!syncingThresholdPreviewVideo) {
+        syncThresholdPreviewVideo();
+      }
+      if (eventName === "seeked" || eventName === "timeupdate") {
+        renderThresholdImpact();
+      }
+    });
+  }
   similarityThreshold.addEventListener("input", renderSimilarity);
   applyThresholdButton.addEventListener("click", () => {
     if (!current?.spec.tunable) {
       return;
     }
-    const threshold = Number(thresholdInput.value);
-    if (Number.isFinite(threshold)) {
+    const threshold = currentThreshold();
+    if (Number.isFinite(threshold) && threshold >= 0) {
       void applyThresholdAndRerun(threshold);
     }
   });
@@ -411,10 +614,14 @@ export function createAnalysisInsights({
       const { spec, series } = buildScoreSeries(output, settings);
       const threshold = Number.isFinite(spec.threshold) ? spec.threshold : 0;
       const maximum = Math.max(1, threshold * 2, maximumSeriesScore(series) * 1.05);
+      thresholdMaximum = maximum;
       thresholdInput.min = "0";
-      thresholdInput.max = String(maximum);
-      thresholdInput.step = String(maximum <= 2 ? 0.001 : 0.1);
-      thresholdInput.value = String(clamp(threshold, 0, maximum));
+      thresholdInput.max = String(THRESHOLD_SLIDER_MAX);
+      thresholdInput.step = "1";
+      thresholdNumberInput.min = "0";
+      thresholdNumberInput.step = "any";
+      thresholdNumberInput.value = editableThreshold(clamp(threshold, 0, maximum));
+      thresholdInput.value = String(thresholdSliderPosition(threshold, maximum));
       thresholdControls.hidden = false;
       metricLabel.textContent = `${spec.label} across the analyzed timeline`;
       current = { output, settings, spec, series };
@@ -424,9 +631,22 @@ export function createAnalysisInsights({
     reset() {
       cancelSimilarityPreviews();
       current = null;
+      thresholdChanges = [];
+      previousThresholdChange = null;
+      nextThresholdChange = null;
       metricLabel.textContent = "Run an analysis to inspect detector scores.";
       candidateSummary.textContent = "";
+      thresholdImpactSummary.textContent = "";
+      thresholdPreviousChangeButton.disabled = true;
+      thresholdNextChangeButton.disabled = true;
       thresholdControls.hidden = true;
+      if (thresholdPreviewVideo) {
+        thresholdPreviewVideo.pause();
+        thresholdPreviewVideo.removeAttribute("src");
+        thresholdPreviewVideo.dataset.source = "";
+        thresholdPreviewVideo.load();
+        thresholdPreviewVideo.hidden = true;
+      }
       similarityStatus.textContent = "Run an analysis to compare visually recurring scenes.";
       similarityList.replaceChildren();
       const context = heatmapCanvas.getContext("2d");
