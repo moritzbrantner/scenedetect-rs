@@ -16,7 +16,7 @@
 - Requirement: The checked manifest binds destination issue #72, its exact source commit, and only `scenedetect-core` 0.1.0.
 - Forbidden behavior: extra packages, another repository or issue, source/control drift outside the manifest, publication without an exact approved issue, or a tag that does not resolve to the immutable source commit.
 - Authority/source: issue:#71
-- Affected surfaces: .agent-loop.toml, releases/scenedetect-core-0.1.0.toml, scripts/check_release_plan.py, scripts/publish_release.py
+- Affected surfaces: releases/scenedetect-core-0.1.0.toml, scripts/check_release_plan.py, scripts/publish_release.py
 - Compatibility promise: CLI, FFmpeg, Detector, fixture, and test surfaces remain outside this release.
 - Required evidence: contract
 - Sensitivity: optional
@@ -27,7 +27,7 @@
 - Requirement: The structural archive gate runs `cargo package --locked --registry crates-io` for only `scenedetect-core`.
 - Forbidden behavior: packaging the workspace, running or claiming behavioral evidence, selecting another registry, or passing a local patch to publication.
 - Authority/source: issue:#72
-- Affected surfaces: .agent-loop.toml, Cargo.toml, Cargo.lock, crates/scenedetect-core/Cargo.toml
+- Affected surfaces: Cargo.toml, Cargo.lock, crates/scenedetect-core/Cargo.toml
 - Compatibility promise: Archive preparation is side-effect free for crates.io and changes only ignored build output.
 - Required evidence: integration
 - Sensitivity: optional
