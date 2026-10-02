@@ -46,10 +46,6 @@ Before handoff:
 
 An exact destination-local release issue may deliberately replace this ladder
 with a smaller structural command set when it changes release controls only.
-For issue #72, run only the commands in `.agent-loop.toml`: locked Cargo
-metadata, exact manifest validation, and `cargo package` for
-`scenedetect-core`. Unit, parity, workspace, Clippy, documentation, consumer,
-build, and broad package suites are skipped and must not be reported as passed.
 
 When branch or patch comparison is useful:
 
@@ -78,20 +74,6 @@ If blocked, report:
 - concrete external decision or input needed
 - safest next step
 
-## Agent skills
-
-### Issue tracker
-
-Issues and PRDs are tracked in GitHub Issues for `moritzbrantner/scenedetect-rs`. See `docs/agents/issue-tracker.md`.
-
-### Triage labels
-
-The repo uses the default five-label triage vocabulary. See `docs/agents/triage-labels.md`.
-
-### Domain docs
+## Domain docs
 
 This is a single-context repo with root `CONTEXT.md` and root `docs/adr/`. See `docs/agents/domain.md`.
-
-### Planning workflow
-
-Substantial new work should be planned into GitHub PRD issues instead of implemented directly. See `docs/agents/planning-workflow.md`.
