@@ -140,7 +140,7 @@
 }
 
 .field-grid label,
-.timeline-zoom-field,
+.timeline-zoom-control,
 .results-browser-field,
 .shortcut-field {
   display: flex;
@@ -150,7 +150,7 @@
 }
 
 .field-grid label > span,
-.timeline-zoom-field > span,
+.timeline-zoom-control > span,
 .results-browser-field > span,
 .shortcut-field > span {
   color: #303836;
@@ -331,12 +331,29 @@
   max-width: 760px;
 }
 
-.timeline-zoom-field {
-  flex: 0 0 220px;
+.timeline-zoom-control {
+  flex: 0 0 auto;
 }
 
-.timeline-zoom-field input {
-  width: 100%;
+.timeline-zoom-buttons {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.timeline-zoom-buttons .action-button {
+  min-height: 38px;
+  padding: 6px 10px;
+}
+
+.timeline-zoom-step {
+  font-size: 1.1rem;
+  line-height: 1;
+  min-width: 40px;
+}
+
+.timeline-zoom-fit {
+  min-width: 82px;
 }
 
 .timeline-viewport {
@@ -731,8 +748,12 @@
     width: 100%;
   }
 
-  .timeline-zoom-field {
+  .timeline-zoom-control {
     flex-basis: auto;
+  }
+
+  .timeline-zoom-buttons {
+    justify-content: flex-start;
   }
 
   .results-browser-count {

@@ -1,3 +1,7 @@
+const MIN_TIMELINE_ZOOM = 1;
+const MAX_TIMELINE_ZOOM = 8;
+const TIMELINE_ZOOM_STEP = 0.5;
+
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
@@ -22,7 +26,9 @@ function csvCell(value) {
 export function createReviewWorkspace({
   video,
   timelineTrack,
-  timelineZoom,
+  timelineZoomOut,
+  timelineZoomFit,
+  timelineZoomIn,
   timelineStatus,
   reviewStatus,
   compareStatus,
@@ -31,6 +37,7 @@ export function createReviewWorkspace({
   let output = null;
   let fps = null;
   let duration = null;
+  let timelineZoom = MIN_TIMELINE_ZOOM;
   let selectedBoundary = null;
   let selectedScene = null;
   let decisions = new Map();
@@ -263,6 +270,18 @@ export function createReviewWorkspace({
         : "near-miss";
   }
 
+  function updateZoomControls() {
+    if (timelineZoomOut) {
+      timelineZoomOut.disabled = timelineZoom <= MIN_TIMELINE_ZOOM;
+    }
+    if (timelineZoomFit) {
+      timelineZoomFit.disabled = timelineZoom <= MIN_TIMELINE_ZOOM;
+    }
+    if (timelineZoomIn) {
+      timelineZoomIn.disabled = timelineZoom >= MAX_TIMELINE_ZOOM;
+    }
+  }
+
   function renderTimeline() {
     timelineTrack.replaceChildren();
     if (!output || !Number.isFinite(duration) || duration <= 0) {
@@ -270,9 +289,8 @@ export function createReviewWorkspace({
       return;
     }
 
-    const zoom = Number(timelineZoom.value);
-    const width = Math.max(timelineTrack.parentElement.clientWidth - 2, duration * 52 * zoom);
-    timelineTrack.style.width = `${Math.ceil(width)}px`;
+    timelineTrack.style.width = `${timelineZoom * 100}%`;
+    updateZoomControls();
 
     const scenes = reviewedScenes();
     for (const [index, scene] of scenes.entries()) {
@@ -324,9 +342,11 @@ export function createReviewWorkspace({
       timelineTrack.append(marker);
     }
 
-    timelineStatus.textContent = `${scenes.length} reviewed scenes · ${effectiveBoundaries().length} effective cuts · zoom ${zoom.toFixed(
-      1,
-    )}×.`;
+    const zoomLabel =
+      timelineZoom === MIN_TIMELINE_ZOOM
+        ? "fit to video"
+        : `zoom ${timelineZoom.toFixed(1)}×`;
+    timelineStatus.textContent = `${scenes.length} reviewed scenes · ${effectiveBoundaries().length} effective cuts · ${zoomLabel}.`;
   }
 
   function render() {
@@ -347,7 +367,24 @@ export function createReviewWorkspace({
     }
   });
 
-  timelineZoom.addEventListener("input", renderTimeline);
+  function zoomBy(delta) {
+    timelineZoom = clamp(
+      timelineZoom + Number(delta || 0),
+      MIN_TIMELINE_ZOOM,
+      MAX_TIMELINE_ZOOM,
+    );
+    renderTimeline();
+  }
+
+  function fitTimeline() {
+    timelineZoom = MIN_TIMELINE_ZOOM;
+    renderTimeline();
+  }
+
+  timelineZoomOut?.addEventListener("click", () => zoomBy(-TIMELINE_ZOOM_STEP));
+  timelineZoomFit?.addEventListener("click", fitTimeline);
+  timelineZoomIn?.addEventListener("click", () => zoomBy(TIMELINE_ZOOM_STEP));
+  updateZoomControls();
 
   function currentSceneIndex() {
     if (selectedScene != null) {
@@ -448,8 +485,10 @@ export function createReviewWorkspace({
       comparisonSavedOnly = [];
       mediaBySample = new Map();
       presentedSamples = [];
+      timelineZoom = MIN_TIMELINE_ZOOM;
       timelineTrack.replaceChildren();
       timelineTrack.style.width = "100%";
+      updateZoomControls();
       timelineStatus.textContent = "Run an analysis to populate the scene timeline.";
       reviewStatus.textContent = "No review session is active.";
       compareStatus.textContent = "Choose a saved run to compare its detector boundaries.";
@@ -545,12 +584,8 @@ export function createReviewWorkspace({
       selectScene(next);
     },
 
-    zoomBy(delta) {
-      const min = Number(timelineZoom.min || 1);
-      const max = Number(timelineZoom.max || 8);
-      timelineZoom.value = String(clamp(Number(timelineZoom.value) + delta, min, max));
-      renderTimeline();
-    },
+    zoomBy,
+    fitTimeline,
 
     compareWith,
 

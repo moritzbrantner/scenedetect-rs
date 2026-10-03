@@ -3,7 +3,6 @@ description: Report incorrect scene detection or repository behavior.
 title: "[Bug]: "
 labels:
   - bug
-  - needs-triage
 body:
   - type: textarea
     id: summary

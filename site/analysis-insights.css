@@ -34,17 +34,29 @@
 
 .threshold-preview-controls {
   display: grid;
-  grid-template-columns: minmax(12rem, 1fr) auto;
-  gap: 0.8rem 1rem;
-  align-items: end;
+  gap: 0.8rem;
   margin-top: 1rem;
 }
 
-.threshold-preview-field {
+.threshold-preview-editor {
   display: grid;
-  grid-template-columns: minmax(9rem, auto) minmax(12rem, 1fr) auto;
-  gap: 0.75rem;
-  align-items: center;
+  grid-template-columns: minmax(14rem, 1fr) minmax(8rem, 11rem) auto;
+  gap: 0.8rem 1rem;
+  align-items: end;
+}
+
+.threshold-preview-field,
+.threshold-preview-number-field {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.threshold-preview-field > span,
+.threshold-preview-number-field > span,
+.threshold-impact > strong {
+  color: #303836;
+  font-size: 0.86rem;
+  font-weight: 760;
 }
 
 .threshold-preview-field input[type="range"],
@@ -52,7 +64,79 @@
   width: 100%;
 }
 
-.threshold-preview-field output,
+.threshold-preview-number-field input {
+  width: 100%;
+  min-height: 44px;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border: 1px solid #bfc7bd;
+  border-radius: 6px;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+}
+
+.threshold-preview-number-field input:focus {
+  border-color: var(--accent);
+  outline: 2px solid rgba(39, 107, 95, 0.2);
+  outline-offset: 2px;
+}
+
+.threshold-preview-scale {
+  margin: 0;
+}
+
+.threshold-playhead-feedback {
+  display: grid;
+  grid-template-columns: minmax(14rem, 0.8fr) minmax(0, 1.2fr);
+  gap: 1rem;
+  align-items: center;
+  padding: 0.9rem;
+  border: 1px solid var(--line, #d7dce2);
+  border-radius: 0.65rem;
+  background: var(--surface, #fff);
+}
+
+.threshold-playhead-video {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+}
+
+.threshold-playhead-video video {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 0.5rem;
+  background: #101817;
+  object-fit: contain;
+}
+
+.threshold-playhead-video video[hidden] {
+  display: none;
+}
+
+.threshold-playhead-video figcaption {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.threshold-impact {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.threshold-impact p {
+  margin: 0;
+}
+
+.threshold-impact-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
 .scene-similarity-field output {
   min-width: 3.5rem;
   font-variant-numeric: tabular-nums;
@@ -192,16 +276,15 @@
     display: block;
   }
 
-  .threshold-preview-controls {
+  .threshold-preview-editor,
+  .threshold-playhead-feedback {
     grid-template-columns: 1fr;
   }
 
-  .threshold-preview-field,
   .scene-similarity-field {
     grid-template-columns: 1fr auto;
   }
 
-  .threshold-preview-field span,
   .scene-similarity-field span {
     grid-column: 1 / -1;
   }

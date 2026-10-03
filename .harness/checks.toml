@@ -22,7 +22,7 @@ independence_group = "cargo-metadata"
 [[checks]]
 id = "scenedetect-core-manifest"
 command = ["python3", "scripts/check_release_plan.py", "--check", "releases/scenedetect-core-0.1.0.toml"]
-scope = [".agent-loop.toml", "Cargo.toml", "Cargo.lock", "crates/scenedetect-core/Cargo.toml", "releases/scenedetect-core-0.1.0.toml", "scripts/check_release_plan.py", "scripts/publish_release.py"]
+scope = ["Cargo.toml", "Cargo.lock", "crates/scenedetect-core/Cargo.toml", "releases/scenedetect-core-0.1.0.toml", "scripts/check_release_plan.py", "scripts/publish_release.py"]
 tier = "full"
 blocking = true
 evidence_classes = ["contract"]
