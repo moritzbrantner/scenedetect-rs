@@ -19,8 +19,11 @@ env:
   UV_VERSION: 0.11.21
 
 jobs:
-  fast-validation:
-    name: Lint, build, and test
+  agent-check:
+    # Canonical hosted owner of the AGENTS.md handoff gate: runs exactly
+    # `bun run agent:check` on the pull-request head. Keep this job name stable;
+    # it is the check branch protection requires.
+    name: Agent check
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -55,23 +58,11 @@ jobs:
           version: ${{ env.UV_VERSION }}
           enable-cache: false
 
-      - name: Format
-        run: cargo fmt --all -- --check
-
-      - name: Clippy
-        run: cargo clippy --locked --workspace --all-targets -- -D warnings
-
-      - name: WebAssembly build
-        run: cargo build --locked -p scenedetect-wasm --target wasm32-unknown-unknown
-
-      - name: Tests
-        run: cargo test --locked --workspace
-
       - name: Verify PySceneDetect oracle setup
         run: scripts/setup-python-oracle.sh
 
-      - name: PySceneDetect parity
-        run: tests/parity/run-all.sh
+      - name: Agent check
+        run: bun run agent:check
 
   security-validation:
     name: Dependency security policy
