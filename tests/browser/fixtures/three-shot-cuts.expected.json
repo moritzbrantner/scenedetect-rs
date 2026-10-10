@@ -1,0 +1,16 @@
+{
+  "fixture": "three-shot-cuts.webm",
+  "generator": "scripts/generate-browser-fixture.sh",
+  "duration_seconds": 9.3,
+  "hard_cut_seconds": [3.1, 6.2],
+  "workbench_defaults": {
+    "detector": "content",
+    "analysis_fps": 6
+  },
+  "expected": {
+    "sample_count": 56,
+    "scene_count": 3,
+    "scene_start_samples": [0, 19, 38],
+    "boundary_samples": [19, 38]
+  }
+}
