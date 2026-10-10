@@ -65,38 +65,42 @@ jobs:
         run: bun run agent:check
 
   native-fresh-clone:
-    # Fresh-clone native path (#151): Rust + ffmpeg only. The job runs in a
-    # minimal Rust image that has no Python, pip, uv, Node.js or npm, so a
-    # hidden dependency on any of them fails the job.
+    # Fresh-clone native path (#151): Rust + ffmpeg only. The checkout runs on
+    # the host; the check runs in a separately started minimal Rust container
+    # that mounts only the checkout (no runner tool or Node mounts) and has no
+    # Python, pip, uv, Node.js, npm or Bun, so a hidden dependency fails.
     name: Native fresh clone
     runs-on: ubuntu-latest
-    container:
-      image: rust:1.98.1-slim-trixie@sha256:4cd829461bd5c4d511c32e269da9cb8929223b666519d8004e35fc8d1d771ab7
     permissions:
       contents: read
+    env:
+      NATIVE_IMAGE: rust:1.98.1-slim-trixie@sha256:4cd829461bd5c4d511c32e269da9cb8929223b666519d8004e35fc8d1d771ab7
     steps:
       - uses: actions/checkout@v7
 
-      - name: Install ffmpeg
+      - name: Native check in an isolated container
         run: |
-          apt-get update
-          apt-get install -y --no-install-recommends ffmpeg
-
-      - name: Assert forbidden runtimes are absent
-        run: |
-          for tool in python python3 pip pip3 uv uvx node npm npx bun; do
-            if command -v "$tool" >/dev/null 2>&1; then
-              echo "native fresh clone image unexpectedly provides $tool" >&2
-              exit 1
-            fi
-          done
-          if ls /usr/bin/python3* /usr/local/bin/python3* >/dev/null 2>&1; then
-            echo "native fresh clone image unexpectedly provides a Python interpreter" >&2
-            exit 1
-          fi
-
-      - name: Native check
-        run: scripts/native-check.sh
+          docker run --rm \
+            --volume "$GITHUB_WORKSPACE:/work" \
+            --workdir /work \
+            "$NATIVE_IMAGE" \
+            bash -euo pipefail -c '
+              apt-get update
+              apt-get install -y --no-install-recommends ffmpeg
+              for tool in python python3 pip pip3 uv uvx node nodejs npm npx bun; do
+                if command -v "$tool" >/dev/null 2>&1; then
+                  echo "native fresh clone image unexpectedly provides $tool" >&2
+                  exit 1
+                fi
+              done
+              if compgen -G "/usr/bin/python3*" >/dev/null || compgen -G "/usr/local/bin/python3*" >/dev/null \
+                || compgen -G "/usr/bin/node*" >/dev/null || test -e /__e; then
+                echo "native fresh clone container exposes a forbidden runtime" >&2
+                exit 1
+              fi
+              git config --global --add safe.directory /work 2>/dev/null || true
+              scripts/native-check.sh
+            '
 
   security-validation:
     name: Dependency security policy
