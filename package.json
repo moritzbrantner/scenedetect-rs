@@ -3,6 +3,7 @@
   "private": true,
   "scripts": {
     "prepack": "echo 'This repository root is not publishable.' >&2; exit 1",
+    "native:check": "scripts/native-check.sh",
     "tdd:rust": "cargo test --locked --workspace",
     "tdd:core": "cargo test --locked -p scenedetect-core",
     "tdd:cli": "cargo test --locked -p scenedetect-cli --test cli",

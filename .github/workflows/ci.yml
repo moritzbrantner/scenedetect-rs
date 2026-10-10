@@ -64,6 +64,39 @@ jobs:
       - name: Agent check
         run: bun run agent:check
 
+  native-fresh-clone:
+    # Fresh-clone native path (#151): Rust + ffmpeg only. Python and uv are
+    # shadowed by failing stubs so a hidden dependency on them fails this job.
+    name: Native fresh clone
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+
+      - name: Install ffmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Shadow Python and uv
+        run: |
+          stubs="$RUNNER_TEMP/no-python"
+          mkdir -p "$stubs"
+          for tool in python python3 uv uvx; do
+            printf '#!/bin/sh\necho "native fresh clone must not need %s" >&2\nexit 127\n' "$tool" > "$stubs/$tool"
+            chmod +x "$stubs/$tool"
+          done
+          echo "$stubs" >> "$GITHUB_PATH"
+
+      - name: Native check
+        run: scripts/native-check.sh
+
   security-validation:
     name: Dependency security policy
     runs-on: ubuntu-latest

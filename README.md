@@ -100,9 +100,26 @@ Flexible PySceneDetect command ordering, such as placing global options after `d
 
 ## Development
 
+### Native path (fresh clone)
+
+A fresh clone needs only a Rust toolchain plus `ffmpeg`/`ffprobe` on `PATH`. No Python, uv, Bun packages or PySceneDetect are required:
+
+```sh
+cargo build --locked -p scenedetect-cli
+cargo test --locked --workspace
+scripts/native-check.sh   # build, all Rust tests, and native Content detection on a generated hard cut
+```
+
+The `Native fresh clone` CI job runs `scripts/native-check.sh` on a clean checkout with Python and uv shadowed by failing stubs, so a hidden dependency on them fails the job.
+
+### Full handoff gate (optional tooling)
+
+PySceneDetect parity, the local oracle, quality corpus checks and site checks need Bun, Python and the uv-managed PySceneDetect oracle (`scripts/setup-python-oracle.sh`). They stay in the handoff gate that `AGENTS.md` requires:
+
 ```sh
 bun install
-bun run tdd:check
+bun run tdd:check   # = bun run agent:check
+bun run tdd:parity  # PySceneDetect parity on its own
 ```
 
 Focused commands:
