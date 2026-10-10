@@ -27,9 +27,14 @@ if [ -n "$untracked" ]; then
   exit 1
 fi
 
-cargo build --locked -p scenedetect-wasm --target wasm32-unknown-unknown --release
+# Build into a fresh target directory so no ignored, pre-existing Cargo output
+# (a stale or modified artifact that Cargo would report as fresh) can become an
+# input of the published module.
+BUILD_TARGET="$(mktemp -d)"
+trap 'rm -rf "$BUILD_TARGET"' EXIT
+CARGO_TARGET_DIR="$BUILD_TARGET" cargo build --locked -p scenedetect-wasm --target wasm32-unknown-unknown --release
 mkdir -p site/wasm
-cp target/wasm32-unknown-unknown/release/scenedetect_wasm.wasm "$WASM_OUT"
+cp "$BUILD_TARGET/wasm32-unknown-unknown/release/scenedetect_wasm.wasm" "$WASM_OUT"
 test -s "$WASM_OUT"
 echo "SceneDetect browser WASM bytes: $(wc -c < "$WASM_OUT")"
 
