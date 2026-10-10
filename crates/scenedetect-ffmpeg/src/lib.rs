@@ -177,7 +177,7 @@ impl FfmpegFrameSource {
                 "v:0",
                 "-show_frames",
                 "-show_entries",
-                "frame=best_effort_timestamp,pkt_duration",
+                "frame=best_effort_timestamp,duration,pkt_duration",
                 "-of",
                 "compact=p=0:nk=0",
             ])
@@ -388,7 +388,10 @@ fn read_frame_timing(
 
 fn parse_frame_timing(value: &str, time_base: TimeBase) -> FrameTiming {
     let mut presentation_time = None;
+    // ffprobe 7 removed the frame `pkt_duration` entry in favor of `duration`
+    // (available since ffmpeg 6); read either and prefer `duration`.
     let mut duration = None;
+    let mut packet_duration = None;
 
     for field in value.split('|') {
         let Some((name, raw_value)) = field.split_once('=') else {
@@ -399,8 +402,11 @@ fn parse_frame_timing(value: &str, time_base: TimeBase) -> FrameTiming {
             "best_effort_timestamp" => {
                 presentation_time = parsed.map(|ticks| MediaTime::new(ticks, time_base));
             }
-            "pkt_duration" => {
+            "duration" => {
                 duration = parsed.map(|ticks| MediaTime::new(ticks, time_base));
+            }
+            "pkt_duration" => {
+                packet_duration = parsed.map(|ticks| MediaTime::new(ticks, time_base));
             }
             _ => {}
         }
@@ -408,7 +414,7 @@ fn parse_frame_timing(value: &str, time_base: TimeBase) -> FrameTiming {
 
     FrameTiming {
         presentation_time,
-        duration,
+        duration: duration.or(packet_duration),
     }
 }
 
@@ -471,6 +477,21 @@ mod tests {
         assert_eq!(timing.presentation_time.unwrap().ticks, 125);
         assert_eq!(timing.duration.unwrap().ticks, 40);
         assert!((timing.presentation_time.unwrap().seconds() - 0.125).abs() < 1.0e-12);
+
+        // ffprobe >= 7 reports the frame duration only as `duration`.
+        let timing = parse_frame_timing("best_effort_timestamp=125|duration=40", time_base);
+        assert_eq!(timing.duration.unwrap().ticks, 40);
+        // When both are present, `duration` wins over the deprecated entry.
+        let timing = parse_frame_timing(
+            "best_effort_timestamp=125|duration=40|pkt_duration=N/A",
+            time_base,
+        );
+        assert_eq!(timing.duration.unwrap().ticks, 40);
+        let timing = parse_frame_timing(
+            "best_effort_timestamp=125|pkt_duration=40|duration=41",
+            time_base,
+        );
+        assert_eq!(timing.duration.unwrap().ticks, 41);
     }
 
     #[test]
