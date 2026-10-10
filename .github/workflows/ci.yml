@@ -64,6 +64,46 @@ jobs:
       - name: Agent check
         run: bun run agent:check
 
+  native-fresh-clone:
+    # Fresh-clone native path (#151): Rust + ffmpeg only. The checkout runs on
+    # the host; the check runs in a separately started minimal Rust container
+    # that mounts only the checkout (no runner tool or Node mounts) and has no
+    # Python, pip, uv, Node.js, npm or Bun, so a hidden dependency fails.
+    # Bookworm (ffmpeg 5.1) rather than trixie: ffmpeg 7.1's Matroska muxer
+    # omits packet durations, which the VFR timeline fixture relies on (#157).
+    name: Native fresh clone
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      NATIVE_IMAGE: rust:1.98.1-slim-bookworm@sha256:ff521445a372125ed4f76e1453a1f8098f2d05332d1601d30db1c1f62757e730
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Native check in an isolated container
+        run: |
+          docker run --rm \
+            --volume "$GITHUB_WORKSPACE:/work" \
+            --workdir /work \
+            "$NATIVE_IMAGE" \
+            bash -euo pipefail -c '
+              apt-get update
+              apt-get install -y --no-install-recommends ffmpeg
+              for tool in python python3 pip pip3 uv uvx node nodejs npm npx bun; do
+                if command -v "$tool" >/dev/null 2>&1; then
+                  echo "native fresh clone image unexpectedly provides $tool" >&2
+                  exit 1
+                fi
+              done
+              if compgen -G "/usr/bin/python3*" >/dev/null || compgen -G "/usr/local/bin/python3*" >/dev/null \
+                || compgen -G "/usr/bin/node*" >/dev/null || test -e /__e; then
+                echo "native fresh clone container exposes a forbidden runtime" >&2
+                exit 1
+              fi
+              git config --global --add safe.directory /work 2>/dev/null || true
+              scripts/native-check.sh
+            '
+
   security-validation:
     name: Dependency security policy
     runs-on: ubuntu-latest

@@ -30,6 +30,11 @@ Use this loop:
 2. `GREEN`: implement the smallest change that passes that test.
 3. `REFACTOR`: clean up only after the test suite is green.
 
+Native path first: a fresh clone builds and tests with only Rust and `ffmpeg`
+(`scripts/native-check.sh`, also `bun run native:check`). The parity, oracle,
+quality and site tools below are optional for local work, but remain part of
+the `agent:check` handoff gate.
+
 Focused commands:
 
 ```sh
