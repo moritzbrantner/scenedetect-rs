@@ -32,6 +32,14 @@ REQUIRED_OWNED = {
 }
 DEPENDENCY_SECTIONS = ("dependencies", "dev-dependencies", "build-dependencies")
 SOURCE_SPECIFIER_PREFIXES = ("file:", "link:", "portal:")
+# The only transitional exception ADR 0011 accepts. It is pinned here so that editing the
+# policy file this check protects cannot widen the exception.
+PINNED_EXCEPTIONS = {
+    "scenedetect-wasm": {
+        "allowedPackages": ["moenarch-image-analysis-processing"],
+        "requiresPublishFalse": True,
+    },
+}
 
 
 @dataclass(frozen=True)
@@ -92,12 +100,27 @@ def is_forbidden(package: str, names: set[str], prefixes: tuple[str, ...]) -> bo
     return package in names or package.startswith(prefixes)
 
 
+def package_manifests(root: Path, workspace: dict[str, Any]) -> list[Path]:
+    """Every package manifest of the workspace: the root package, if any, and every member."""
+    manifests: set[Path] = set()
+    if "package" in workspace:
+        manifests.add(root / "Cargo.toml")
+    settings = workspace.get("workspace", {})
+    excluded = {(root / pattern).resolve() for pattern in settings.get("exclude", [])}
+    for pattern in settings.get("members", []):
+        for member in root.glob(pattern):
+            manifest = member / "Cargo.toml"
+            if manifest.is_file() and member.resolve() not in excluded:
+                manifests.add(manifest)
+    return sorted(manifests)
+
+
 def crate_dependencies(root: Path) -> tuple[list[Dependency], dict[str, dict[str, Any]]]:
     workspace = tomllib.loads((root / "Cargo.toml").read_text())
     workspace_dependencies = workspace.get("workspace", {}).get("dependencies", {})
     dependencies: list[Dependency] = []
     packages: dict[str, dict[str, Any]] = {}
-    for manifest_path in sorted((root / "crates").glob("*/Cargo.toml")):
+    for manifest_path in package_manifests(root, workspace):
         manifest = tomllib.loads(manifest_path.read_text())
         crate = manifest["package"]["name"]
         packages[crate] = manifest["package"]
@@ -132,6 +155,20 @@ def dependency_errors(contract: dict[str, Any], root: Path) -> list[str]:
     exceptions = {
         exception["crate"]: exception for exception in contract.get("transitionalExceptions", [])
     }
+    declared = {
+        crate: {
+            "allowedPackages": sorted(exception.get("allowedPackages", [])),
+            "requiresPublishFalse": exception.get("requiresPublishFalse"),
+        }
+        for crate, exception in exceptions.items()
+    }
+    if declared != PINNED_EXCEPTIONS or len(exceptions) != len(contract.get("transitionalExceptions", [])):
+        errors.append(
+            "transitional exceptions must be exactly the pinned scenedetect-wasm -> "
+            "moenarch-image-analysis-processing exception with requiresPublishFalse; "
+            "widening it needs an ADR and a change to this check"
+        )
+        exceptions = {crate: {**PINNED_EXCEPTIONS[crate], "crate": crate} for crate in PINNED_EXCEPTIONS}
     dependencies, packages = crate_dependencies(root)
     for crate, exception in exceptions.items():
         package = packages.get(crate)

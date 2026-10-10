@@ -126,6 +126,69 @@ class SceneBoundaryTests(unittest.TestCase):
             errors,
         )
 
+    def test_inherited_renamed_workspace_dependency_is_resolved(self) -> None:
+        cargo = self.root / "Cargo.toml"
+        cargo.write_text(
+            cargo.read_text().replace(
+                "[workspace.dependencies]\n",
+                '[workspace.dependencies]\nscene-corpus = { package = "youtube-corpus", version = "0.1" }\n',
+                1,
+            )
+        )
+        self.append_dependency("scenedetect-core", "scene-corpus = { workspace = true }")
+        errors = boundary.validate(self.root)
+        self.assertTrue(any("scenedetect-core depends on youtube-corpus" in e for e in errors), errors)
+
+    def test_target_specific_dependency_is_checked(self) -> None:
+        path = self.manifest("scenedetect-cli")
+        path.write_text(
+            path.read_text()
+            + '\n[target.\'cfg(unix)\'.dependencies]\n'
+            + 'proc = { package = "moenarch-image-analysis-processing", version = "0.1.0" }\n'
+        )
+        errors = boundary.validate(self.root)
+        self.assertTrue(
+            any("scenedetect-cli depends on moenarch-image-analysis-processing" in e for e in errors),
+            errors,
+        )
+
+    def test_workspace_members_outside_crates_are_checked(self) -> None:
+        helper = self.root / "tools" / "helper"
+        helper.mkdir(parents=True)
+        (helper / "Cargo.toml").write_text(
+            '[package]\nname = "scene-helper"\nversion = "0.1.0"\nedition = "2021"\n\n'
+            '[dependencies]\nyoutube-corpus = "0.1"\n'
+        )
+        cargo = self.root / "Cargo.toml"
+        cargo.write_text(cargo.read_text().replace("members = [\n", 'members = [\n    "tools/*",\n', 1))
+        errors = boundary.validate(self.root)
+        self.assertTrue(any("scene-helper depends on youtube-corpus" in e for e in errors), errors)
+
+    def test_contract_edits_cannot_widen_the_exception(self) -> None:
+        widenings = [
+            lambda exception: exception["allowedPackages"].append("moenarch-image-analysis-ocr"),
+            lambda exception: exception.update(requiresPublishFalse=False),
+        ]
+        for widen in widenings:
+            document = self.contract()
+            widen(document["transitionalExceptions"][0])
+            self.write_contract(document)
+            errors = boundary.validate(self.root)
+            self.assertTrue(any("must be exactly the pinned" in e for e in errors), errors)
+        document = self.contract()
+        document["transitionalExceptions"].append(
+            {
+                "crate": "scenedetect-cli",
+                "requiresPublishFalse": True,
+                "allowedPackages": ["youtube-corpus"],
+            }
+        )
+        self.write_contract(document)
+        self.append_dependency("scenedetect-cli", 'youtube-corpus = "0.1"')
+        errors = boundary.validate(self.root)
+        self.assertTrue(any("must be exactly the pinned" in e for e in errors), errors)
+        self.assertTrue(any("scenedetect-cli depends on youtube-corpus" in e for e in errors), errors)
+
     def test_canonical_scene_ownership_cannot_be_dropped(self) -> None:
         document = self.contract()
         document["ownedCapabilities"].remove("scene-boundary-detection-algorithms")
