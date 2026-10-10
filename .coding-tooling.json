@@ -15,6 +15,6 @@
   },
   "merge": {
     "authority": "hosted",
-    "requiredChecks": ["Lint, build, and test", "Dependency security policy"]
+    "requiredChecks": ["Agent check", "Dependency security policy"]
   }
 }
