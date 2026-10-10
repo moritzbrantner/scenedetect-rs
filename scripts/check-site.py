@@ -37,6 +37,7 @@ BENCHMARK_PATH = SITE_DIR / "data" / "benchmarks.json"
 QUALITY_PATH = SITE_DIR / "data" / "quality.json"
 PARITY_CASES_PATH = ROOT_DIR / "tests" / "parity" / "cases.toml"
 PAGES_WORKFLOW = ROOT_DIR / ".github" / "workflows" / "pages.yml"
+PAGES_BUILD_SCRIPT = ROOT_DIR / "scripts" / "build-pages.sh"
 
 
 class SiteCheckError(Exception):
@@ -370,8 +371,10 @@ def check_pages_workflow() -> None:
         "id-token: write",
         "path: site",
         "rustup target add wasm32-unknown-unknown",
-        "cargo build --locked -p scenedetect-wasm --target wasm32-unknown-unknown --release",
+        "scripts/build-pages.sh",
         "site/wasm/scenedetect_wasm.wasm",
+        "name: Scene lab browser acceptance",
+        "bun run tdd:browser",
         "node --check site/app.js",
         "node --check site/capabilities.js",
         "node --check site/quality.js",
@@ -388,6 +391,14 @@ def check_pages_workflow() -> None:
     for value in required:
         if value not in workflow:
             raise SiteCheckError(f"pages workflow missing {value}")
+    build_script = read_text(PAGES_BUILD_SCRIPT)
+    for value in (
+        "cargo build --locked -p scenedetect-wasm --target wasm32-unknown-unknown --release",
+        "site/wasm/scenedetect_wasm.wasm",
+        "git ls-files --others -- site",
+    ):
+        if value not in build_script:
+            raise SiteCheckError(f"scripts/build-pages.sh missing {value}")
     forbidden = [
         "--experimental-default-type",
         "run-hyperfine.sh",

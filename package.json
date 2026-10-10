@@ -11,6 +11,8 @@
     "tdd:local-oracle": "tests/local-oracle/test-runner.sh && python3 tests/local-oracle/test-formats.py && python3 tests/local-oracle/test-surfaces.py",
     "tdd:quality": "python3 tests/quality/test-runner.py && python3 tests/quality/run.py --manifest tests/quality/corpus.example.toml --validate-only && python3 tests/quality/run.py --manifest tests/quality/corpus.generated.toml --validate-only",
     "tdd:site": "python3 scripts/update-site-benchmarks.py --check-fixture && python3 scripts/update-site-quality.py --check-fixture && python3 scripts/check-site.py",
+    "tdd:browser": "playwright test --config tests/browser/playwright.config.mjs --workers=1",
+    "pages:build": "scripts/build-pages.sh",
     "tdd:boundary": "python3 scripts/test_check_scene_boundary.py && python3 scripts/check-scene-boundary.py",
     "tdd:fmt": "cargo fmt --all -- --check",
     "tdd:wasm": "cargo build --locked -p scenedetect-wasm --target wasm32-unknown-unknown",
@@ -31,7 +33,8 @@
     "agent:eval:report": "scripts/moonlight.sh eval report --storage-path .moonlight/agent-runs.jsonl --format markdown"
   },
   "devDependencies": {
-    "@moritzbrantner/moonlight": "^0.1.2"
+    "@moritzbrantner/moonlight": "^0.1.2",
+    "@playwright/test": "1.63.0"
   },
   "lint-staged": {
     "*.{json,md,toml,yml,yaml}": "prettier --ignore-unknown --write",

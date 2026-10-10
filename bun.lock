@@ -6,10 +6,17 @@
       "name": "scenedetect-rs",
       "devDependencies": {
         "@moritzbrantner/moonlight": "^0.1.2",
+        "@playwright/test": "1.63.0",
       },
     },
   },
   "packages": {
     "@moritzbrantner/moonlight": ["@moritzbrantner/moonlight@0.1.2", "", { "optionalDependencies": { "@moritzbrantner/moonlight-darwin-arm64": "0.1.2", "@moritzbrantner/moonlight-darwin-x64": "0.1.2", "@moritzbrantner/moonlight-linux-arm64-gnu": "0.1.2", "@moritzbrantner/moonlight-linux-x64-gnu": "0.1.2", "@moritzbrantner/moonlight-win32-x64-msvc": "0.1.2" }, "bin": { "moonlight": "bin/moonlight.js", "moonlight-cli": "bin/moonlight.js" } }, "sha512-H6oy5ZaDc0oKMjYYRyILqZSlP1JnbWMo1Cxi65iEsxXisHN11+1UEHYr/oWNeM3oMtweFVzT7K2h62QYbtSgvA=="],
+
+    "@playwright/test": ["@playwright/test@1.63.0", "", { "dependencies": { "playwright": "1.63.0" }, "bin": { "playwright": "cli.js" } }, "sha512-oxMK4vllB9RK5NQ2l1pq1IfOf2AvnEuj/vYGDj0H2nMtmtZpKtCwt/l00GEO6xjGfpBNAvjovvYdCm50dRQkpQ=="],
+
+    "playwright": ["playwright@1.63.0", "", { "dependencies": { "playwright-core": "1.63.0" }, "bin": { "playwright": "cli.js" } }, "sha512-+7ziBLidS4NaNCdt57SUDT+wYmmd5fmiQejUic/kb+YsYSCPyOOE9sebzMjNmQrsnNpDJqd4WHvV/8lfKfUDUg=="],
+
+    "playwright-core": ["playwright-core@1.63.0", "", { "bin": { "playwright-core": "cli.js" } }, "sha512-rYCsBF/M5HjUch52bbtVONEFjv6Xu8sm8h72dNlR5bzIE1fvC/bxgspzkjSfU+MweEMmPM8KJebG6nnyxo5mCg=="],
   }
 }

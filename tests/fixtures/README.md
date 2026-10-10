@@ -36,3 +36,9 @@ Generated fixtures:
 Do not commit the generated media. Once a quality finding becomes a fixed
 behavioral contract, keep the generating recipe and normal parity/regression
 test rather than checking in the video artifact.
+
+Exception: the browser-acceptance fixture `tests/browser/fixtures/three-shot-cuts.webm`
+(about 3 KB, VP9 WebM so headless Chromium can decode it) is committed, because
+the Pages browser acceptance (`bun run tdd:browser`) must run from a fresh clone
+without ffmpeg. Its recipe is `scripts/generate-browser-fixture.sh` and its
+expected Scene Boundaries are in `tests/browser/fixtures/three-shot-cuts.expected.json`.
