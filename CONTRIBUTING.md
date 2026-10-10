@@ -56,3 +56,10 @@ Final agent handoff requires:
 ```sh
 bun run agent:check
 ```
+
+The `Agent check` job in `.github/workflows/ci.yml` runs exactly this command
+on every pull-request head and on `main`, so hosted evidence and the local
+handoff gate are the same contract (format, Clippy, WebAssembly build, Rust
+tests, local oracle, PySceneDetect parity, quality validation and site checks).
+`Dependency security policy` runs alongside it. `Performance evidence`
+(Moonlight session profile) stays report-only for timing.
