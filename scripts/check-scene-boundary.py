@@ -102,17 +102,16 @@ def is_forbidden(package: str, names: set[str], prefixes: tuple[str, ...]) -> bo
 
 def package_manifests(root: Path, workspace: dict[str, Any]) -> list[Path]:
     """Every package manifest of the workspace: the root package, if any, every
-    listed member, and, as Cargo does, every in-tree package reached through a
-    path dependency, unless excluded."""
+    listed member, and every in-tree package reached through a path dependency.
+    `exclude` is deliberately ignored: inspecting an excluded package is
+    harmless for a boundary check, while skipping a real member is not."""
     resolved_root = root.resolve()
     settings = workspace.get("workspace", {})
-    excluded = [(root / pattern).resolve() for pattern in settings.get("exclude", [])]
 
     def admissible(directory: Path) -> bool:
         directory = directory.resolve()
         inside = directory == resolved_root or resolved_root in directory.parents
-        hidden = any(directory == path or path in directory.parents for path in excluded)
-        return inside and not hidden and (directory / "Cargo.toml").is_file()
+        return inside and (directory / "Cargo.toml").is_file()
 
     pending: list[Path] = []
     if "package" in workspace:
