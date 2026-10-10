@@ -126,6 +126,22 @@ export function createKeyboardController({ container, actions }) {
   let detachRuntime = () => {};
   let destroyed = false;
   const fields = new Map();
+  let resetButton = null;
+  let runtimeUnavailable = false;
+
+  const isDefault = () =>
+    Object.keys(DEFAULT_KEY_BINDINGS).every((command) => bindings[command] === DEFAULT_KEY_BINDINGS[command]);
+
+  // Reset only does something when a binding differs from its default, and no control works
+  // without the shared runtime, so neither state may offer an enabled control.
+  const updateControls = () => {
+    if (resetButton) {
+      resetButton.disabled = runtimeUnavailable || isDefault();
+    }
+    for (const input of fields.values()) {
+      input.disabled = runtimeUnavailable;
+    }
+  };
 
   const updateRuntimeConfiguration = () => {
     runtimeController?.updateConfiguration(REGISTRY, profileFromBindings(bindings));
@@ -163,6 +179,7 @@ export function createKeyboardController({ container, actions }) {
         updateRuntimeConfiguration();
         input.value = key;
         input.blur();
+        updateControls();
       });
       label.append(title, input);
       grid.append(label);
@@ -180,9 +197,12 @@ export function createKeyboardController({ container, actions }) {
       for (const [command, input] of fields) {
         input.value = bindings[command];
       }
+      updateControls();
     });
+    resetButton = reset;
 
     container.append(grid, reset);
+    updateControls();
   }
 
   render();
@@ -215,6 +235,14 @@ export function createKeyboardController({ container, actions }) {
     (error) => {
       console.error("Failed to load shared input-bindings runtime", error);
       container.dataset.keyboardRuntime = "unavailable";
+      runtimeUnavailable = true;
+      updateControls();
+      const notice = document.createElement("p");
+      notice.className = "keyboard-unavailable";
+      notice.setAttribute("role", "status");
+      notice.textContent =
+        "Keyboard shortcuts are unavailable: the shared input-bindings runtime could not be loaded.";
+      container.prepend(notice);
     },
   );
 
