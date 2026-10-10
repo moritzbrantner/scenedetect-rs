@@ -69,12 +69,14 @@ jobs:
     # the host; the check runs in a separately started minimal Rust container
     # that mounts only the checkout (no runner tool or Node mounts) and has no
     # Python, pip, uv, Node.js, npm or Bun, so a hidden dependency fails.
+    # Bookworm (ffmpeg 5.1) rather than trixie: ffmpeg 7.1's Matroska muxer
+    # omits packet durations, which the VFR timeline fixture relies on (#157).
     name: Native fresh clone
     runs-on: ubuntu-latest
     permissions:
       contents: read
     env:
-      NATIVE_IMAGE: rust:1.98.1-slim-trixie@sha256:4cd829461bd5c4d511c32e269da9cb8929223b666519d8004e35fc8d1d771ab7
+      NATIVE_IMAGE: rust:1.98.1-slim-bookworm@sha256:ff521445a372125ed4f76e1453a1f8098f2d05332d1601d30db1c1f62757e730
     steps:
       - uses: actions/checkout@v7
 
