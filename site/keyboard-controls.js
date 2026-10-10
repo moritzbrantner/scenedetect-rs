@@ -231,10 +231,15 @@ export function createKeyboardController({ container, actions }) {
         ignoreTextEntry: true,
         mode: "logical",
       });
-    },
-    (error) => {
+    })
+    // Any startup failure (import, missing exports, constructor or attach errors) leaves the
+    // shortcuts without a runtime, so all of them reach the unavailable state.
+    .catch((error) => {
       console.error("Failed to load shared input-bindings runtime", error);
       container.dataset.keyboardRuntime = "unavailable";
+      detachRuntime();
+      detachRuntime = () => {};
+      runtimeController = null;
       runtimeUnavailable = true;
       updateControls();
       const notice = document.createElement("p");
@@ -243,8 +248,7 @@ export function createKeyboardController({ container, actions }) {
       notice.textContent =
         "Keyboard shortcuts are unavailable: the shared input-bindings runtime could not be loaded.";
       container.prepend(notice);
-    },
-  );
+    });
 
   return {
     ready,

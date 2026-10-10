@@ -11,6 +11,22 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WASM_OUT="site/wasm/scenedetect_wasm.wasm"
 cd "$ROOT_DIR"
 
+# The WASM module is generated from the Rust sources, so the whole tree (not
+# only site/) must match HEAD before building: no modified tracked files and no
+# untracked, non-ignored files. Ignored build output (target/, node_modules/)
+# is not a source.
+if ! git diff --quiet HEAD; then
+  echo "Working tree differs from HEAD; the Pages build needs committed sources:" >&2
+  git diff --stat HEAD >&2
+  exit 1
+fi
+untracked="$(git ls-files --others --exclude-standard)"
+if [ -n "$untracked" ]; then
+  echo "Untracked files would feed the Pages build:" >&2
+  echo "$untracked" >&2
+  exit 1
+fi
+
 cargo build --locked -p scenedetect-wasm --target wasm32-unknown-unknown --release
 mkdir -p site/wasm
 cp target/wasm32-unknown-unknown/release/scenedetect_wasm.wasm "$WASM_OUT"

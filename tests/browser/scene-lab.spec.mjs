@@ -276,11 +276,9 @@ test("keyboard shortcuts report an unavailable runtime instead of offering dead 
 
   const panel = page.locator(".keyboard-panel");
   await expect(panel).toBeVisible();
-  if (runtimeRequests.length === 0) {
-    // The workbench no longer depends on another origin for shortcuts; the
-    // controls are then self-contained and this unavailable path is moot.
-    return;
-  }
+  // The runtime is loaded from another origin; if that request ever disappears,
+  // this test must be rewritten to prove the replacement works, not skipped.
+  expect(runtimeRequests.length, "the shortcut runtime request was blocked").toBeGreaterThan(0);
   await expect(panel).toContainText(/unavailable/i);
   const shortcutInputs = page.locator("#keyboard-bindings input");
   for (let index = 0; index < (await shortcutInputs.count()); index += 1) {
