@@ -110,7 +110,7 @@ cargo test --locked --workspace
 scripts/native-check.sh   # build, all Rust tests, and native Content detection on a generated hard cut
 ```
 
-The `Native fresh clone` CI job runs `scripts/native-check.sh` on a clean checkout with Python and uv shadowed by failing stubs, so a hidden dependency on them fails the job.
+The `Native fresh clone` CI job runs `scripts/native-check.sh` on a clean checkout inside a minimal Rust image without Python, pip, uv, Node.js, npm or Bun, so a hidden dependency on any of them fails the job.
 
 ### Full handoff gate (optional tooling)
 

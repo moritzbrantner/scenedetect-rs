@@ -28,16 +28,13 @@ ffmpeg -y -v error \
   -c:v ffv1 \
   "$VIDEO"
 
-target/debug/scenedetect-rs detect content -i "$VIDEO" --threshold 20 --min-scene-len 1
+target/debug/scenedetect-rs detect content -i "$VIDEO" --threshold 20 --min-scene-len 1 --progress never --quiet
 
-STATS="$WORK_DIR/native-hard-cut.scenedetect.json"
-if [ ! -s "$STATS" ]; then
-  echo "native-check: detection stats were not written to $STATS" >&2
-  exit 1
-fi
-ACCEPTED="$(grep -o '"decision": *"accepted"' "$STATS" | wc -l)"
-if [ "$ACCEPTED" -ne 1 ]; then
-  echo "native-check: expected exactly one accepted Scene Boundary on the hard cut, found $ACCEPTED" >&2
+# Read the boundary count back through the CLI's own artifact reader.
+SUMMARY="$(target/debug/scenedetect-rs inspect -i "$VIDEO")"
+if ! grep -qx 'Scene boundaries: 1' <<<"$SUMMARY"; then
+  echo "native-check: expected exactly one Scene Boundary on the hard cut; inspect reported:" >&2
+  echo "$SUMMARY" >&2
   exit 1
 fi
 echo "native-check: native build, tests and hard-cut detection passed"

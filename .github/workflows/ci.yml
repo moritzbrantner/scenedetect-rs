@@ -65,34 +65,35 @@ jobs:
         run: bun run agent:check
 
   native-fresh-clone:
-    # Fresh-clone native path (#151): Rust + ffmpeg only. Python and uv are
-    # shadowed by failing stubs so a hidden dependency on them fails this job.
+    # Fresh-clone native path (#151): Rust + ffmpeg only. The job runs in a
+    # minimal Rust image that has no Python, pip, uv, Node.js or npm, so a
+    # hidden dependency on any of them fails the job.
     name: Native fresh clone
     runs-on: ubuntu-latest
+    container:
+      image: rust:1.98.1-slim-trixie@sha256:4cd829461bd5c4d511c32e269da9cb8929223b666519d8004e35fc8d1d771ab7
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@v7
 
-      - name: Install Rust
-        run: |
-          rustup toolchain install stable --profile minimal
-          rustup default stable
-
       - name: Install ffmpeg
         run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg
+          apt-get update
+          apt-get install -y --no-install-recommends ffmpeg
 
-      - name: Shadow Python and uv
+      - name: Assert forbidden runtimes are absent
         run: |
-          stubs="$RUNNER_TEMP/no-python"
-          mkdir -p "$stubs"
-          for tool in python python3 uv uvx; do
-            printf '#!/bin/sh\necho "native fresh clone must not need %s" >&2\nexit 127\n' "$tool" > "$stubs/$tool"
-            chmod +x "$stubs/$tool"
+          for tool in python python3 pip pip3 uv uvx node npm npx bun; do
+            if command -v "$tool" >/dev/null 2>&1; then
+              echo "native fresh clone image unexpectedly provides $tool" >&2
+              exit 1
+            fi
           done
-          echo "$stubs" >> "$GITHUB_PATH"
+          if ls /usr/bin/python3* /usr/local/bin/python3* >/dev/null 2>&1; then
+            echo "native fresh clone image unexpectedly provides a Python interpreter" >&2
+            exit 1
+          fi
 
       - name: Native check
         run: scripts/native-check.sh
