@@ -101,17 +101,58 @@ def is_forbidden(package: str, names: set[str], prefixes: tuple[str, ...]) -> bo
 
 
 def package_manifests(root: Path, workspace: dict[str, Any]) -> list[Path]:
-    """Every package manifest of the workspace: the root package, if any, and every member."""
-    manifests: set[Path] = set()
-    if "package" in workspace:
-        manifests.add(root / "Cargo.toml")
+    """Every package manifest of the workspace: the root package, if any, every
+    listed member, and, as Cargo does, every in-tree package reached through a
+    path dependency, unless excluded."""
+    resolved_root = root.resolve()
     settings = workspace.get("workspace", {})
-    excluded = {(root / pattern).resolve() for pattern in settings.get("exclude", [])}
+    excluded = [(root / pattern).resolve() for pattern in settings.get("exclude", [])]
+
+    def admissible(directory: Path) -> bool:
+        directory = directory.resolve()
+        inside = directory == resolved_root or resolved_root in directory.parents
+        hidden = any(directory == path or path in directory.parents for path in excluded)
+        return inside and not hidden and (directory / "Cargo.toml").is_file()
+
+    pending: list[Path] = []
+    if "package" in workspace:
+        pending.append(root)
     for pattern in settings.get("members", []):
-        for member in root.glob(pattern):
-            manifest = member / "Cargo.toml"
-            if manifest.is_file() and member.resolve() not in excluded:
-                manifests.add(manifest)
+        pending.extend(member for member in root.glob(pattern) if (member / "Cargo.toml").is_file())
+    workspace_dependencies = settings.get("dependencies", {})
+    # In-tree workspace path dependencies are inspected too, even before a member uses them.
+    pending.extend(
+        root / spec["path"]
+        for spec in workspace_dependencies.values()
+        if isinstance(spec, dict) and "path" in spec and admissible(root / spec["path"])
+    )
+    manifests: set[Path] = set()
+    while pending:
+        directory = pending.pop().resolve()
+        manifest = directory / "Cargo.toml"
+        if manifest in manifests:
+            continue
+        manifests.add(manifest)
+        document = tomllib.loads(manifest.read_text())
+        tables = [document.get(section, {}) for section in DEPENDENCY_SECTIONS]
+        for target in document.get("target", {}).values():
+            tables.extend(target.get(section, {}) for section in DEPENDENCY_SECTIONS)
+        for table in tables:
+            for key, spec in table.items():
+                if not isinstance(spec, dict):
+                    continue
+                if spec.get("workspace"):
+                    base = workspace_dependencies.get(key)
+                    if isinstance(base, dict) and "path" in base:
+                        candidate = root / base["path"]
+                    else:
+                        continue
+                elif "path" in spec:
+                    candidate = directory / spec["path"]
+                else:
+                    continue
+                if admissible(candidate):
+                    pending.append(candidate)
     return sorted(manifests)
 
 

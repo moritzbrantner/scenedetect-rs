@@ -164,6 +164,19 @@ class SceneBoundaryTests(unittest.TestCase):
         errors = boundary.validate(self.root)
         self.assertTrue(any("scene-helper depends on youtube-corpus" in e for e in errors), errors)
 
+    def test_in_tree_path_dependencies_are_implicit_members(self) -> None:
+        helper = self.root / "helpers" / "inner"
+        helper.mkdir(parents=True)
+        (helper / "Cargo.toml").write_text(
+            '[package]\nname = "scene-inner"\nversion = "0.1.0"\nedition = "2021"\n\n'
+            '[dependencies]\nyoutube-corpus = "0.1"\n'
+        )
+        self.append_dependency(
+            "scenedetect-cli", 'scene-inner = { path = "../../helpers/inner", version = "0.1.0" }'
+        )
+        errors = boundary.validate(self.root)
+        self.assertTrue(any("scene-inner depends on youtube-corpus" in e for e in errors), errors)
+
     def test_contract_edits_cannot_widen_the_exception(self) -> None:
         widenings = [
             lambda exception: exception["allowedPackages"].append("moenarch-image-analysis-ocr"),
