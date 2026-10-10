@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "repository": "moritzbrantner/scenedetect-rs",
+  "layer": "capability",
+  "purpose": "Sole canonical owner of scene-boundary detection algorithms, Detection Stats, Scene List and Boundary Candidate derivation, and exact scene timeline projection. It stays a focused scene capability and does not absorb generic visual analysis, corpus persistence, or application workflow authority.",
+  "ownedCapabilities": [
+    "boundary-candidate-review-derivation",
+    "detection-stats",
+    "native-scene-detection-cli",
+    "pyscenedetect-parity-evidence",
+    "scene-boundary-detection-algorithms",
+    "scene-list-derivation",
+    "scene-timeline-projection"
+  ],
+  "excludedAuthorities": [
+    {
+      "authority": "generic-image-and-video-analysis",
+      "ownerRepository": "moritzbrantner/visual-analysis",
+      "packagePrefixes": [
+        "moenarch-image-analysis-",
+        "moenarch-video-analysis-",
+        "moenarch-vision-"
+      ]
+    },
+    {
+      "authority": "generic-exact-rational-media-time",
+      "ownerRepository": "moritzbrantner/moenarch-foundation",
+      "ownerPackage": "moenarch-media-core"
+    },
+    {
+      "authority": "media-corpus-persistence-and-product-workflows",
+      "ownerRepository": "downstream application and corpus repositories",
+      "forbiddenPackages": [
+        "interactive-videos",
+        "media-intelligence",
+        "media-similarity",
+        "video-to-3d",
+        "youtube-corpus"
+      ],
+      "forbiddenPackagePrefixes": [
+        "media-intelligence-",
+        "media-similarity-",
+        "moenarch-media-intelligence",
+        "moenarch-media-similarity",
+        "moenarch-youtube-corpus",
+        "video-to-3d-",
+        "youtube-corpus-"
+      ]
+    }
+  ],
+  "consumerSeam": {
+    "package": "scenedetect-core",
+    "contract": "docs/adr/0010-source-first-core-consumer-contract.md",
+    "entryPoints": ["FrameSource", "detect_content_stats", "ContentDetectionStats"],
+    "knownConsumers": ["moritzbrantner/visual-analysis"]
+  },
+  "transitionalExceptions": [
+    {
+      "crate": "scenedetect-wasm",
+      "reason": "Browser-only, unpublished adapter for the Pages lab: it consumes the published visual-analysis image-processing capability for its similarity view instead of reimplementing it.",
+      "requiresPublishFalse": true,
+      "allowedPackages": ["moenarch-image-analysis-processing"]
+    }
+  ]
+}
