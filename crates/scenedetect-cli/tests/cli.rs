@@ -1940,6 +1940,43 @@ fn generate_vfr_hard_cuts(path: &std::path::Path) {
     assert!(status.success());
 }
 
+/// Whether the decoder reports a duration for the final frame of `path`.
+///
+/// The muxer decides this, not the detector: ffmpeg 5.1, 6.1 and 8.0 record
+/// 100 ms frame durations for the VFR fixture, while ffmpeg 7.1 records none
+/// in Matroska (and no container keeps the exact end across all of them, #157).
+fn last_frame_duration_recorded(path: &std::path::Path) -> bool {
+    // ffprobe 6.0+ reports the frame's `duration`; 5.1 only `pkt_duration`.
+    let output = Command::new("ffprobe")
+        .args(["-v", "error", "-select_streams", "v:0"])
+        .args([
+            "-show_entries",
+            "frame=duration,pkt_duration",
+            "-of",
+            "json",
+        ])
+        .arg(path)
+        .output()
+        .expect("ffprobe ships with ffmpeg and must be runnable");
+    assert!(
+        output.status.success(),
+        "ffprobe failed on {}",
+        path.display()
+    );
+    let probe: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let last = probe["frames"]
+        .as_array()
+        .and_then(|frames| frames.last())
+        .expect("the fixture has frames");
+    ["duration", "pkt_duration"].iter().any(|key| {
+        last[*key]
+            .as_str()
+            .and_then(|value| value.parse::<i64>().ok())
+            .or_else(|| last[*key].as_i64())
+            .is_some_and(|duration| duration > 0)
+    })
+}
+
 fn media_time_seconds(value: &serde_json::Value) -> f64 {
     let ticks = value["ticks"].as_i64().unwrap() as f64;
     let numerator = value["time_base"]["numerator"].as_i64().unwrap() as f64;
@@ -2005,7 +2042,18 @@ fn native_timeline_preserves_exact_vfr_endpoints_without_mutating_detection_stat
     assert!((media_time_seconds(&first["start_time"]) - 0.0).abs() < 0.01);
     assert!((media_time_seconds(&first["end_time"]) - 0.4).abs() < 0.01);
     assert!((media_time_seconds(&second["start_time"]) - 0.4).abs() < 0.01);
-    assert!((media_time_seconds(&second["end_time"]) - 1.0).abs() < 0.01);
+    if last_frame_duration_recorded(&video) {
+        assert!((media_time_seconds(&second["end_time"]) - 1.0).abs() < 0.01);
+    } else {
+        // Without a recorded final-frame duration the end of the last Scene
+        // Span is unknown and must not be invented (the core contract in
+        // timeline_does_not_invent_final_media_time_when_duration_is_unknown).
+        assert!(
+            second["end_time"].is_null(),
+            "the last Scene Span must not invent an end time: {}",
+            second["end_time"]
+        );
+    }
 
     assert_eq!(
         std::fs::read(&stats_path).unwrap(),
