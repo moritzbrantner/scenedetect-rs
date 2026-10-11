@@ -1946,20 +1946,35 @@ fn generate_vfr_hard_cuts(path: &std::path::Path) {
 /// 100 ms frame durations for the VFR fixture, while ffmpeg 7.1 records none
 /// in Matroska (and no container keeps the exact end across all of them, #157).
 fn last_frame_duration_recorded(path: &std::path::Path) -> bool {
+    // ffprobe 6.0+ reports the frame's `duration`; 5.1 only `pkt_duration`.
     let output = Command::new("ffprobe")
         .args(["-v", "error", "-select_streams", "v:0"])
-        .args(["-show_entries", "frame=duration", "-of", "csv=p=0"])
+        .args([
+            "-show_entries",
+            "frame=duration,pkt_duration",
+            "-of",
+            "json",
+        ])
         .arg(path)
         .output()
         .expect("ffprobe ships with ffmpeg and must be runnable");
-    assert!(output.status.success(), "ffprobe failed on {}", path.display());
-    let stdout = String::from_utf8(output.stdout).unwrap();
-    let last = stdout
-        .lines()
-        .map(|line| line.trim().trim_end_matches(','))
-        .rfind(|line| !line.is_empty())
+    assert!(
+        output.status.success(),
+        "ffprobe failed on {}",
+        path.display()
+    );
+    let probe: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let last = probe["frames"]
+        .as_array()
+        .and_then(|frames| frames.last())
         .expect("the fixture has frames");
-    last.parse::<i64>().is_ok_and(|duration| duration > 0)
+    ["duration", "pkt_duration"].iter().any(|key| {
+        last[*key]
+            .as_str()
+            .and_then(|value| value.parse::<i64>().ok())
+            .or_else(|| last[*key].as_i64())
+            .is_some_and(|duration| duration > 0)
+    })
 }
 
 fn media_time_seconds(value: &serde_json::Value) -> f64 {
