@@ -76,4 +76,6 @@ If blocked, report:
 
 ## Domain docs
 
-Use the glossary in `README.md` when naming domain concepts, CLI behavior, tests and parity findings. Consult only the relevant accepted ADR in `docs/adr/` for architecture changes. This repository does not install or pin a shared conventions snapshot; consult the current coding-agent-conventions source.
+- Use the `README.md` glossary for domain names in CLI behavior, tests, and parity findings.
+- Consult the relevant accepted `docs/adr/` decision for architecture changes.
+- No shared convention snapshot is installed or pinned; use the current coding-agent-conventions source.
