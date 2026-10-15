@@ -7,7 +7,7 @@ checks are green, or stop only with a concrete blocker report.
 
 ## Required Reading
 
-1. `CONTEXT.md`
+1. `README.md` (including the canonical domain vocabulary)
 2. `CONTRIBUTING.md`
 3. The assigned GitHub issue
 4. Any ADR touching the area being changed
@@ -76,4 +76,6 @@ If blocked, report:
 
 ## Domain docs
 
-This is a single-context repo with root `CONTEXT.md` and root `docs/adr/`. See `docs/agents/domain.md`.
+- Use the `README.md` glossary for domain names in CLI behavior, tests, and parity findings.
+- Consult the relevant accepted `docs/adr/` decision for architecture changes.
+- No shared convention snapshot is installed or pinned; use the current coding-agent-conventions source.

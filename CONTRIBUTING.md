@@ -6,7 +6,7 @@ Changes should start with one behavior test through the public interface. Avoid
 writing a batch of imagined tests up front; use a vertical red/green slice and
 let each passing slice teach the next one.
 
-Use the project vocabulary from `CONTEXT.md` in test names and assertions:
+Use the project vocabulary from `README.md` (Vocabulary section) in test names and assertions:
 Frame Source, Frame, Timecode, Detector, Scene Boundary, Scene Span, Scene List,
 Detection Stats, Reference Oracle, and Candidate.
 
