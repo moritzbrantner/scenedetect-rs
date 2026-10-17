@@ -5,7 +5,7 @@
     "": {
       "name": "scenedetect-rs",
       "devDependencies": {
-        "@moritzbrantner/moonlight": "^0.1.2",
+        "@moritzbrantner/moonlight": "0.1.2",
         "@playwright/test": "1.63.0",
       },
     },

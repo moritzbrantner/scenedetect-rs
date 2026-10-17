@@ -33,7 +33,7 @@
     "agent:eval:report": "scripts/moonlight.sh eval report --storage-path .moonlight/agent-runs.jsonl --format markdown"
   },
   "devDependencies": {
-    "@moritzbrantner/moonlight": "^0.1.2",
+    "@moritzbrantner/moonlight": "0.1.2",
     "@playwright/test": "1.63.0"
   },
   "lint-staged": {
