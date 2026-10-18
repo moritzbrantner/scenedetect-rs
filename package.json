@@ -34,7 +34,7 @@
   },
   "devDependencies": {
     "@moritzbrantner/moonlight": "^0.1.2",
-    "@playwright/test": "1.63.0"
+    "@playwright/test": "1.64.1"
   },
   "lint-staged": {
     "*.{json,md,toml,yml,yaml}": "prettier --ignore-unknown --write",
