@@ -22,7 +22,7 @@ jobs:
   agent-check:
     # Canonical hosted owner of the AGENTS.md handoff gate: runs exactly
     # `bun run agent:check` on the pull-request head. Keep this job name stable;
-    # it is the check branch protection requires.
+    # merge-ready aggregates this required validation for branch protection.
     name: Agent check
     runs-on: ubuntu-latest
     permissions:
@@ -127,3 +127,25 @@ jobs:
 
       - name: Rust dependency policy
         run: cargo deny check
+
+  validate-pages:
+    if: github.event_name == 'pull_request' && github.base_ref == 'main'
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/pages.yml
+
+  merge-ready:
+    name: ${{ github.event_name == 'pull_request' && 'merge-ready' || 'validation-summary' }}
+    if: ${{ always() }}
+    needs: ["agent-check", "native-fresh-clone", "security-validation", "validate-pages"]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: moritzbrantner/reusable-workflows/.github/actions/merge-ready@b0f25f241d76af2584dfc9e375084ff5c5cb97da
+        with:
+          needs: ${{ toJSON(needs) }}
+          required: '["agent-check", "native-fresh-clone", "security-validation", "validate-pages"]'
+          allow-skipped: ${{ github.event_name != 'pull_request' && '["validate-pages"]' || '[]' }}

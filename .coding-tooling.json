@@ -15,6 +15,6 @@
   },
   "merge": {
     "authority": "hosted",
-    "requiredChecks": ["Agent check", "Dependency security policy"]
+    "requiredChecks": ["merge-ready"]
   }
 }
