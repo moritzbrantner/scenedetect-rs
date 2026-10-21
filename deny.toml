@@ -21,3 +21,5 @@ wildcards = "allow"
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
+# Owner crates come from exact revisions of the public owner repository.
+allow-git = ["https://github.com/moritzbrantner/rust-packages"]
