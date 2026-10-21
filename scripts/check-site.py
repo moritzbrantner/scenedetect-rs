@@ -363,10 +363,16 @@ def check_quality_snapshot() -> None:
 
 def check_pages_workflow() -> None:
     workflow = read_text(PAGES_WORKFLOW)
+    # Actions may be pinned by tag or by commit SHA with the tag as a comment (Renovate pinning).
+    for action, major in (
+        ("actions/configure-pages", "v5"),
+        ("actions/upload-pages-artifact", "v5"),
+        ("actions/deploy-pages", "v4"),
+    ):
+        pattern = rf"{re.escape(action)}@(?:{major}\b|[0-9a-f]{{40}}\s+#\s*{major}\b)"
+        if not re.search(pattern, workflow):
+            raise SiteCheckError(f"pages workflow missing {action}@{major}")
     required = [
-        "actions/configure-pages@v5",
-        "actions/upload-pages-artifact@v5",
-        "actions/deploy-pages@v4",
         "pages: write",
         "id-token: write",
         "path: site",
