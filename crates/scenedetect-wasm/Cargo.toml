@@ -19,7 +19,7 @@ image = { version = "0.25", default-features = false }
 # Owner crates are consumed as one exact git revision of the public repository (owner
 # decision 2026-10-10: no crates.io releases for now), so the whole visual foundation
 # graph comes from one consistent commit.
-image-analysis-processing = { package = "moenarch-image-analysis-processing", git = "https://github.com/moritzbrantner/rust-packages", rev = "b627a4da3c96e15258569b43e5e1ceb104bef2e5" }
+image-analysis-processing = { package = "moenarch-image-analysis-processing", git = "https://github.com/moritzbrantner/rust-packages", rev = "3c7f6f891d91d73a248921c0740067bc5e6e8451" }
 scenedetect-core = { path = "../scenedetect-core" }
 serde.workspace = true
 serde_json.workspace = true
