@@ -6,9 +6,6 @@ repository.workspace = true
 rust-version.workspace = true
 version.workspace = true
 
-[lib]
-path = "src/root.rs"
-
 [dependencies]
 csv.workspace = true
 serde.workspace = true

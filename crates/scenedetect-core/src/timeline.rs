@@ -122,8 +122,8 @@ fn convert_ticks(value: MediaTime, target: TimeBase) -> Option<i64> {
     let numerator = i128::from(value.ticks)
         .checked_mul(i128::from(value.time_base.numerator))?
         .checked_mul(i128::from(target.denominator))?;
-    let denominator = i128::from(value.time_base.denominator)
-        .checked_mul(i128::from(target.numerator))?;
+    let denominator =
+        i128::from(value.time_base.denominator).checked_mul(i128::from(target.numerator))?;
     if denominator == 0 || numerator % denominator != 0 {
         return None;
     }
@@ -149,7 +149,8 @@ fn add_media_times_exact(left: MediaTime, right: MediaTime) -> Option<MediaTime>
 }
 
 fn media_time_fraction(value: MediaTime) -> Option<(i128, i128)> {
-    let mut numerator = i128::from(value.ticks).checked_mul(i128::from(value.time_base.numerator))?;
+    let mut numerator =
+        i128::from(value.ticks).checked_mul(i128::from(value.time_base.numerator))?;
     let mut denominator = i128::from(value.time_base.denominator);
     if denominator < 0 {
         numerator = numerator.checked_neg()?;

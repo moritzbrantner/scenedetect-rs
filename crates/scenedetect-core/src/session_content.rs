@@ -1,4 +1,5 @@
-use super::{content_score, rgb_to_opencv_hsv, ContentWeights, Frame};
+use crate::detect::{content_score, rgb_to_opencv_hsv};
+use crate::{ContentWeights, Frame};
 
 /// Prepared content-detector state retained between incremental frames.
 ///
