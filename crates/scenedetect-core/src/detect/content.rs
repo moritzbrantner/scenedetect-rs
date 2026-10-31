@@ -12,6 +12,8 @@ use crate::{
     RichDetectionStatsRow, SceneBoundary, SceneList, StatsRow,
 };
 
+type HsvPixel = (u8, u8, u8);
+
 pub fn detect_content_stats<S>(
     mut source: S,
     config: ContentDetectorConfig,
@@ -30,12 +32,23 @@ where
     ];
     let mut rows = Vec::new();
     let mut last_candidate_boundary = 0;
-    let mut previous = None;
+    let mut previous: Option<(Frame, Vec<HsvPixel>)> = None;
     let mut total_frames = 0_u64;
 
     while let Some(frame) = source.next_frame()? {
+        // Keep the previous frame's HSV pixels so each frame is converted once.
+        let current_hsv: Vec<_> = frame.rgb.chunks_exact(3).map(rgb_to_opencv_hsv).collect();
         let metrics = match previous.as_ref() {
-            Some(previous) => content_metrics(previous, &frame, &config.weights, config.luma_only),
+            Some((previous, previous_hsv)) => content_metrics_from_hsv(
+                previous_hsv
+                    .iter()
+                    .copied()
+                    .zip(current_hsv.iter().copied()),
+                previous,
+                &frame,
+                &config.weights,
+                config.luma_only,
+            ),
             None => empty_content_metrics(),
         };
         let score = metrics.get("content_val").copied().unwrap_or(0.0);
@@ -63,7 +76,7 @@ where
             metrics,
         });
 
-        previous = Some(frame);
+        previous = Some((frame, current_hsv));
         total_frames += 1;
     }
 
@@ -316,6 +329,21 @@ fn content_metrics(
     weights: &ContentWeights,
     luma_only: bool,
 ) -> BTreeMap<String, f64> {
+    let hsv_pairs = previous
+        .rgb
+        .chunks_exact(3)
+        .zip(current.rgb.chunks_exact(3))
+        .map(|(previous, current)| (rgb_to_opencv_hsv(previous), rgb_to_opencv_hsv(current)));
+    content_metrics_from_hsv(hsv_pairs, previous, current, weights, luma_only)
+}
+
+fn content_metrics_from_hsv(
+    hsv_pairs: impl Iterator<Item = (HsvPixel, HsvPixel)>,
+    previous: &Frame,
+    current: &Frame,
+    weights: &ContentWeights,
+    luma_only: bool,
+) -> BTreeMap<String, f64> {
     let (hue_weight, saturation_weight, luminance_weight, edge_weight) = if luma_only {
         (0.0, 0.0, 1.0, 0.0)
     } else {
@@ -334,14 +362,10 @@ fn content_metrics(
     let mut luminance_sum = 0.0;
     let mut pixel_count = 0.0;
 
-    for (prev, curr) in previous
-        .rgb
-        .chunks_exact(3)
-        .zip(current.rgb.chunks_exact(3))
-    {
+    for (prev, curr) in hsv_pairs {
         pixel_count += 1.0;
-        let (prev_hue, prev_saturation, prev_luminance) = rgb_to_opencv_hsv(prev);
-        let (curr_hue, curr_saturation, curr_luminance) = rgb_to_opencv_hsv(curr);
+        let (prev_hue, prev_saturation, prev_luminance) = prev;
+        let (curr_hue, curr_saturation, curr_luminance) = curr;
         let hue = (prev_hue as f64 - curr_hue as f64).abs();
         let saturation = (prev_saturation as f64 - curr_saturation as f64).abs();
         let luminance = (prev_luminance as f64 - curr_luminance as f64).abs();
