@@ -4,6 +4,7 @@ use super::edges::content_edge_distance;
 use super::pixel::rgb_to_opencv_hsv;
 use crate::review::{build_boundary_review, BoundaryCandidateSeed};
 use crate::scene::build_scene_list;
+use crate::session_content::score_and_prepare;
 use crate::{
     BoundaryCandidateStatus, BoundaryReview, BoundaryReviewOptions, ContentDetectionStats,
     ContentDetectorConfig, ContentWeights, DetectionOptions, DetectionStats,
@@ -184,25 +185,24 @@ where
     let mut total_frames = 0_u64;
 
     while let Some(frame) = source.next_frame()? {
-        let content_val = match previous.as_ref() {
-            Some(previous) => content_score(previous, &frame, &config.weights, config.luma_only),
-            None => 0.0,
-        };
+        let frame_index = frame.index;
+        let (content_val, prepared) =
+            score_and_prepare(previous.as_ref(), frame, &config.weights, config.luma_only);
 
         let mut metrics = BTreeMap::new();
         metrics.insert("content_val".to_owned(), content_val);
         stats_sink.row(StatsRow {
-            frame: frame.index,
+            frame: frame_index,
             metrics: metrics.clone(),
         })?;
 
-        let frame_number = frame.index.0;
+        let frame_number = frame_index.0;
         if content_val >= review_threshold {
             let status = if content_val >= config.threshold {
                 let status = if frame_number.saturating_sub(last_candidate_boundary)
                     >= options.min_scene_len
                 {
-                    boundaries.push(SceneBoundary { frame: frame.index });
+                    boundaries.push(SceneBoundary { frame: frame_index });
                     BoundaryCandidateStatus::Accepted
                 } else {
                     BoundaryCandidateStatus::SuppressedMinSceneLen
@@ -215,7 +215,7 @@ where
 
             candidate_seeds.push(BoundaryCandidateSeed {
                 status,
-                frame: frame.index,
+                frame: frame_index,
                 score_metric: "content_val".to_owned(),
                 score: content_val,
                 detector_threshold: config.threshold,
@@ -224,7 +224,7 @@ where
             });
         }
 
-        previous = Some(frame);
+        previous = Some(prepared);
         total_frames += 1;
     }
 
@@ -261,27 +261,26 @@ where
     let mut total_frames = 0_u64;
 
     while let Some(frame) = source.next_frame()? {
-        let content_val = match previous.as_ref() {
-            Some(previous) => content_score(previous, &frame, &config.weights, config.luma_only),
-            None => 0.0,
-        };
+        let frame_index = frame.index;
+        let (content_val, prepared) =
+            score_and_prepare(previous.as_ref(), frame, &config.weights, config.luma_only);
 
         let mut metrics = BTreeMap::new();
         metrics.insert("content_val".to_owned(), content_val);
         stats_sink.row(StatsRow {
-            frame: frame.index,
+            frame: frame_index,
             metrics,
         })?;
 
-        let frame_number = frame.index.0;
+        let frame_number = frame_index.0;
         if content_val >= config.threshold {
             if frame_number.saturating_sub(last_candidate_boundary) >= min_scene_len {
-                boundaries.push(SceneBoundary { frame: frame.index });
+                boundaries.push(SceneBoundary { frame: frame_index });
             }
             last_candidate_boundary = frame_number;
         }
 
-        previous = Some(frame);
+        previous = Some(prepared);
         total_frames += 1;
     }
 

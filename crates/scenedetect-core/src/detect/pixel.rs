@@ -1,3 +1,4 @@
+#[inline]
 pub(crate) fn rgb_to_opencv_hsv(pixel: &[u8]) -> (u8, u8, u8) {
     const HSV_SHIFT: i32 = 12;
     const ROUNDING: i32 = 1 << (HSV_SHIFT - 1);
@@ -36,6 +37,7 @@ pub(crate) fn rgb_to_opencv_hsv(pixel: &[u8]) -> (u8, u8, u8) {
     (hue as u8, saturation as u8, value as u8)
 }
 
+#[inline]
 pub(super) fn rgb_luma(px: &[u8]) -> f64 {
     0.299 * px[0] as f64 + 0.587 * px[1] as f64 + 0.114 * px[2] as f64
 }

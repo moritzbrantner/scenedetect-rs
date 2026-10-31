@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, VecDeque};
 
-use super::content::content_score;
 use crate::review::{build_boundary_review, BoundaryCandidateSeed};
+use crate::session_content::score_and_prepare;
 use crate::{
     AdaptiveDetectorConfig, BoundaryCandidateStatus, BoundaryReview, BoundaryReviewOptions,
     DetectionOptions, DetectionStatsSink, FrameIndex, FrameRate, FrameSource, Result,
@@ -29,16 +29,15 @@ where
     let mut next_emit = 0_usize;
 
     while let Some(frame) = source.next_frame()? {
-        let content_val = match previous.as_ref() {
-            Some(previous) => content_score(previous, &frame, &config.weights, config.luma_only),
-            None => 0.0,
-        };
+        let frame_index = frame.index;
+        let (content_val, prepared) =
+            score_and_prepare(previous.as_ref(), frame, &config.weights, config.luma_only);
         samples.push_back(AdaptiveSample {
             position: total_frames,
-            frame: frame.index,
+            frame: frame_index,
             content_val,
         });
-        previous = Some(frame);
+        previous = Some(prepared);
         total_frames += 1;
 
         emit_ready_adaptive_rows(
@@ -97,16 +96,15 @@ where
     let mut next_emit = 0_usize;
 
     while let Some(frame) = source.next_frame()? {
-        let content_val = match previous.as_ref() {
-            Some(previous) => content_score(previous, &frame, &config.weights, config.luma_only),
-            None => 0.0,
-        };
+        let frame_index = frame.index;
+        let (content_val, prepared) =
+            score_and_prepare(previous.as_ref(), frame, &config.weights, config.luma_only);
         samples.push_back(AdaptiveSample {
             position: total_frames,
-            frame: frame.index,
+            frame: frame_index,
             content_val,
         });
-        previous = Some(frame);
+        previous = Some(prepared);
         total_frames += 1;
 
         emit_ready_adaptive_review_rows(
@@ -308,9 +306,13 @@ where
 }
 
 fn sample_at(samples: &VecDeque<AdaptiveSample>, position: usize) -> &AdaptiveSample {
+    // Samples are pushed with consecutive positions and only discarded from the
+    // front, so a position maps directly to its offset within the window.
     samples
-        .iter()
-        .find(|sample| sample.position == position)
+        .front()
+        .and_then(|first| position.checked_sub(first.position))
+        .and_then(|offset| samples.get(offset))
+        .filter(|sample| sample.position == position)
         .expect("adaptive sample window contains requested position")
 }
 
