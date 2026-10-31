@@ -1,14 +1,17 @@
 use std::collections::VecDeque;
 
-use super::session_content::{score_and_prepare, PreparedContentFrame};
-use super::{
-    build_boundary_review, build_scene_list, emit_ready_adaptive_rows, hash_distance,
-    histogram_correlation, luma_histogram, perceptual_hash, round_half_to_even,
-    AdaptiveDetectorConfig, AdaptiveSample, BoundaryCandidateSeed, BoundaryCandidateStatus,
-    BoundaryReview, BoundaryReviewOptions, ContentDetectorConfig, DetectionOptions,
-    DetectionResult, DetectionStats, DetectionStatsSink, DetectorConfig, FadeType, Frame,
-    FrameIndex, FrameRate, HashDetectorConfig, HistogramDetectorConfig, Result, SceneBoundary,
-    SceneDetectError, StatsRow, ThresholdDetectorConfig,
+use crate::detect::{
+    emit_ready_adaptive_rows, hash_distance, histogram_correlation, luma_histogram,
+    perceptual_hash, round_half_to_even, AdaptiveSample, FadeType,
+};
+use crate::review::{build_boundary_review, BoundaryCandidateSeed};
+use crate::scene::build_scene_list;
+use crate::session_content::{score_and_prepare, PreparedContentFrame};
+use crate::{
+    AdaptiveDetectorConfig, BoundaryCandidateStatus, BoundaryReview, BoundaryReviewOptions,
+    ContentDetectorConfig, DetectionOptions, DetectionResult, DetectionStats, DetectionStatsSink,
+    DetectorConfig, Frame, FrameIndex, FrameRate, HashDetectorConfig, HistogramDetectorConfig,
+    Result, SceneBoundary, SceneDetectError, StatsRow, ThresholdDetectorConfig,
 };
 
 /// Incremental scene detection for consumers which already own frame decoding.

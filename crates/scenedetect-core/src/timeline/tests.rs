@@ -61,7 +61,10 @@ fn one_scene_timeline_end(presentation: MediaTime, duration: MediaTime) -> Optio
         }],
     };
 
-    scene_timeline_from_source(&scene_list, source).unwrap().scenes[0].end_time
+    scene_timeline_from_source(&scene_list, source)
+        .unwrap()
+        .scenes[0]
+        .end_time
 }
 
 #[test]
