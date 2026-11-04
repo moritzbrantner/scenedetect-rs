@@ -58,7 +58,7 @@ where
 
 pub(crate) fn luma_histogram(frame: &Frame, bins: usize) -> Vec<f64> {
     let mut histogram = vec![0.0; bins];
-    for px in frame.rgb.chunks_exact(3) {
+    for px in frame.rgb.as_chunks::<3>().0.iter() {
         let luma = rgb_luma(px);
         let bin = ((luma * bins as f64) / 256.0)
             .floor()

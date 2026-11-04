@@ -96,7 +96,13 @@ pub(crate) fn hash_distance(previous: &[bool], current: &[bool]) -> f64 {
 }
 
 fn grayscale(frame: &Frame) -> Vec<f64> {
-    frame.rgb.chunks_exact(3).map(rgb_luma).collect()
+    frame
+        .rgb
+        .as_chunks::<3>()
+        .0
+        .iter()
+        .map(|px| rgb_luma(px))
+        .collect()
 }
 
 fn resize_area(gray: &[f64], width: usize, height: usize, output_size: usize) -> Vec<f64> {

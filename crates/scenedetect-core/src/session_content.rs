@@ -35,8 +35,10 @@ pub(super) fn score_and_prepare(
 
     let current_hsv = frame
         .rgb
-        .chunks_exact(3)
-        .map(rgb_to_opencv_hsv)
+        .as_chunks::<3>()
+        .0
+        .iter()
+        .map(|px| rgb_to_opencv_hsv(px))
         .collect::<Vec<_>>();
     let score = match previous {
         Some(PreparedContentFrame::Hsv(previous_hsv)) => {

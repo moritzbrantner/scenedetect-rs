@@ -5,8 +5,8 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 # The browser-only adapter consumes visual-analysis 0.1.x, whose published
-# crates require Rust 1.95. Keep the published/core SceneDetect packages on the
-# workspace's Rust 1.87 contract instead of raising the whole repository MSRV.
+# crates require Rust 1.95. Match the core's new Foundation-driven MSRV while
+# retaining this separate unpublished adapter.
 rust-version = "1.95"
 version.workspace = true
 

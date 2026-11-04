@@ -1,3 +1,4 @@
+use media_core::{Timebase as CanonicalTimebase, Timestamp as CanonicalTimestamp};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -97,75 +98,47 @@ where
 fn exact_frame_end_time(timing: &FrameTiming) -> Option<MediaTime> {
     let presentation = timing.presentation_time?;
     let duration = timing.duration?;
-    if duration.ticks < 0
-        || !is_positive_time_base(presentation.time_base)
-        || !is_positive_time_base(duration.time_base)
-    {
+    if duration.ticks < 0 {
         return None;
     }
 
-    if let Some(duration_ticks) = convert_ticks(duration, presentation.time_base) {
-        if let Some(ticks) = presentation.ticks.checked_add(duration_ticks) {
-            return Some(MediaTime::new(ticks, presentation.time_base));
-        }
-    }
+    let canonical_presentation = canonical_timestamp(presentation)?;
+    let canonical_duration = canonical_timestamp(duration)?;
+    // Foundation owns the exact rescaling, addition, and overflow recovery.
+    let end = canonical_presentation
+        .checked_add_exact(canonical_duration)
+        .ok()?;
 
-    add_media_times_exact(presentation, duration)
+    // Keep the published Scene Timeline wire shape, including its original
+    // (possibly unreduced or doubly-negative) timebase when addition stayed
+    // in the presentation base. Foundation's wire is deliberately different.
+    let time_base = if end.timebase == canonical_presentation.timebase {
+        presentation.time_base
+    } else {
+        TimeBase::new(i64::from(end.timebase.num), i64::from(end.timebase.den))?
+    };
+    Some(MediaTime::new(end.pts, time_base))
 }
 
-fn is_positive_time_base(time_base: TimeBase) -> bool {
-    (time_base.numerator > 0 && time_base.denominator > 0)
-        || (time_base.numerator < 0 && time_base.denominator < 0)
-}
-
-fn convert_ticks(value: MediaTime, target: TimeBase) -> Option<i64> {
-    let numerator = i128::from(value.ticks)
-        .checked_mul(i128::from(value.time_base.numerator))?
-        .checked_mul(i128::from(target.denominator))?;
-    let denominator =
-        i128::from(value.time_base.denominator).checked_mul(i128::from(target.numerator))?;
-    if denominator == 0 || numerator % denominator != 0 {
-        return None;
-    }
-    i64::try_from(numerator / denominator).ok()
-}
-
-fn add_media_times_exact(left: MediaTime, right: MediaTime) -> Option<MediaTime> {
-    let (left_numerator, left_denominator) = media_time_fraction(left)?;
-    let (right_numerator, right_denominator) = media_time_fraction(right)?;
-
-    let numerator = left_numerator
-        .checked_mul(right_denominator)?
-        .checked_add(right_numerator.checked_mul(left_denominator)?)?;
-    let denominator = left_denominator.checked_mul(right_denominator)?;
-    let divisor = greatest_common_divisor(numerator, denominator);
-    let reduced_numerator = numerator / divisor;
-    let reduced_denominator = denominator / divisor;
-
-    let ticks = i64::try_from(reduced_numerator).ok()?;
-    let denominator = i64::try_from(reduced_denominator).ok()?;
-    let time_base = TimeBase::new(1, denominator)?;
-    Some(MediaTime::new(ticks, time_base))
-}
-
-fn media_time_fraction(value: MediaTime) -> Option<(i128, i128)> {
-    let mut numerator =
-        i128::from(value.ticks).checked_mul(i128::from(value.time_base.numerator))?;
+/// Translate the legacy i64 rational shape into Foundation's validated i32
+/// timebase, reducing only the timebase ratio (not presentation ticks).
+/// Values outside Foundation's exact representational domain have no endpoint.
+fn canonical_timestamp(value: MediaTime) -> Option<CanonicalTimestamp> {
+    let mut numerator = i128::from(value.time_base.numerator);
     let mut denominator = i128::from(value.time_base.denominator);
-    if denominator < 0 {
-        numerator = numerator.checked_neg()?;
-        denominator = denominator.checked_neg()?;
+    if numerator == 0 || denominator == 0 || (numerator < 0) != (denominator < 0) {
+        return None;
     }
-    Some((numerator, denominator))
-}
+    numerator = numerator.abs();
+    denominator = denominator.abs();
 
-fn greatest_common_divisor(mut left: i128, mut right: i128) -> i128 {
-    left = left.abs();
-    right = right.abs();
-    while right != 0 {
-        let remainder = left % right;
-        left = right;
-        right = remainder;
+    let mut divisor_left = numerator;
+    let mut divisor_right = denominator;
+    while divisor_right != 0 {
+        (divisor_left, divisor_right) = (divisor_right, divisor_left % divisor_right);
     }
-    left.max(1)
+    let num = i32::try_from(numerator / divisor_left).ok()?;
+    let den = i32::try_from(denominator / divisor_left).ok()?;
+    let timebase = CanonicalTimebase::try_new(num, den).ok()?;
+    CanonicalTimestamp::try_new(value.ticks, timebase).ok()
 }

@@ -110,7 +110,7 @@ impl Frame {
     pub fn mean_luma(&self) -> f64 {
         let mut sum = 0.0;
         let mut count = 0_u64;
-        for px in self.rgb.chunks_exact(3) {
+        for px in self.rgb.as_chunks::<3>().0.iter() {
             sum += 0.299 * px[0] as f64 + 0.587 * px[1] as f64 + 0.114 * px[2] as f64;
             count += 1;
         }
