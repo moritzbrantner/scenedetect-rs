@@ -37,7 +37,13 @@ where
 
     while let Some(frame) = source.next_frame()? {
         // Keep the previous frame's HSV pixels so each frame is converted once.
-        let current_hsv: Vec<_> = frame.rgb.chunks_exact(3).map(rgb_to_opencv_hsv).collect();
+        let current_hsv: Vec<_> = frame
+            .rgb
+            .as_chunks::<3>()
+            .0
+            .iter()
+            .map(|px| rgb_to_opencv_hsv(px))
+            .collect();
         let metrics = match previous.as_ref() {
             Some((previous, previous_hsv)) => content_metrics_from_hsv(
                 previous_hsv
@@ -331,8 +337,10 @@ fn content_metrics(
 ) -> BTreeMap<String, f64> {
     let hsv_pairs = previous
         .rgb
-        .chunks_exact(3)
-        .zip(current.rgb.chunks_exact(3))
+        .as_chunks::<3>()
+        .0
+        .iter()
+        .zip(current.rgb.as_chunks::<3>().0.iter())
         .map(|(previous, current)| (rgb_to_opencv_hsv(previous), rgb_to_opencv_hsv(current)));
     content_metrics_from_hsv(hsv_pairs, previous, current, weights, luma_only)
 }

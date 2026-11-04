@@ -34,7 +34,9 @@ fn content_edge_map(frame: &Frame) -> Vec<u8> {
 
     let value_channel: Vec<u8> = frame
         .rgb
-        .chunks_exact(3)
+        .as_chunks::<3>()
+        .0
+        .iter()
         .take(pixel_count)
         .map(|pixel| rgb_to_opencv_hsv(pixel).2)
         .collect();
