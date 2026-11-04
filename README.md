@@ -102,7 +102,7 @@ Flexible PySceneDetect command ordering, such as placing global options after `d
 
 ### Native path (fresh clone)
 
-A fresh clone needs only a Rust toolchain plus `ffmpeg`/`ffprobe` on `PATH`. No Python, uv, Bun packages or PySceneDetect are required:
+A fresh clone needs Rust 1.95 or newer plus `ffmpeg`/`ffprobe` on `PATH`. No Python, uv, Bun packages or PySceneDetect are required. The exact Scene Timeline calculations use an immutable Foundation Git revision; `scenedetect-core` publishing to crates.io is disabled until that API is released on the registry:
 
 ```sh
 cargo build --locked -p scenedetect-cli

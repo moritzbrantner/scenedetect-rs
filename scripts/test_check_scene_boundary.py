@@ -103,7 +103,7 @@ class SceneBoundaryTests(unittest.TestCase):
     def test_sibling_path_dependencies_break_fresh_clones(self) -> None:
         self.append_dependency(
             "scenedetect-core",
-            'media-core = { package = "moenarch-media-core", path = "../../../moenarch-foundation/crates/media/media-core" }',
+            'sibling-media-core = { package = "moenarch-media-core", path = "../../../moenarch-foundation/crates/media/media-core" }',
         )
         errors = boundary.validate(self.root)
         self.assertTrue(any("reaches outside the repository" in e for e in errors), errors)

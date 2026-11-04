@@ -536,7 +536,7 @@ name = "moenarch-audio-contracts"
 version = "0.1.0"
 source = "git+https://github.com/moritzbrantner/rust-packages?rev=def75fb694bb24f8a3a39a1f420bed50a1377dc1#def75fb694bb24f8a3a39a1f420bed50a1377dc1"
 dependencies = [
- "moenarch-media-core",
+ "moenarch-media-core 0.1.0 (git+https://github.com/moritzbrantner/rust-packages?rev=def75fb694bb24f8a3a39a1f420bed50a1377dc1)",
 ]
 
 [[package]]
@@ -583,7 +583,7 @@ name = "moenarch-math-geometry-2d"
 version = "0.1.0"
 source = "git+https://github.com/moritzbrantner/rust-packages?rev=def75fb694bb24f8a3a39a1f420bed50a1377dc1#def75fb694bb24f8a3a39a1f420bed50a1377dc1"
 dependencies = [
- "moenarch-media-core",
+ "moenarch-media-core 0.1.0 (git+https://github.com/moritzbrantner/rust-packages?rev=def75fb694bb24f8a3a39a1f420bed50a1377dc1)",
  "moenarch-runtime-core",
  "serde",
  "serde_json",
@@ -594,12 +594,20 @@ name = "moenarch-math-linear"
 version = "0.1.0"
 source = "git+https://github.com/moritzbrantner/rust-packages?rev=def75fb694bb24f8a3a39a1f420bed50a1377dc1#def75fb694bb24f8a3a39a1f420bed50a1377dc1"
 dependencies = [
- "moenarch-media-core",
+ "moenarch-media-core 0.1.0 (git+https://github.com/moritzbrantner/rust-packages?rev=def75fb694bb24f8a3a39a1f420bed50a1377dc1)",
  "moenarch-runtime-core",
  "moenarch-tensor-data",
  "moenarch-vector-analysis-core",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "moenarch-media-core"
+version = "0.1.0"
+source = "git+https://github.com/moritzbrantner/moenarch-foundation?rev=88ea1375c5c2b459cc7dd721e5ed6f99de172113#88ea1375c5c2b459cc7dd721e5ed6f99de172113"
+dependencies = [
+ "serde",
 ]
 
 [[package]]
@@ -626,7 +634,7 @@ name = "moenarch-tensor-data"
 version = "0.1.0"
 source = "git+https://github.com/moritzbrantner/rust-packages?rev=def75fb694bb24f8a3a39a1f420bed50a1377dc1#def75fb694bb24f8a3a39a1f420bed50a1377dc1"
 dependencies = [
- "moenarch-media-core",
+ "moenarch-media-core 0.1.0 (git+https://github.com/moritzbrantner/rust-packages?rev=def75fb694bb24f8a3a39a1f420bed50a1377dc1)",
  "moenarch-runtime-core",
  "serde",
  "serde_json",
@@ -638,7 +646,7 @@ version = "0.1.0"
 source = "git+https://github.com/moritzbrantner/rust-packages?rev=def75fb694bb24f8a3a39a1f420bed50a1377dc1#def75fb694bb24f8a3a39a1f420bed50a1377dc1"
 dependencies = [
  "moenarch-jobs-core",
- "moenarch-media-core",
+ "moenarch-media-core 0.1.0 (git+https://github.com/moritzbrantner/rust-packages?rev=def75fb694bb24f8a3a39a1f420bed50a1377dc1)",
  "moenarch-runtime-core",
  "serde",
  "serde_json",
@@ -651,7 +659,7 @@ name = "moenarch-vector-analysis-core"
 version = "0.1.0"
 source = "git+https://github.com/moritzbrantner/rust-packages?rev=def75fb694bb24f8a3a39a1f420bed50a1377dc1#def75fb694bb24f8a3a39a1f420bed50a1377dc1"
 dependencies = [
- "moenarch-media-core",
+ "moenarch-media-core 0.1.0 (git+https://github.com/moritzbrantner/rust-packages?rev=def75fb694bb24f8a3a39a1f420bed50a1377dc1)",
  "moenarch-runtime-core",
  "serde",
  "serde_json",
@@ -664,7 +672,7 @@ source = "git+https://github.com/moritzbrantner/rust-packages?rev=def75fb694bb24
 dependencies = [
  "moenarch-audio-contracts",
  "moenarch-math-geometry-2d",
- "moenarch-media-core",
+ "moenarch-media-core 0.1.0 (git+https://github.com/moritzbrantner/rust-packages?rev=def75fb694bb24f8a3a39a1f420bed50a1377dc1)",
  "moenarch-runtime-core",
  "moenarch-text-core",
  "num-rational",
@@ -910,6 +918,7 @@ name = "scenedetect-core"
 version = "0.1.0"
 dependencies = [
  "csv",
+ "moenarch-media-core 0.1.0 (git+https://github.com/moritzbrantner/moenarch-foundation?rev=88ea1375c5c2b459cc7dd721e5ed6f99de172113)",
  "serde",
  "serde_json",
  "thiserror",
