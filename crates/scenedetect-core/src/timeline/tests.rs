@@ -200,3 +200,41 @@ fn timeline_uses_common_base_when_direct_tick_addition_overflows() {
         Some(MediaTime::new(1_i64 << 60, TimeBase::new(1, 125).unwrap()))
     );
 }
+
+#[test]
+fn timeline_preserves_legacy_signed_timebase_when_fraction_is_positive() {
+    let time_base = TimeBase::new(-1, -10).unwrap();
+
+    assert_eq!(
+        one_scene_timeline_end(
+            MediaTime::new(9, time_base),
+            MediaTime::new(100, TimeBase::new(-1, -1_000).unwrap()),
+        ),
+        Some(MediaTime::new(10, time_base))
+    );
+}
+
+#[test]
+fn timeline_accepts_legacy_wide_timebase_when_its_ratio_is_representable() {
+    let time_base = TimeBase::new(1_i64 << 34, 1_i64 << 34).unwrap();
+
+    assert_eq!(
+        one_scene_timeline_end(
+            MediaTime::new(9, time_base),
+            MediaTime::new(1, TimeBase::new(1, 1).unwrap()),
+        ),
+        Some(MediaTime::new(10, time_base))
+    );
+}
+
+#[test]
+fn timeline_preserves_public_media_time_serde_shape() {
+    let value = MediaTime::new(3, TimeBase::new(1, 24).unwrap());
+    assert_eq!(
+        serde_json::to_value(value).unwrap(),
+        serde_json::json!({
+            "ticks": 3,
+            "time_base": { "numerator": 1, "denominator": 24 }
+        })
+    );
+}

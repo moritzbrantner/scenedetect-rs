@@ -5,9 +5,11 @@ license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 version.workspace = true
+publish = false # Git-sourced Foundation time API; no crates.io publication until released.
 
 [dependencies]
 csv.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
+media-core.workspace = true
