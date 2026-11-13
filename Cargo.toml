@@ -28,4 +28,4 @@ tempfile = "3"
 thiserror = "2"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-media-core = { package = "moenarch-media-core", git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "88ea1375c5c2b459cc7dd721e5ed6f99de172113" }
+media-core = { package = "moenarch-media-core", git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "ad52d0ad160850cd10321558debe67b01b7214b3" }
