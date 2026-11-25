@@ -75,9 +75,9 @@ impl SceneHashAggregate {
         if self.first_hash.is_none() {
             self.first_hash = Some(hash);
         }
-        for bit in 0..HASH_BITS {
+        for (bit, ones) in self.one_counts.iter_mut().enumerate() {
             if hash & (1_u64 << bit) != 0 {
-                self.one_counts[bit] += 1;
+                *ones += 1;
             }
         }
         self.count += 1;
